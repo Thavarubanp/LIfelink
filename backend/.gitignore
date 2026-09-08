@@ -1,0 +1,48 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS Code
+.vscode/
+
+# JetBrains Rider
+.idea/
+
+# NuGet
+packages/
+*.nupkg
+
+# Logs
+*.log
+logs/
+
+# Test results
+TestResults/
+coverage/
+
+# Publish output
+publish/
+
+# Environment variables
+.env
+.env.*
+
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# User secrets
+secrets.json
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
