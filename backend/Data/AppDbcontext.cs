@@ -15,6 +15,13 @@ namespace LifeLink.Data
         public DbSet<UserRole> UserRoles { get; set; } = null!;
         public DbSet<PasswordResetToken> PasswordResetTokens { get; set; } = null!;
 
+        // Student 3 DbSets
+        public DbSet<Hospital> Hospitals { get; set; } = null!;
+        public DbSet<BloodInventory> BloodInventories { get; set; } = null!;
+        public DbSet<InventoryTransaction> InventoryTransactions { get; set; } = null!;
+        public DbSet<EmergencyRequest> EmergencyRequests { get; set; } = null!;
+        public DbSet<HospitalTransferRequest> HospitalTransferRequests { get; set; } = null!;
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -71,6 +78,87 @@ namespace LifeLink.Data
                       .WithMany(u => u.PasswordResetTokens)
                       .HasForeignKey(prt => prt.UserId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Hospital configuration
+            modelBuilder.Entity<Hospital>(entity =>
+            {
+                entity.HasKey(h => h.HospitalId);
+                entity.Property(h => h.Name).IsRequired().HasMaxLength(200);
+                entity.Property(h => h.LicenseNumber).HasMaxLength(100);
+                entity.Property(h => h.Email).HasMaxLength(200);
+                entity.Property(h => h.ContactNumber).HasMaxLength(50);
+            });
+
+            // BloodInventory configuration
+            modelBuilder.Entity<BloodInventory>(entity =>
+            {
+                entity.HasKey(i => i.InventoryId);
+                entity.HasIndex(i => i.HospitalId);
+                entity.HasIndex(i => i.BloodGroup);
+                entity.HasIndex(i => new { i.HospitalId, i.BloodGroup }).IsUnique();
+
+                entity.Property(i => i.BloodGroup).IsRequired().HasMaxLength(10);
+
+                entity.HasOne(i => i.Hospital)
+                      .WithMany(h => h.BloodInventories)
+                      .HasForeignKey(i => i.HospitalId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // InventoryTransaction configuration
+            modelBuilder.Entity<InventoryTransaction>(entity =>
+            {
+                entity.HasKey(t => t.TransactionId);
+                entity.HasIndex(t => t.InventoryId);
+                entity.Property(t => t.TransactionType).IsRequired().HasMaxLength(50);
+
+                entity.HasOne(t => t.Inventory)
+                      .WithMany(i => i.Transactions)
+                      .HasForeignKey(t => t.InventoryId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // EmergencyRequest configuration
+            modelBuilder.Entity<EmergencyRequest>(entity =>
+            {
+                entity.HasKey(e => e.EmergencyRequestId);
+                entity.HasIndex(e => e.HospitalId);
+                entity.HasIndex(e => e.BloodGroup);
+                entity.HasIndex(e => e.Priority);
+                entity.HasIndex(e => e.Status);
+
+                entity.Property(e => e.BloodGroup).IsRequired().HasMaxLength(10);
+                entity.Property(e => e.Priority).IsRequired().HasMaxLength(20);
+                entity.Property(e => e.Status).IsRequired().HasMaxLength(20);
+
+                entity.HasOne(e => e.Hospital)
+                      .WithMany(h => h.EmergencyRequests)
+                      .HasForeignKey(e => e.HospitalId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // HospitalTransferRequest configuration
+            modelBuilder.Entity<HospitalTransferRequest>(entity =>
+            {
+                entity.HasKey(t => t.TransferRequestId);
+                entity.HasIndex(t => t.SenderHospitalId);
+                entity.HasIndex(t => t.ReceiverHospitalId);
+                entity.HasIndex(t => t.BloodGroup);
+                entity.HasIndex(t => t.Status);
+
+                entity.Property(t => t.BloodGroup).IsRequired().HasMaxLength(10);
+                entity.Property(t => t.Status).IsRequired().HasMaxLength(20);
+
+                entity.HasOne(t => t.SenderHospital)
+                      .WithMany(h => h.SentTransferRequests)
+                      .HasForeignKey(t => t.SenderHospitalId)
+                      .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(t => t.ReceiverHospital)
+                      .WithMany(h => h.ReceivedTransferRequests)
+                      .HasForeignKey(t => t.ReceiverHospitalId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Deterministic Role Seeding
