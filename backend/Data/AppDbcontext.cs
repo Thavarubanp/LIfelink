@@ -22,6 +22,13 @@ namespace LifeLink.Data
         public DbSet<EmergencyRequest> EmergencyRequests { get; set; } = null!;
         public DbSet<HospitalTransferRequest> HospitalTransferRequests { get; set; } = null!;
 
+        // Student 2 DbSets
+        public DbSet<Doctor> Doctors { get; set; } = null!;
+        public DbSet<BloodRequestVerification> BloodRequestVerifications { get; set; } = null!;
+        public DbSet<DonorVerification> DonorVerifications { get; set; } = null!;
+        public DbSet<DonorPatientMatch> DonorPatientMatches { get; set; } = null!;
+        public DbSet<Notification> Notifications { get; set; } = null!;
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -88,6 +95,7 @@ namespace LifeLink.Data
                 entity.Property(h => h.LicenseNumber).HasMaxLength(100);
                 entity.Property(h => h.Email).HasMaxLength(200);
                 entity.Property(h => h.ContactNumber).HasMaxLength(50);
+                entity.Property(h => h.IsVerified).IsRequired().HasDefaultValue(false);
             });
 
             // BloodInventory configuration
@@ -159,6 +167,105 @@ namespace LifeLink.Data
                       .WithMany(h => h.ReceivedTransferRequests)
                       .HasForeignKey(t => t.ReceiverHospitalId)
                       .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Doctor configuration
+            modelBuilder.Entity<Doctor>(entity =>
+            {
+                entity.HasKey(d => d.DoctorId);
+                entity.HasIndex(d => d.HospitalId);
+                entity.HasIndex(d => d.Email);
+
+                entity.Property(d => d.FirstName).IsRequired().HasMaxLength(100);
+                entity.Property(d => d.LastName).IsRequired().HasMaxLength(100);
+                entity.Property(d => d.Email).IsRequired().HasMaxLength(200);
+
+                entity.HasOne(d => d.Hospital)
+                      .WithMany(h => h.Doctors)
+                      .HasForeignKey(d => d.HospitalId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(d => d.User)
+                      .WithMany()
+                      .HasForeignKey(d => d.UserId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // BloodRequestVerification configuration
+            modelBuilder.Entity<BloodRequestVerification>(entity =>
+            {
+                entity.HasKey(v => v.VerificationId);
+                entity.HasIndex(v => v.BloodRequestId);
+                entity.HasIndex(v => v.DoctorId);
+
+                entity.Property(v => v.Status)
+                      .HasConversion<string>()
+                      .IsRequired();
+
+                entity.HasOne(v => v.Doctor)
+                      .WithMany()
+                      .HasForeignKey(v => v.DoctorId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // DonorVerification configuration
+            modelBuilder.Entity<DonorVerification>(entity =>
+            {
+                entity.HasKey(v => v.DonorVerificationId);
+                entity.HasIndex(v => v.AcceptanceId);
+                entity.HasIndex(v => v.DoctorId);
+
+                entity.Property(v => v.Status)
+                      .HasConversion<string>()
+                      .IsRequired();
+
+                entity.HasOne(v => v.Doctor)
+                      .WithMany()
+                      .HasForeignKey(v => v.DoctorId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // DonorPatientMatch configuration
+            modelBuilder.Entity<DonorPatientMatch>(entity =>
+            {
+                entity.HasKey(m => m.MatchId);
+                entity.HasIndex(m => m.BloodRequestId);
+                entity.HasIndex(m => m.DonorUserId);
+                entity.HasIndex(m => m.DoctorId);
+
+                entity.Property(m => m.Status)
+                      .HasConversion<string>()
+                      .IsRequired();
+
+                entity.HasOne(m => m.Doctor)
+                      .WithMany()
+                      .HasForeignKey(m => m.DoctorId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(m => m.DonorUser)
+                      .WithMany()
+                      .HasForeignKey(m => m.DonorUserId)
+                      .OnDelete(DeleteBehavior.Restrict);
+            });
+
+            // Notification configuration
+            modelBuilder.Entity<Notification>(entity =>
+            {
+                entity.HasKey(n => n.NotificationId);
+                entity.HasIndex(n => n.UserId);
+                entity.HasIndex(n => n.HospitalId);
+                entity.Property(n => n.Title).IsRequired().HasMaxLength(200);
+                entity.Property(n => n.NotificationType).IsRequired().HasMaxLength(100);
+
+                entity.HasOne(n => n.User)
+                      .WithMany()
+                      .HasForeignKey(n => n.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.Hospital)
+                      .WithMany()
+                      .HasForeignKey(n => n.HospitalId)
+                      .OnDelete(DeleteBehavior.Cascade);
             });
 
             // Deterministic Role Seeding
