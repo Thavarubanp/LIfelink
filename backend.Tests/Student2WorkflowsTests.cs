@@ -13,7 +13,9 @@ using LifeLink.Services.Matching;
 using LifeLink.Services.Notification;
 using LifeLink.Services.Verification;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Net.Http;
 using Xunit;
 
 namespace LifeLink.Tests
@@ -94,12 +96,18 @@ namespace LifeLink.Tests
             Assert.Equal(doctor.DoctorId, list.First().DoctorId);
         }
 
+        private NotificationAgentService CreateNotificationService(AppDbContext context)
+        {
+            var config = new ConfigurationBuilder().Build();
+            var logger = NullLogger<NotificationAgentService>.Instance;
+            return new NotificationAgentService(context, new HttpClient(), config, logger);
+        }
+
         [Fact]
         public async Task Normal_Priority_Approval_Notifies_Only_Eligible_Donors()
         {
             var context = GetInMemoryDbContext();
-            var logger = NullLogger<NotificationAgentService>.Instance;
-            var notificationService = new NotificationAgentService(context, logger);
+            var notificationService = CreateNotificationService(context);
             var verificationService = new VerificationService(context, notificationService);
 
             // Seed active donors
@@ -135,11 +143,10 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task High_Or_Critical_Priority_Approval_Notifies_Donors_UrgentHospitals_And_Admins()
+        public async Task High_Or_Critical_Priority_Approval_Notifies_Donors_And_UrgentHospitals_Only()
         {
             var context = GetInMemoryDbContext();
-            var logger = NullLogger<NotificationAgentService>.Instance;
-            var notificationService = new NotificationAgentService(context, logger);
+            var notificationService = CreateNotificationService(context);
             var verificationService = new VerificationService(context, notificationService);
 
             // Seed role and Admin user
@@ -179,20 +186,20 @@ namespace LifeLink.Tests
             Assert.Equal("Approved", result.Status);
 
             var notifications = await context.Notifications.ToListAsync();
-            // Donors: 2 (adminUser + donorUser), Urgent Hospitals: 2 (otherHospital1 + otherHospital2), Admins: 1 (adminUser) => Total: 5
-            Assert.Equal(5, notifications.Count);
+            // Donors: 2 (adminUser + donorUser), Urgent Hospitals: 2 (otherHospital1 + otherHospital2), Admins: 0 => Total: 4
+            Assert.Equal(4, notifications.Count);
 
             Assert.Equal(2, notifications.Count(n => n.NotificationType == "EligibleDonorAlert"));
             Assert.Equal(2, notifications.Count(n => n.NotificationType == "UrgentHospitalAlert"));
-            Assert.Single(notifications.Where(n => n.NotificationType == "AdminUrgentAlert"));
+            Assert.Empty(notifications.Where(n => n.NotificationType == "AdminUrgentAlert"));
+            Assert.Empty(notifications.Where(n => n.RecipientRole == "Admin"));
         }
 
         [Fact]
         public async Task Donor_Verification_Review_Workflow()
         {
             var context = GetInMemoryDbContext();
-            var logger = NullLogger<NotificationAgentService>.Instance;
-            var notificationService = new NotificationAgentService(context, logger);
+            var notificationService = CreateNotificationService(context);
             var verificationService = new VerificationService(context, notificationService);
 
             var hospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Mercy Hospital" };
