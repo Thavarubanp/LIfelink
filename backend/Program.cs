@@ -43,6 +43,7 @@ builder.Services.AddScoped<IEmergencyRequestService, EmergencyRequestService>();
 builder.Services.AddScoped<ITransferRequestService, TransferRequestService>();
 
 // Student 2 Services Injection
+builder.Services.AddHttpClient<INotificationAgentService, NotificationAgentService>();
 builder.Services.AddScoped<IHospitalService, HospitalService>();
 builder.Services.AddScoped<IDoctorService, DoctorService>();
 builder.Services.AddScoped<INotificationAgentService, NotificationAgentService>();

@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.Notification;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace LifeLink.Services.Notification
@@ -13,20 +17,33 @@ namespace LifeLink.Services.Notification
     public class NotificationAgentService : INotificationAgentService
     {
         private readonly AppDbContext _context;
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
         private readonly ILogger<NotificationAgentService> _logger;
+        private readonly JsonSerializerOptions _jsonOptions;
 
-        public NotificationAgentService(AppDbContext context, ILogger<NotificationAgentService> logger)
+        public NotificationAgentService(
+            AppDbContext context,
+            HttpClient httpClient,
+            IConfiguration configuration,
+            ILogger<NotificationAgentService> logger)
         {
             _context = context;
+            _httpClient = httpClient;
+            _configuration = configuration;
             _logger = logger;
+            _jsonOptions = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
         }
 
         public async Task<int> NotifyEligibleDonorsAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority)
         {
-            // Find active users
-            var users = await _context.Users
-                .Where(u => u.AccountStatus == AccountStatus.Active)
-                .ToListAsync();
+            var hospital = await _context.Hospitals.FindAsync(hospitalId);
+            var users = await _context.Users.Where(u => u.AccountStatus == AccountStatus.Active).ToListAsync();
+
+            if (!users.Any()) return 0;
 
             var notifications = new List<LifeLink.Entities.Notification>();
             foreach (var user in users)
@@ -36,8 +53,8 @@ namespace LifeLink.Services.Notification
                     NotificationId = Guid.NewGuid(),
                     UserId = user.UserId,
                     HospitalId = hospitalId,
-                    Title = $"Blood Donation Alert [{priority.ToUpper()}]",
-                    Message = $"A verified blood request for group {bloodGroup} needs your donation.",
+                    Title = $"[{priority.ToUpper()}] Blood Donation Alert ({bloodGroup})",
+                    Message = $"A verified blood request for group {bloodGroup} at {hospital?.Name ?? "Partner Hospital"} needs your donation.",
                     NotificationType = "EligibleDonorAlert",
                     RecipientRole = "Donor",
                     IsRead = false,
@@ -45,11 +62,8 @@ namespace LifeLink.Services.Notification
                 });
             }
 
-            if (notifications.Any())
-            {
-                await _context.Notifications.AddRangeAsync(notifications);
-                await _context.SaveChangesAsync();
-            }
+            await _context.Notifications.AddRangeAsync(notifications);
+            await _context.SaveChangesAsync();
 
             _logger.LogInformation("Notified {Count} eligible donors for request {RequestId}", notifications.Count, bloodRequestId);
             return notifications.Count;
@@ -57,10 +71,11 @@ namespace LifeLink.Services.Notification
 
         public async Task<int> NotifyUrgentHospitalsAsync(Guid bloodRequestId, string bloodGroup, Guid requestingHospitalId, string priority)
         {
-            // Find verified hospitals excluding requesting hospital
             var verifiedHospitals = await _context.Hospitals
                 .Where(h => h.IsVerified && h.HospitalId != requestingHospitalId)
                 .ToListAsync();
+
+            if (!verifiedHospitals.Any()) return 0;
 
             var notifications = new List<LifeLink.Entities.Notification>();
             foreach (var hospital in verifiedHospitals)
@@ -69,7 +84,7 @@ namespace LifeLink.Services.Notification
                 {
                     NotificationId = Guid.NewGuid(),
                     HospitalId = hospital.HospitalId,
-                    Title = $"URGENT Hospital Blood Request Alert [{priority.ToUpper()}]",
+                    Title = $"[{priority.ToUpper()}] Urgent Hospital Blood Shortage Notice ({bloodGroup})",
                     Message = $"Urgent request for blood group {bloodGroup} approved by hospital {requestingHospitalId}.",
                     NotificationType = "UrgentHospitalAlert",
                     RecipientRole = "HospitalStaff",
@@ -78,66 +93,116 @@ namespace LifeLink.Services.Notification
                 });
             }
 
-            if (notifications.Any())
-            {
-                await _context.Notifications.AddRangeAsync(notifications);
-                await _context.SaveChangesAsync();
-            }
+            await _context.Notifications.AddRangeAsync(notifications);
+            await _context.SaveChangesAsync();
 
             _logger.LogInformation("Notified {Count} verified hospitals for urgent request {RequestId}", notifications.Count, bloodRequestId);
-            return notifications.Count;
-        }
-
-        public async Task<int> NotifyAdminsAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority)
-        {
-            // Find admin users
-            var adminUsers = await _context.Users
-                .Where(u => u.UserRoles.Any(ur => ur.Role.Name == "Admin"))
-                .ToListAsync();
-
-            var notifications = new List<LifeLink.Entities.Notification>();
-            foreach (var admin in adminUsers)
-            {
-                notifications.Add(new LifeLink.Entities.Notification
-                {
-                    NotificationId = Guid.NewGuid(),
-                    UserId = admin.UserId,
-                    HospitalId = hospitalId,
-                    Title = $"URGENT System Admin Alert [{priority.ToUpper()}]",
-                    Message = $"Urgent blood request {bloodRequestId} ({bloodGroup}) requires administrative monitoring.",
-                    NotificationType = "AdminUrgentAlert",
-                    RecipientRole = "Admin",
-                    IsRead = false,
-                    CreatedAt = DateTime.UtcNow
-                });
-            }
-
-            if (notifications.Any())
-            {
-                await _context.Notifications.AddRangeAsync(notifications);
-                await _context.SaveChangesAsync();
-            }
-
-            _logger.LogInformation("Notified {Count} admin users for urgent request {RequestId}", notifications.Count, bloodRequestId);
             return notifications.Count;
         }
 
         public async Task ProcessRequestApprovalNotificationAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority)
         {
             var priorityUpper = (priority ?? "Normal").Trim().ToUpperInvariant();
+            var agentBaseUrl = _configuration["NotificationAgent:BaseUrl"] ?? "http://localhost:8000";
 
-            _logger.LogInformation("Processing approval notification for Request {RequestId} with priority {Priority}", bloodRequestId, priorityUpper);
+            var hospital = await _context.Hospitals.FindAsync(hospitalId);
+            var hospitalName = hospital?.Name ?? "Partner Hospital";
 
-            if (priorityUpper == "HIGH" || priorityUpper == "CRITICAL")
+            var activeDonors = await _context.Users
+                .Where(u => u.AccountStatus == AccountStatus.Active)
+                .Select(u => new
+                {
+                    user_id = u.UserId.ToString(),
+                    full_name = $"{u.FirstName} {u.LastName}".Trim(),
+                    blood_group = bloodGroup,
+                    location = u.Address ?? "Nearby",
+                    account_status = "Active"
+                })
+                .ToListAsync();
+
+            var verifiedHospitalIds = await _context.Hospitals
+                .Where(h => h.IsVerified && h.HospitalId != hospitalId)
+                .Select(h => h.HospitalId.ToString())
+                .ToListAsync();
+
+            var payload = new
             {
-                await NotifyEligibleDonorsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
-                await NotifyUrgentHospitalsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
-                await NotifyAdminsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                request_id = bloodRequestId.ToString(),
+                blood_group = bloodGroup,
+                units_required = 1,
+                priority = priority,
+                hospital_id = hospitalId.ToString(),
+                hospital_name = hospitalName,
+                patient_reason = "Approved blood transfusion need",
+                available_donors = activeDonors,
+                verified_hospital_ids = verifiedHospitalIds
+            };
+
+            bool agentSuccess = false;
+
+            try
+            {
+                var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                _logger.LogInformation("Calling LangGraph Notification Agent at {Url}/process-request", agentBaseUrl);
+
+                var response = await _httpClient.PostAsync($"{agentBaseUrl.TrimEnd('/')}/process-request", content);
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    var agentResult = JsonSerializer.Deserialize<AgentProcessResponseDto>(responseBody, _jsonOptions);
+
+                    if (agentResult?.Notifications != null && agentResult.Notifications.Any())
+                    {
+                        var dbNotifications = new List<LifeLink.Entities.Notification>();
+                        foreach (var n in agentResult.Notifications)
+                        {
+                            // Strictly filter out any Admin notifications if returned
+                            if (n.RecipientType.Equals("Admin", StringComparison.OrdinalIgnoreCase)) continue;
+
+                            Guid? uid = Guid.TryParse(n.RecipientId, out var parsedUid) ? parsedUid : null;
+                            Guid? hid = (n.RecipientType == "Hospital" && Guid.TryParse(n.RecipientId, out var parsedHid)) ? parsedHid : hospitalId;
+
+                            dbNotifications.Add(new LifeLink.Entities.Notification
+                            {
+                                NotificationId = Guid.NewGuid(),
+                                UserId = (n.RecipientType != "Hospital") ? uid : null,
+                                HospitalId = hid,
+                                Title = n.Title,
+                                Message = n.Message,
+                                NotificationType = n.RecipientType == "Hospital" ? "UrgentHospitalAlert" : "EligibleDonorAlert",
+                                RecipientRole = n.RecipientType,
+                                IsRead = false,
+                                CreatedAt = DateTime.UtcNow
+                            });
+                        }
+
+                        if (dbNotifications.Any())
+                        {
+                            await _context.Notifications.AddRangeAsync(dbNotifications);
+                            await _context.SaveChangesAsync();
+                            agentSuccess = true;
+                            _logger.LogInformation("Successfully stored {Count} agent-generated notifications in database.", dbNotifications.Count);
+                        }
+                    }
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // Normal priority
-                await NotifyEligibleDonorsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                _logger.LogWarning(ex, "LangGraph Agent microservice call failed or unavailable. Falling back to internal notification processor.");
+            }
+
+            // Fallback routing if LangGraph service was not reached (Donors always, Hospitals only on High/Critical)
+            if (!agentSuccess)
+            {
+                if (priorityUpper == "HIGH" || priorityUpper == "CRITICAL")
+                {
+                    await NotifyEligibleDonorsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                    await NotifyUrgentHospitalsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                }
+                else
+                {
+                    await NotifyEligibleDonorsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                }
             }
         }
 
@@ -178,6 +243,26 @@ namespace LifeLink.Services.Notification
                     CreatedAt = n.CreatedAt
                 })
                 .ToListAsync();
+        }
+
+        private class AgentProcessResponseDto
+        {
+            public string RequestId { get; set; } = string.Empty;
+            public string Priority { get; set; } = string.Empty;
+            public bool IsUrgent { get; set; }
+            public int EligibleDonorsCount { get; set; }
+            public List<AgentNotificationItemDto> Notifications { get; set; } = new();
+        }
+
+        private class AgentNotificationItemDto
+        {
+            public string RecipientType { get; set; } = string.Empty;
+            public string? RecipientId { get; set; }
+            public string Title { get; set; } = string.Empty;
+            public string Message { get; set; } = string.Empty;
+            public string? EmailSubject { get; set; }
+            public string? EmailBody { get; set; }
+            public string? SmsBody { get; set; }
         }
     }
 }
