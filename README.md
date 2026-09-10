@@ -27,7 +27,7 @@ Ensure connection string and JWT key are configured in `backend/appsettings.Deve
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=ep-summer-grass-b3bod6yd-pooler.c-4.ap-southeast-1.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=...;SSL Mode=Require;Trust Server Certificate=true;"
+    "DefaultConnection": ""
   },
   "Jwt": {
     "Key": "LifeLink_Super_Secret_Jwt_Signing_Key_2026_For_Development_Only_Must_Be_Long!",
