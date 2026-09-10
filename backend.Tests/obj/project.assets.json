@@ -18,7 +18,7 @@
           }
         }
       },
-      "Microsoft.AspNetCore.Authentication.JwtBearer/8.0.30": {
+      "Microsoft.AspNetCore.Authentication.JwtBearer/8.0.31": {
         "type": "package",
         "dependencies": {
           "Microsoft.IdentityModel.Protocols.OpenIdConnect": "7.7.3"
@@ -50,11 +50,11 @@
           "build/netstandard2.0/Microsoft.CodeCoverage.targets": {}
         }
       },
-      "Microsoft.EntityFrameworkCore/8.0.30": {
+      "Microsoft.EntityFrameworkCore/8.0.31": {
         "type": "package",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore.Abstractions": "8.0.30",
-          "Microsoft.EntityFrameworkCore.Analyzers": "8.0.30",
+          "Microsoft.EntityFrameworkCore.Abstractions": "8.0.31",
+          "Microsoft.EntityFrameworkCore.Analyzers": "8.0.31",
           "Microsoft.Extensions.Caching.Memory": "8.0.1",
           "Microsoft.Extensions.Logging": "8.0.1"
         },
@@ -72,7 +72,7 @@
           "buildTransitive/net8.0/Microsoft.EntityFrameworkCore.props": {}
         }
       },
-      "Microsoft.EntityFrameworkCore.Abstractions/8.0.30": {
+      "Microsoft.EntityFrameworkCore.Abstractions/8.0.31": {
         "type": "package",
         "compile": {
           "lib/net8.0/Microsoft.EntityFrameworkCore.Abstractions.dll": {
@@ -85,7 +85,7 @@
           }
         }
       },
-      "Microsoft.EntityFrameworkCore.Analyzers/8.0.30": {
+      "Microsoft.EntityFrameworkCore.Analyzers/8.0.31": {
         "type": "package",
         "compile": {
           "lib/netstandard2.0/_._": {}
@@ -94,10 +94,10 @@
           "lib/netstandard2.0/_._": {}
         }
       },
-      "Microsoft.EntityFrameworkCore.InMemory/8.0.30": {
+      "Microsoft.EntityFrameworkCore.InMemory/8.0.31": {
         "type": "package",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore": "8.0.30"
+          "Microsoft.EntityFrameworkCore": "8.0.31"
         },
         "compile": {
           "lib/net8.0/Microsoft.EntityFrameworkCore.InMemory.dll": {
@@ -1008,10 +1008,10 @@
         "readme.txt"
       ]
     },
-    "Microsoft.AspNetCore.Authentication.JwtBearer/8.0.30": {
-      "sha512": "ltmPwCpzuO29cl6H9w1QHIZ7J+3mnLcUAUH1l9Fgj0bY7vydv76uE5qSYGo96sSQgT98JYbleMBeEGIhjkr7aQ==",
+    "Microsoft.AspNetCore.Authentication.JwtBearer/8.0.31": {
+      "sha512": "ql5DM/d+K4oQowi7RM7wE5ii5yrpjYI7K4ZPSj/ctVXRAgqJc+CR+zkDAuPfHaBUNb73FBVRUpIkznYw903Qew==",
       "type": "package",
-      "path": "microsoft.aspnetcore.authentication.jwtbearer/8.0.30",
+      "path": "microsoft.aspnetcore.authentication.jwtbearer/8.0.31",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -1019,7 +1019,7 @@
         "THIRD-PARTY-NOTICES.TXT",
         "lib/net8.0/Microsoft.AspNetCore.Authentication.JwtBearer.dll",
         "lib/net8.0/Microsoft.AspNetCore.Authentication.JwtBearer.xml",
-        "microsoft.aspnetcore.authentication.jwtbearer.8.0.30.nupkg.sha512",
+        "microsoft.aspnetcore.authentication.jwtbearer.8.0.31.nupkg.sha512",
         "microsoft.aspnetcore.authentication.jwtbearer.nuspec"
       ]
     },
@@ -1089,10 +1089,10 @@
         "microsoft.codecoverage.nuspec"
       ]
     },
-    "Microsoft.EntityFrameworkCore/8.0.30": {
-      "sha512": "Y6GP16iuqAUkcXSgMqjgao9w0UHSz8x04LRDadsi++sn7yBI9C/sy61xNLzPKM+6DZEbyPRHGq3M58f6DhB25g==",
+    "Microsoft.EntityFrameworkCore/8.0.31": {
+      "sha512": "RlM+Py8bIwT1f1yKPq9LDPTK08ZVgC157oAQlIIYRhSTXj1bYpSqWHTvWXb8Wghyfqfsi1wo9hIviiEzTZjdpA==",
       "type": "package",
-      "path": "microsoft.entityframeworkcore/8.0.30",
+      "path": "microsoft.entityframeworkcore/8.0.31",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -1101,14 +1101,14 @@
         "buildTransitive/net8.0/Microsoft.EntityFrameworkCore.props",
         "lib/net8.0/Microsoft.EntityFrameworkCore.dll",
         "lib/net8.0/Microsoft.EntityFrameworkCore.xml",
-        "microsoft.entityframeworkcore.8.0.30.nupkg.sha512",
+        "microsoft.entityframeworkcore.8.0.31.nupkg.sha512",
         "microsoft.entityframeworkcore.nuspec"
       ]
     },
-    "Microsoft.EntityFrameworkCore.Abstractions/8.0.30": {
-      "sha512": "JoVu3708PrMcA3BUeo1+gTcD4nRI8o3g3kwNXwgTPUDhe0dqN2CQmHmEPDD0uZlI1v2oq3F7tR46VycUHzP9ng==",
+    "Microsoft.EntityFrameworkCore.Abstractions/8.0.31": {
+      "sha512": "2dnfIgy8TaEY31mWbQ2xCYWz/YgP2/cGFKhBskmLhovmn5PLgrnfcVLLFaGOZ0WhC2W0VzG8ps60NXEzflZ1dw==",
       "type": "package",
-      "path": "microsoft.entityframeworkcore.abstractions/8.0.30",
+      "path": "microsoft.entityframeworkcore.abstractions/8.0.31",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -1116,14 +1116,14 @@
         "PACKAGE.md",
         "lib/net8.0/Microsoft.EntityFrameworkCore.Abstractions.dll",
         "lib/net8.0/Microsoft.EntityFrameworkCore.Abstractions.xml",
-        "microsoft.entityframeworkcore.abstractions.8.0.30.nupkg.sha512",
+        "microsoft.entityframeworkcore.abstractions.8.0.31.nupkg.sha512",
         "microsoft.entityframeworkcore.abstractions.nuspec"
       ]
     },
-    "Microsoft.EntityFrameworkCore.Analyzers/8.0.30": {
-      "sha512": "+ZVRBR3CzGu0AGWTbewOWTzV+UG//yDrA0gdvb9i1dTidSvwG9qRRggEI9fie0MPC0LAcS9Z8X5HRYWWxefutg==",
+    "Microsoft.EntityFrameworkCore.Analyzers/8.0.31": {
+      "sha512": "ahYdpBYc7x6eyjjXycwdwuJZjbkFFsG0KgTs34c21PpiwY24KI3B1KdzDSzWIX6RWSSfS++2agQeGx5KK9JMVg==",
       "type": "package",
-      "path": "microsoft.entityframeworkcore.analyzers/8.0.30",
+      "path": "microsoft.entityframeworkcore.analyzers/8.0.31",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -1131,14 +1131,14 @@
         "analyzers/dotnet/cs/Microsoft.EntityFrameworkCore.Analyzers.dll",
         "docs/PACKAGE.md",
         "lib/netstandard2.0/_._",
-        "microsoft.entityframeworkcore.analyzers.8.0.30.nupkg.sha512",
+        "microsoft.entityframeworkcore.analyzers.8.0.31.nupkg.sha512",
         "microsoft.entityframeworkcore.analyzers.nuspec"
       ]
     },
-    "Microsoft.EntityFrameworkCore.InMemory/8.0.30": {
-      "sha512": "hz732mmVGGuZn7WwW+LnekYw42ai+ZSPiMiBOx/C8fb4kgVieqYg5NL0Vsktgl8aiiBTdIQ+nJRdmIZRxHXDJQ==",
+    "Microsoft.EntityFrameworkCore.InMemory/8.0.31": {
+      "sha512": "2I/fD35g3NG5BKxhqvOEAlLnTnqOre2i2r8NlgFiP4OIGLpHO87Shl4UhzAfVEdIPbsaNeycHDbJjIt89Ob0Tw==",
       "type": "package",
-      "path": "microsoft.entityframeworkcore.inmemory/8.0.30",
+      "path": "microsoft.entityframeworkcore.inmemory/8.0.31",
       "files": [
         ".nupkg.metadata",
         ".signature.p7s",
@@ -1146,7 +1146,7 @@
         "PACKAGE.md",
         "lib/net8.0/Microsoft.EntityFrameworkCore.InMemory.dll",
         "lib/net8.0/Microsoft.EntityFrameworkCore.InMemory.xml",
-        "microsoft.entityframeworkcore.inmemory.8.0.30.nupkg.sha512",
+        "microsoft.entityframeworkcore.inmemory.8.0.31.nupkg.sha512",
         "microsoft.entityframeworkcore.inmemory.nuspec"
       ]
     },
@@ -2508,32 +2508,34 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\thava\\.nuget\\packages\\": {}
+    "C:\\Users\\HEALTHY MACHINES\\.nuget\\packages\\": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\thava\\OneDrive\\Desktop\\Lifelink\\backend.Tests\\backend.Tests.csproj",
+      "projectUniqueName": "C:\\Users\\HEALTHY MACHINES\\Desktop\\lifelink\\backend.Tests\\backend.Tests.csproj",
       "projectName": "backend.Tests",
-      "projectPath": "C:\\Users\\thava\\OneDrive\\Desktop\\Lifelink\\backend.Tests\\backend.Tests.csproj",
-      "packagesPath": "C:\\Users\\thava\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\thava\\OneDrive\\Desktop\\Lifelink\\backend.Tests\\obj\\",
+      "projectPath": "C:\\Users\\HEALTHY MACHINES\\Desktop\\lifelink\\backend.Tests\\backend.Tests.csproj",
+      "packagesPath": "C:\\Users\\HEALTHY MACHINES\\.nuget\\packages\\",
+      "outputPath": "C:\\Users\\HEALTHY MACHINES\\Desktop\\lifelink\\backend.Tests\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
-        "C:\\Users\\thava\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        "C:\\Users\\HEALTHY MACHINES\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
       "originalTargetFrameworks": [
         "net8.0"
       ],
       "sources": {
+        "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
-            "C:\\Users\\thava\\OneDrive\\Desktop\\Lifelink\\backend\\backend.csproj": {
-              "projectPath": "C:\\Users\\thava\\OneDrive\\Desktop\\Lifelink\\backend\\backend.csproj"
+            "C:\\Users\\HEALTHY MACHINES\\Desktop\\lifelink\\backend\\backend.csproj": {
+              "projectPath": "C:\\Users\\HEALTHY MACHINES\\Desktop\\lifelink\\backend\\backend.csproj"
             }
           }
         }
@@ -2592,7 +2594,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.424/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.425/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

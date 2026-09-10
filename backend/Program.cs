@@ -7,6 +7,11 @@ using LifeLink.Services.Common;
 using LifeLink.Services.Inventory;
 using LifeLink.Services.Emergency;
 using LifeLink.Services.Transfer;
+using LifeLink.Services.Hospitals;
+using LifeLink.Services.Doctors;
+using LifeLink.Services.Verification;
+using LifeLink.Services.Matching;
+using LifeLink.Services.Notification;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -36,6 +41,13 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IBloodInventoryService, BloodInventoryService>();
 builder.Services.AddScoped<IEmergencyRequestService, EmergencyRequestService>();
 builder.Services.AddScoped<ITransferRequestService, TransferRequestService>();
+
+// Student 2 Services Injection
+builder.Services.AddScoped<IHospitalService, HospitalService>();
+builder.Services.AddScoped<IDoctorService, DoctorService>();
+builder.Services.AddScoped<INotificationAgentService, NotificationAgentService>();
+builder.Services.AddScoped<IVerificationService, VerificationService>();
+builder.Services.AddScoped<IMatchingService, MatchingService>();
 
 // 3. Configure JWT Authentication & Authorization
 var jwtSettings = builder.Configuration.GetSection("Jwt");

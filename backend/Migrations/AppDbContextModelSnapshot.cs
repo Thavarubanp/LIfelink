@@ -17,7 +17,7 @@ namespace backend.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.30")
+                .HasAnnotation("ProductVersion", "8.0.31")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -64,6 +64,187 @@ namespace backend.Migrations
                         .IsUnique();
 
                     b.ToTable("BloodInventories");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.BloodRequestVerification", b =>
+                {
+                    b.Property<Guid>("VerificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BloodRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DoctorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("VerificationId");
+
+                    b.HasIndex("BloodRequestId");
+
+                    b.HasIndex("DoctorId");
+
+                    b.ToTable("BloodRequestVerifications");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.Doctor", b =>
+                {
+                    b.Property<Guid>("DoctorId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("FirstName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("HospitalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("LicenseNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Specialization")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("DoctorId");
+
+                    b.HasIndex("Email");
+
+                    b.HasIndex("HospitalId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Doctors");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.DonorPatientMatch", b =>
+                {
+                    b.Property<Guid>("MatchId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BloodRequestId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DoctorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("DonorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsRemovedFromPublicDashboard")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("MatchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("MatchId");
+
+                    b.HasIndex("BloodRequestId");
+
+                    b.HasIndex("DoctorId");
+
+                    b.HasIndex("DonorUserId");
+
+                    b.ToTable("DonorPatientMatches");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.DonorVerification", b =>
+                {
+                    b.Property<Guid>("DonorVerificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AcceptanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DoctorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("MedicalReportSummary")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("DonorVerificationId");
+
+                    b.HasIndex("AcceptanceId");
+
+                    b.HasIndex("DoctorId");
+
+                    b.ToTable("DonorVerifications");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.EmergencyRequest", b =>
@@ -138,6 +319,11 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsVerified")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("LicenseNumber")
                         .IsRequired()
@@ -243,6 +429,51 @@ namespace backend.Migrations
                     b.HasIndex("InventoryId");
 
                     b.ToTable("InventoryTransactions");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.Notification", b =>
+                {
+                    b.Property<Guid>("NotificationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("HospitalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("IsRead")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("NotificationType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("RecipientRole")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("NotificationId");
+
+                    b.HasIndex("HospitalId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.PasswordResetToken", b =>
@@ -406,6 +637,65 @@ namespace backend.Migrations
                     b.Navigation("Hospital");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.BloodRequestVerification", b =>
+                {
+                    b.HasOne("LifeLink.Entities.Doctor", "Doctor")
+                        .WithMany()
+                        .HasForeignKey("DoctorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Doctor");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.Doctor", b =>
+                {
+                    b.HasOne("LifeLink.Entities.Hospital", "Hospital")
+                        .WithMany("Doctors")
+                        .HasForeignKey("HospitalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeLink.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Hospital");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.DonorPatientMatch", b =>
+                {
+                    b.HasOne("LifeLink.Entities.Doctor", "Doctor")
+                        .WithMany()
+                        .HasForeignKey("DoctorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeLink.Entities.User", "DonorUser")
+                        .WithMany()
+                        .HasForeignKey("DonorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Doctor");
+
+                    b.Navigation("DonorUser");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.DonorVerification", b =>
+                {
+                    b.HasOne("LifeLink.Entities.Doctor", "Doctor")
+                        .WithMany()
+                        .HasForeignKey("DoctorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Doctor");
+                });
+
             modelBuilder.Entity("LifeLink.Entities.EmergencyRequest", b =>
                 {
                     b.HasOne("LifeLink.Entities.Hospital", "Hospital")
@@ -447,6 +737,23 @@ namespace backend.Migrations
                     b.Navigation("Inventory");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.Notification", b =>
+                {
+                    b.HasOne("LifeLink.Entities.Hospital", "Hospital")
+                        .WithMany()
+                        .HasForeignKey("HospitalId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("LifeLink.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Hospital");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("LifeLink.Entities.PasswordResetToken", b =>
                 {
                     b.HasOne("LifeLink.Entities.User", "User")
@@ -485,6 +792,8 @@ namespace backend.Migrations
             modelBuilder.Entity("LifeLink.Entities.Hospital", b =>
                 {
                     b.Navigation("BloodInventories");
+
+                    b.Navigation("Doctors");
 
                     b.Navigation("EmergencyRequests");
 
