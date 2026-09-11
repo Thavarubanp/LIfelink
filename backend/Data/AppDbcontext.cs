@@ -29,6 +29,11 @@ namespace LifeLink.Data
         public DbSet<DonorPatientMatch> DonorPatientMatches { get; set; } = null!;
         public DbSet<Notification> Notifications { get; set; } = null!;
 
+        // Student 1 DbSets
+        public DbSet<BloodRequest> BloodRequests { get; set; } = null!;
+        public DbSet<Acceptance> Acceptances { get; set; } = null!;
+        public DbSet<RequestFulfillmentHistory> RequestFulfillmentHistories { get; set; } = null!;
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -266,6 +271,59 @@ namespace LifeLink.Data
                       .WithMany()
                       .HasForeignKey(n => n.HospitalId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // Student 1: BloodRequest configuration
+            modelBuilder.Entity<BloodRequest>(entity =>
+            {
+                entity.HasKey(b => b.BloodRequestId);
+                entity.HasIndex(b => b.PatientUserId);
+                entity.HasIndex(b => b.HospitalId);
+                entity.HasIndex(b => b.BloodGroup);
+                entity.HasIndex(b => b.Status);
+                entity.HasIndex(b => b.CreatedAt);
+                entity.HasIndex(b => b.ExpiryDate);
+
+                entity.Property(b => b.BloodGroup).IsRequired().HasMaxLength(10);
+                entity.Property(b => b.UnitsRequired).IsRequired();
+                entity.Property(b => b.FulfilledUnits).IsRequired().HasDefaultValue(0);
+                entity.Property(b => b.Reason).IsRequired().HasMaxLength(500);
+                entity.Property(b => b.Priority).IsRequired().HasMaxLength(20);
+                entity.Property(b => b.ConcurrencyToken).IsConcurrencyToken();
+                entity.Property(b => b.Status)
+                      .HasConversion<string>()
+                      .IsRequired();
+
+                entity.ToTable(t =>
+                {
+                    t.HasCheckConstraint("CK_BloodRequests_UnitsRequired", "\"UnitsRequired\" >= 1 AND \"UnitsRequired\" <= 10");
+                    t.HasCheckConstraint("CK_BloodRequests_FulfilledUnits", "\"FulfilledUnits\" >= 0 AND \"FulfilledUnits\" <= \"UnitsRequired\"");
+                });
+            });
+
+            // Student 1: Acceptance configuration
+            modelBuilder.Entity<Acceptance>(entity =>
+            {
+                entity.HasKey(a => a.AcceptanceId);
+                entity.HasIndex(a => a.BloodRequestId);
+                entity.HasIndex(a => a.DonorUserId);
+                entity.HasIndex(a => a.Status);
+                entity.HasIndex(a => a.AcceptedAt);
+
+                entity.Property(a => a.RejectionReason).HasMaxLength(500);
+                entity.Property(a => a.Status)
+                      .HasConversion<string>()
+                      .IsRequired();
+            });
+
+            // Student 1: RequestFulfillmentHistory configuration
+            modelBuilder.Entity<RequestFulfillmentHistory>(entity =>
+            {
+                entity.HasKey(h => h.Id);
+                entity.HasIndex(h => h.BloodRequestId);
+                entity.HasIndex(h => h.AcceptanceId);
+                entity.HasIndex(h => h.DonorUserId);
+                entity.HasIndex(h => h.FulfilledAt);
             });
 
             // Deterministic Role Seeding
