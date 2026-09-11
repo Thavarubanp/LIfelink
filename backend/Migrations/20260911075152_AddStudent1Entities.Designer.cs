@@ -3,6 +3,7 @@ using System;
 using LifeLink.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace backend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260911075152_AddStudent1Entities")]
+    partial class AddStudent1Entities
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -119,10 +122,6 @@ namespace backend.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("ConcurrencyToken")
-                        .IsConcurrencyToken()
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -174,12 +173,7 @@ namespace backend.Migrations
 
                     b.HasIndex("Status");
 
-                    b.ToTable("BloodRequests", t =>
-                        {
-                            t.HasCheckConstraint("CK_BloodRequests_FulfilledUnits", "\"FulfilledUnits\" >= 0 AND \"FulfilledUnits\" <= \"UnitsRequired\"");
-
-                            t.HasCheckConstraint("CK_BloodRequests_UnitsRequired", "\"UnitsRequired\" >= 1 AND \"UnitsRequired\" <= 10");
-                        });
+                    b.ToTable("BloodRequests");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.BloodRequestVerification", b =>
@@ -621,37 +615,6 @@ namespace backend.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("PasswordResetTokens");
-                });
-
-            modelBuilder.Entity("LifeLink.Entities.RequestFulfillmentHistory", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("AcceptanceId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("BloodRequestId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("DonorUserId")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("FulfilledAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AcceptanceId");
-
-                    b.HasIndex("BloodRequestId");
-
-                    b.HasIndex("DonorUserId");
-
-                    b.HasIndex("FulfilledAt");
-
-                    b.ToTable("RequestFulfillmentHistories");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.Role", b =>
