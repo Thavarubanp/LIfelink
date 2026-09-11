@@ -28,6 +28,7 @@ Ensure connection string and JWT key are configured in `backend/appsettings.Deve
 {
   "ConnectionStrings": {
     "DefaultConnection": ""
+  },
   "Jwt": {
     "Key": "LifeLink_Super_Secret_Jwt_Signing_Key_2026_For_Development_Only_Must_Be_Long!",
     "Issuer": "LifeLinkAPI",
