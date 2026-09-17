@@ -10,6 +10,7 @@ namespace LifeLink.Services.Notification
         Task<int> NotifyEligibleDonorsAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority);
         Task<int> NotifyUrgentHospitalsAsync(Guid bloodRequestId, string bloodGroup, Guid requestingHospitalId, string priority);
         Task ProcessRequestApprovalNotificationAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority);
+        Task<NotificationResponseDto> CreateRecommendationNotificationAsync(CreateRecommendationNotificationDto dto);
         Task<List<NotificationResponseDto>> GetNotificationsForUserAsync(Guid userId);
         Task<List<NotificationResponseDto>> GetAllNotificationsAsync();
     }

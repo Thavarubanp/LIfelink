@@ -206,6 +206,49 @@ namespace LifeLink.Services.Notification
             }
         }
 
+        public async Task<NotificationResponseDto> CreateRecommendationNotificationAsync(CreateRecommendationNotificationDto dto)
+        {
+            var notificationType = !string.IsNullOrWhiteSpace(dto.RecommendationType)
+                ? dto.RecommendationType
+                : (!string.IsNullOrWhiteSpace(dto.NotificationType) ? dto.NotificationType : "RECIPIENT");
+
+            var notification = new LifeLink.Entities.Notification
+            {
+                NotificationId = Guid.NewGuid(),
+                HospitalId = dto.TargetFacilityId,
+                UserId = null,
+                Title = dto.Title,
+                Message = dto.Message,
+                NotificationType = notificationType,
+                RecipientRole = "HospitalStaff",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Notifications.Add(notification);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Created recommendation notification '{NotificationId}' for hospital '{HospitalId}' ({Type})",
+                notification.NotificationId,
+                notification.HospitalId,
+                notification.NotificationType
+            );
+
+            return new NotificationResponseDto
+            {
+                NotificationId = notification.NotificationId,
+                UserId = notification.UserId,
+                HospitalId = notification.HospitalId,
+                Title = notification.Title,
+                Message = notification.Message,
+                NotificationType = notification.NotificationType,
+                RecipientRole = notification.RecipientRole,
+                IsRead = notification.IsRead,
+                CreatedAt = notification.CreatedAt
+            };
+        }
+
         public async Task<List<NotificationResponseDto>> GetNotificationsForUserAsync(Guid userId)
         {
             return await _context.Notifications

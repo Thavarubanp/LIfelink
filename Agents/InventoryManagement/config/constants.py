@@ -1,0 +1,14 @@
+"""Constants for the Inventory Management AI Agent."""
+
+DEFAULT_BACKEND_API_URL = "http://localhost:5000"
+DEFAULT_INVENTORY_ENDPOINT = "/api/inventory"
+DEFAULT_NOTIFICATION_ENDPOINT = "/api/notifications/recommendations"
+DEFAULT_REQUEST_TIMEOUT = 30
+DEFAULT_SCHEDULE_INTERVAL_MINUTES = 30
+
+BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+
+# Recommendation Types
+RECOMMENDATION_TYPE_RECIPIENT = "RECIPIENT"
+RECOMMENDATION_TYPE_SOURCE = "SOURCE"
+RECOMMENDATION_TYPE_NO_SOURCE_FOUND = "NO_SOURCE_FOUND"
