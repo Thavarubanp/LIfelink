@@ -1,6 +1,6 @@
 """Constants for the Inventory Management AI Agent."""
 
-DEFAULT_BACKEND_API_URL = "http://localhost:5000"
+DEFAULT_BACKEND_API_URL = "http://localhost:5231"
 DEFAULT_INVENTORY_ENDPOINT = "/api/inventory"
 DEFAULT_NOTIFICATION_ENDPOINT = "/api/notifications/recommendations"
 DEFAULT_REQUEST_TIMEOUT = 30

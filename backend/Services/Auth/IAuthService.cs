@@ -12,5 +12,6 @@ namespace LifeLink.Services.Auth
         Task ForgotPasswordAsync(ForgotPasswordRequestDto request);
         Task ResetPasswordAsync(ResetPasswordRequestDto request);
         Task ChangePasswordAsync(Guid userId, ChangePasswordRequestDto request);
+        Task<UserScreeningProfileDto?> GetUserScreeningProfileAsync(Guid userId);
     }
 }

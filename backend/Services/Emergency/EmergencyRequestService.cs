@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.Emergency;
 using LifeLink.Entities;
+using LifeLink.DTOs.Planning;
+using LifeLink.Services.Planning;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Emergency
@@ -12,10 +14,12 @@ namespace LifeLink.Services.Emergency
     public class EmergencyRequestService : IEmergencyRequestService
     {
         private readonly AppDbContext _context;
+        private readonly IPlanningAgentService? _planningAgent;
 
-        public EmergencyRequestService(AppDbContext context)
+        public EmergencyRequestService(AppDbContext context, IPlanningAgentService? planningAgent = null)
         {
             _context = context;
+            _planningAgent = planningAgent;
         }
 
         public async Task<EmergencyRequestResponseDto> CreateEmergencyRequestAsync(EmergencyRequestCreateDto dto)
@@ -53,6 +57,30 @@ namespace LifeLink.Services.Emergency
 
             _context.EmergencyRequests.Add(request);
             await _context.SaveChangesAsync();
+
+            // Trigger Planning Agent for Workflow C: EmergencyShortage (orchestrating Agent 3 inventory and Agent 2 emergency matching)
+            if (_planningAgent != null)
+            {
+                var planRequest = new PlanRequestDto
+                {
+                    EventType = "EmergencyShortage",
+                    RequestId = request.EmergencyRequestId.ToString(),
+                    BloodGroup = request.BloodGroup,
+                    Urgency = request.Priority,
+                    UnitsRequired = request.UnitsRequired,
+                    HospitalId = request.HospitalId.ToString(),
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["requestId"] = request.EmergencyRequestId.ToString(),
+                        ["hospitalId"] = request.HospitalId.ToString(),
+                        ["bloodGroup"] = request.BloodGroup,
+                        ["unitsRequired"] = request.UnitsRequired,
+                        ["priority"] = request.Priority
+                    }
+                };
+
+                await _planningAgent.DispatchPlanAsync(planRequest);
+            }
 
             return await MapToResponseDtoAsync(request.EmergencyRequestId);
         }

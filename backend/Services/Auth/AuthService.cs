@@ -233,5 +233,19 @@ namespace LifeLink.Services.Auth
             _context.Users.Update(user);
             await _context.SaveChangesAsync();
         }
+
+        public async Task<UserScreeningProfileDto?> GetUserScreeningProfileAsync(Guid userId)
+        {
+            var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
+            if (user == null) return null;
+
+            return new UserScreeningProfileDto
+            {
+                UserId = user.UserId,
+                FullName = $"{user.FirstName} {user.LastName}".Trim(),
+                Gender = user.Gender,
+                DateOfBirth = user.DateOfBirth
+            };
+        }
     }
 }

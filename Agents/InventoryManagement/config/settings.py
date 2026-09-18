@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     NOTIFICATION_ENDPOINT: str = DEFAULT_NOTIFICATION_ENDPOINT
     REQUEST_TIMEOUT: int = DEFAULT_REQUEST_TIMEOUT
     SCHEDULE_INTERVAL_MINUTES: int = DEFAULT_SCHEDULE_INTERVAL_MINUTES
+    INTERNAL_SERVICE_API_KEY: str = "LifeLink-Internal-Agent-Key-2026"
 
     model_config = SettingsConfigDict(
         env_file=".env",

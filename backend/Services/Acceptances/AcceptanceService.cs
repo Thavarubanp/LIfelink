@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.Acceptances;
 using LifeLink.Entities;
+using LifeLink.DTOs.Planning;
+using LifeLink.Services.Planning;
 using LifeLink.Services.BloodCompatibility;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,11 +16,16 @@ namespace LifeLink.Services.Acceptances
     {
         private readonly AppDbContext _context;
         private readonly IBloodCompatibilityService _bloodCompatibilityService;
+        private readonly IPlanningAgentService? _planningAgent;
 
-        public AcceptanceService(AppDbContext context, IBloodCompatibilityService bloodCompatibilityService)
+        public AcceptanceService(
+            AppDbContext context,
+            IBloodCompatibilityService bloodCompatibilityService,
+            IPlanningAgentService? planningAgent = null)
         {
             _context = context;
             _bloodCompatibilityService = bloodCompatibilityService;
+            _planningAgent = planningAgent;
         }
 
         public async Task<AcceptanceResponseDto> AcceptRequestAsync(Guid donorUserId, CreateAcceptanceDto dto)
@@ -141,6 +148,27 @@ namespace LifeLink.Services.Acceptances
 
             await _context.Acceptances.AddAsync(acceptance);
             await _context.SaveChangesAsync();
+
+            // Trigger Planning Agent for Workflow B: DonorAccepted (orchestrating Agent 1 screening)
+            if (_planningAgent != null)
+            {
+                var planRequest = new PlanRequestDto
+                {
+                    EventType = "DonorAccepted",
+                    RequestId = acceptance.BloodRequestId.ToString(),
+                    DonorId = acceptance.DonorUserId.ToString(),
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["acceptanceId"] = acceptance.AcceptanceId.ToString(),
+                        ["requestId"] = acceptance.BloodRequestId.ToString(),
+                        ["bloodRequestId"] = acceptance.BloodRequestId.ToString(),
+                        ["donorId"] = acceptance.DonorUserId.ToString(),
+                        ["donorUserId"] = acceptance.DonorUserId.ToString()
+                    }
+                };
+
+                await _planningAgent.DispatchPlanAsync(planRequest);
+            }
 
             return MapToResponseDto(acceptance);
         }

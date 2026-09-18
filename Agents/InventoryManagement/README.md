@@ -138,7 +138,7 @@ SCHEDULE_INTERVAL_MINUTES=30
 Run the FastAPI service using `uvicorn`:
 
 ```bash
-uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn api.app:app --host 0.0.0.0 --port 8003 --reload
 ```
 
 ---

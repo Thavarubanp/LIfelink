@@ -18,6 +18,7 @@ class Settings:
     MODEL_NAME: str = os.getenv("MODEL_NAME", "gemini-2.5-flash")
     
     BACKEND_BASE_URL: str = os.getenv("BACKEND_BASE_URL", "http://localhost:5231")
+    INTERNAL_SERVICE_API_KEY: str = os.getenv("INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")
     
     BASE_DIR: Path = Path(__file__).resolve().parent.parent
     REPORTS_DIR: Path = BASE_DIR / "reports" / "generated"

@@ -53,7 +53,7 @@ class ScreeningService:
         db.refresh(session)
 
         # Notify backend of status change
-        await backend_client.update_acceptance_status(acceptance_id, "ScreeningInProgress")
+        await backend_client.update_acceptance_status(acceptance_id, "ScreeningPending")
 
         # Determine questions
         questions = await self._get_applicable_questions_for_session(db, session)

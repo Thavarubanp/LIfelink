@@ -30,8 +30,9 @@ class NotificationService:
         )
 
         try:
+            headers = {"X-Internal-Key": getattr(settings, "INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, json=payload)
+                response = await client.post(url, json=payload, headers=headers)
                 if response.status_code in (200, 201, 202):
                     logger.info(
                         f"DISPATCH_RECOMMENDATION_SUCCESS: Received status {response.status_code} "

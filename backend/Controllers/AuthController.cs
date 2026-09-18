@@ -90,6 +90,25 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// Retrieves minimal user profile for AI donor screening (Least Privilege: ID, Name, Gender, DOB only).
+        /// </summary>
+        [HttpGet("user/{id:guid}")]
+        [Authorize(Roles = "InternalAgent,Admin,HospitalStaff")]
+        [ProducesResponseType(typeof(UserScreeningProfileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> GetUserById(Guid id)
+        {
+            var profile = await _authService.GetUserScreeningProfileAsync(id);
+            if (profile == null)
+            {
+                return NotFound(new { message = $"User with ID '{id}' was not found." });
+            }
+
+            return Ok(profile);
+        }
+
+        /// <summary>
         /// Initiates password reset flow with anti-enumeration protection.
         /// </summary>
         [HttpPost("forgot-password")]

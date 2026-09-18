@@ -12,7 +12,7 @@ namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize(Roles = "HospitalStaff,Admin")]
+    [Authorize(Roles = "HospitalStaff,Admin,InternalAgent")]
     public class InventoryController : ControllerBase
     {
         private readonly IBloodInventoryService _inventoryService;

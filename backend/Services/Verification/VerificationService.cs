@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.Verification;
 using LifeLink.Entities;
+using LifeLink.DTOs.Planning;
+using LifeLink.Services.Planning;
 using LifeLink.Services.Notification;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,11 +16,16 @@ namespace LifeLink.Services.Verification
     {
         private readonly AppDbContext _context;
         private readonly INotificationAgentService _notificationAgent;
+        private readonly IPlanningAgentService? _planningAgent;
 
-        public VerificationService(AppDbContext context, INotificationAgentService notificationAgent)
+        public VerificationService(
+            AppDbContext context,
+            INotificationAgentService notificationAgent,
+            IPlanningAgentService? planningAgent = null)
         {
             _context = context;
             _notificationAgent = notificationAgent;
+            _planningAgent = planningAgent;
         }
 
         public async Task<BloodRequestVerificationResponseDto> ApproveBloodRequestAsync(Guid requestId, ApproveRejectRequestDto dto)
@@ -58,12 +65,43 @@ namespace LifeLink.Services.Verification
 
             await _context.SaveChangesAsync();
 
-            // Trigger NotificationAgentService ONLY upon hospital approval of blood request
+            // Trigger Planning Agent for Workflow A: BloodRequestApproved (with resilient fallback to Agent 2)
             var bloodGroup = !string.IsNullOrWhiteSpace(dto.BloodGroup) ? dto.BloodGroup : "O+";
             var hospitalId = dto.HospitalId ?? doctor.HospitalId;
             var priority = !string.IsNullOrWhiteSpace(dto.Priority) ? dto.Priority : "Normal";
 
-            await _notificationAgent.ProcessRequestApprovalNotificationAsync(verification.BloodRequestId, bloodGroup, hospitalId, priority);
+            bool planDispatched = false;
+            if (_planningAgent != null)
+            {
+                var planRequest = new PlanRequestDto
+                {
+                    EventType = "BloodRequestApproved",
+                    RequestId = verification.BloodRequestId.ToString(),
+                    BloodGroup = bloodGroup,
+                    Urgency = priority,
+                    HospitalId = hospitalId.ToString(),
+                    UnitsRequired = 1,
+                    Payload = new Dictionary<string, object>
+                    {
+                        ["requestId"] = verification.BloodRequestId.ToString(),
+                        ["bloodGroup"] = bloodGroup,
+                        ["hospitalId"] = hospitalId.ToString(),
+                        ["priority"] = priority
+                    }
+                };
+
+                var planResult = await _planningAgent.DispatchPlanAsync(planRequest);
+                if (planResult != null && planResult.Success)
+                {
+                    planDispatched = true;
+                }
+            }
+
+            // Fallback directly to Agent 2 notification processing per resilience pattern if Planning Agent offline/unsuccessful
+            if (!planDispatched)
+            {
+                await _notificationAgent.ProcessRequestApprovalNotificationAsync(verification.BloodRequestId, bloodGroup, hospitalId, priority);
+            }
 
             return new BloodRequestVerificationResponseDto
             {

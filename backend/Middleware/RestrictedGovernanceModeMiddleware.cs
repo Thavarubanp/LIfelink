@@ -28,8 +28,8 @@ namespace LifeLink.Middleware
                 return;
             }
 
-            // 2. Admins are exempt from restricted governance mode
-            if (context.User.IsInRole("Admin"))
+            // 2. Admins and Internal Agents are exempt from restricted governance mode
+            if (context.User.IsInRole("Admin") || context.User.IsInRole("InternalAgent"))
             {
                 await _next(context);
                 return;

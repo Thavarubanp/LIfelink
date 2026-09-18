@@ -12,13 +12,14 @@ class BackendClient:
     """
     def __init__(self, base_url: Optional[str] = None):
         self.base_url = (base_url or settings.BACKEND_BASE_URL).rstrip("/")
+        self.headers = {"X-Internal-Key": getattr(settings, "INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")}
 
     async def get_acceptance(self, acceptance_id: str) -> Dict[str, Any]:
         """Fetch acceptance metadata from backend API."""
         url = f"{self.base_url}/api/Acceptances/{acceptance_id}"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=self.headers)
                 if resp.status_code == 200:
                     return resp.json()
         except Exception as ex:
@@ -37,7 +38,7 @@ class BackendClient:
         url = f"{self.base_url}/api/BloodRequests/{blood_request_id}"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=self.headers)
                 if resp.status_code == 200:
                     return resp.json()
         except Exception as ex:
@@ -60,7 +61,7 @@ class BackendClient:
         url = f"{self.base_url}/api/Auth/user/{donor_user_id}"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=self.headers)
                 if resp.status_code == 200:
                     return resp.json()
         except Exception as ex:
@@ -82,7 +83,7 @@ class BackendClient:
         url = f"{self.base_url}/api/Auth/user/{patient_user_id}"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(url)
+                resp = await client.get(url, headers=self.headers)
                 if resp.status_code == 200:
                     return resp.json()
         except Exception as ex:
@@ -101,7 +102,7 @@ class BackendClient:
         url = f"{self.base_url}/api/Acceptances/{acceptance_id}/status?status={status}"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.put(url)
+                resp = await client.put(url, headers=self.headers)
                 return resp.status_code in (200, 204)
         except Exception as ex:
             logger.debug(f"Backend call to {url} skipped/offline: {ex}")
@@ -115,7 +116,7 @@ class BackendClient:
         url = f"{self.base_url}/api/agent/screening/report-notify"
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(url, json=report_data)
+                resp = await client.post(url, json=report_data, headers=self.headers)
                 return resp.status_code in (200, 201, 204)
         except Exception as ex:
             logger.debug(f"Backend call to {url} skipped/offline: {ex}")
