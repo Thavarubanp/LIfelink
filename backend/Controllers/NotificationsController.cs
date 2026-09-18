@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Notification;
 using LifeLink.Services.Notification;
@@ -10,6 +11,7 @@ namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/notifications")]
+    [AllowSuspendedAccess]
     public class NotificationsController : ControllerBase
     {
         private readonly INotificationAgentService _notificationService;

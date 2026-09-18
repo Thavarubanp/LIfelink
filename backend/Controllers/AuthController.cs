@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.DTOs.Auth;
 using LifeLink.DTOs.Common;
 using LifeLink.Services.Auth;
@@ -61,6 +62,7 @@ namespace LifeLink.Controllers
         /// Logs out the user session.
         /// </summary>
         [HttpPost("logout")]
+        [AllowSuspendedAccess]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
         public IActionResult Logout()
         {
@@ -72,6 +74,7 @@ namespace LifeLink.Controllers
         /// </summary>
         [HttpGet("me")]
         [Authorize]
+        [AllowSuspendedAccess]
         [ProducesResponseType(typeof(ApiResponse<CurrentUserDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> GetCurrentUser()

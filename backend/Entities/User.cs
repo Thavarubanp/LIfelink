@@ -18,6 +18,11 @@ namespace LifeLink.Entities
 
         public AccountStatus AccountStatus { get; set; } = AccountStatus.Active;
 
+        // Student 4 Additions: Suspension Policy
+        public bool IsSuspended { get; set; } = false;
+        public DateTime? SuspendedUntil { get; set; }
+        public string? SuspensionReason { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 

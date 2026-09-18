@@ -18,5 +18,12 @@ namespace LifeLink.Services.Auth
             _logger.LogInformation("Development Email Service: Password reset token requested for recipient {Email}. Token: {Token}", email, resetToken);
             return Task.CompletedTask;
         }
+
+        public Task SendEmailAsync(string toEmail, string subject, string body)
+        {
+            // In development, log outgoing email safely.
+            _logger.LogInformation("Development Email Service: Dispatched email to {Recipient}. Subject: {Subject}. Body: {Body}", toEmail, subject, body);
+            return Task.CompletedTask;
+        }
     }
 }

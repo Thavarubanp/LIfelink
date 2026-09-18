@@ -15,6 +15,10 @@ using LifeLink.Services.Notification;
 using LifeLink.Services.BloodCompatibility;
 using LifeLink.Services.BloodRequests;
 using LifeLink.Services.Acceptances;
+using LifeLink.Services.Admin;
+using LifeLink.Services.Complaints;
+using LifeLink.Services.HospitalActivity;
+using LifeLink.Services.Appeals;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +63,13 @@ builder.Services.AddScoped<IBloodRequestService, BloodRequestService>();
 builder.Services.AddScoped<IAcceptanceService, AcceptanceService>();
 builder.Services.AddScoped<IRequestExpiryService, RequestExpiryService>();
 builder.Services.AddHostedService<RequestExpiryBackgroundService>();
+
+// Student 4 Services Injection (Admin Governance & Compliance)
+builder.Services.AddScoped<IAdminNotificationService, AdminNotificationService>();
+builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IComplaintService, ComplaintService>();
+builder.Services.AddScoped<IHospitalActivityService, HospitalActivityService>();
+builder.Services.AddScoped<IAppealService, AppealService>();
 
 // 3. Configure JWT Authentication & Authorization
 var jwtSettings = builder.Configuration.GetSection("Jwt");
@@ -160,6 +171,7 @@ app.UseCors("AllowFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseMiddleware<RestrictedGovernanceModeMiddleware>();
 
 app.MapControllers();
 

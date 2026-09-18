@@ -110,11 +110,7 @@ namespace LifeLink.Services.Auth
                 throw new UnauthorizedAccessException("Invalid email or password.");
             }
 
-            // Check Account Status
-            if (user.AccountStatus == AccountStatus.Suspended)
-            {
-                throw new InvalidOperationException("Your account has been suspended. Please contact platform administration.");
-            }
+            // Check Account Status (Note: Suspended accounts are allowed to authenticate in Restricted Governance Mode)
             if (user.AccountStatus == AccountStatus.Inactive)
             {
                 throw new InvalidOperationException("Your account is inactive. Please contact support.");
@@ -143,7 +139,8 @@ namespace LifeLink.Services.Auth
                     LastName = user.LastName,
                     Email = user.Email,
                     Roles = roles,
-                    AccountStatus = user.AccountStatus.ToString()
+                    AccountStatus = user.AccountStatus.ToString(),
+                    IsSuspended = user.IsSuspended
                 }
             };
         }
@@ -169,7 +166,8 @@ namespace LifeLink.Services.Auth
                 LastName = user.LastName,
                 Email = user.Email,
                 Roles = roles,
-                AccountStatus = user.AccountStatus.ToString()
+                AccountStatus = user.AccountStatus.ToString(),
+                IsSuspended = user.IsSuspended
             };
         }
 

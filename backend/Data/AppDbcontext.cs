@@ -34,6 +34,12 @@ namespace LifeLink.Data
         public DbSet<Acceptance> Acceptances { get; set; } = null!;
         public DbSet<RequestFulfillmentHistory> RequestFulfillmentHistories { get; set; } = null!;
 
+        // Student 4 DbSets
+        public DbSet<Complaint> Complaints { get; set; } = null!;
+        public DbSet<HospitalActivityReport> HospitalActivityReports { get; set; } = null!;
+        public DbSet<ComplaintAuditLog> ComplaintAuditLogs { get; set; } = null!;
+        public DbSet<Appeal> Appeals { get; set; } = null!;
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -53,6 +59,8 @@ namespace LifeLink.Data
                 entity.Property(u => u.AccountStatus)
                       .HasConversion<string>()
                       .IsRequired();
+                entity.Property(u => u.IsSuspended).IsRequired().HasDefaultValue(false);
+                entity.Property(u => u.SuspensionReason).HasMaxLength(500);
             });
 
             // Role configuration
@@ -101,6 +109,19 @@ namespace LifeLink.Data
                 entity.Property(h => h.Email).HasMaxLength(200);
                 entity.Property(h => h.ContactNumber).HasMaxLength(50);
                 entity.Property(h => h.IsVerified).IsRequired().HasDefaultValue(false);
+                entity.Property(h => h.ApprovalStatus)
+                      .HasConversion<string>()
+                      .HasMaxLength(50)
+                      .IsRequired()
+                      .HasDefaultValue(ApprovalStatus.Pending);
+                entity.Property(h => h.RejectionReason).HasMaxLength(500);
+                entity.Property(h => h.IsSuspended).IsRequired().HasDefaultValue(false);
+                entity.Property(h => h.SuspensionReason).HasMaxLength(500);
+
+                entity.HasOne(h => h.ApprovedByAdmin)
+                      .WithMany()
+                      .HasForeignKey(h => h.ApprovedByAdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
             });
 
             // BloodInventory configuration
@@ -324,6 +345,125 @@ namespace LifeLink.Data
                 entity.HasIndex(h => h.AcceptanceId);
                 entity.HasIndex(h => h.DonorUserId);
                 entity.HasIndex(h => h.FulfilledAt);
+            });
+
+            // Student 4: Complaint configuration
+            modelBuilder.Entity<Complaint>(entity =>
+            {
+                entity.HasKey(c => c.ComplaintId);
+                entity.HasIndex(c => c.UserId);
+                entity.HasIndex(c => c.HospitalId);
+                entity.HasIndex(c => c.AssignedAdminId);
+                entity.HasIndex(c => c.Status);
+                entity.HasIndex(c => c.CreatedAt);
+
+                entity.Property(c => c.ComplaintType).IsRequired().HasMaxLength(100);
+                entity.Property(c => c.Subject).IsRequired().HasMaxLength(200);
+                entity.Property(c => c.Description).IsRequired().HasMaxLength(2000);
+                entity.Property(c => c.ResolutionNotes).HasMaxLength(2000);
+                entity.Property(c => c.Status)
+                      .HasConversion<string>()
+                      .HasMaxLength(50)
+                      .IsRequired();
+
+                entity.HasOne(c => c.User)
+                      .WithMany()
+                      .HasForeignKey(c => c.UserId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(c => c.Hospital)
+                      .WithMany()
+                      .HasForeignKey(c => c.HospitalId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(c => c.AssignedAdmin)
+                      .WithMany()
+                      .HasForeignKey(c => c.AssignedAdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Student 4: HospitalActivityReport configuration
+            modelBuilder.Entity<HospitalActivityReport>(entity =>
+            {
+                entity.HasKey(r => r.ReportId);
+                entity.HasIndex(r => r.HospitalId);
+                entity.HasIndex(r => r.ComplaintId);
+                entity.HasIndex(r => r.RequestedByAdminId);
+                entity.HasIndex(r => r.SubmittedAt);
+
+                entity.Property(r => r.Title).IsRequired().HasMaxLength(200);
+                entity.Property(r => r.Description).IsRequired().HasMaxLength(4000);
+
+                entity.HasOne(r => r.Hospital)
+                      .WithMany()
+                      .HasForeignKey(r => r.HospitalId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(r => r.Complaint)
+                      .WithMany(c => c.ActivityReports)
+                      .HasForeignKey(r => r.ComplaintId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(r => r.RequestedByAdmin)
+                      .WithMany()
+                      .HasForeignKey(r => r.RequestedByAdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Student 4: ComplaintAuditLog configuration
+            modelBuilder.Entity<ComplaintAuditLog>(entity =>
+            {
+                entity.HasKey(a => a.AuditId);
+                entity.HasIndex(a => a.ComplaintId);
+                entity.HasIndex(a => a.AdminId);
+                entity.HasIndex(a => a.CreatedAt);
+
+                entity.Property(a => a.PreviousStatus).IsRequired().HasMaxLength(50);
+                entity.Property(a => a.NewStatus).IsRequired().HasMaxLength(50);
+                entity.Property(a => a.Notes).HasMaxLength(2000);
+
+                entity.HasOne(a => a.Complaint)
+                      .WithMany(c => c.AuditLogs)
+                      .HasForeignKey(a => a.ComplaintId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(a => a.Admin)
+                      .WithMany()
+                      .HasForeignKey(a => a.AdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Student 4: Appeal configuration
+            modelBuilder.Entity<Appeal>(entity =>
+            {
+                entity.HasKey(a => a.AppealId);
+                entity.HasIndex(a => a.UserId);
+                entity.HasIndex(a => a.HospitalId);
+                entity.HasIndex(a => a.ReviewedByAdminId);
+                entity.HasIndex(a => a.Status);
+                entity.HasIndex(a => a.SubmittedAt);
+
+                entity.Property(a => a.Reason).IsRequired().HasMaxLength(2000);
+                entity.Property(a => a.AdminResponse).HasMaxLength(2000);
+                entity.Property(a => a.Status)
+                      .HasConversion<string>()
+                      .HasMaxLength(50)
+                      .IsRequired();
+
+                entity.HasOne(a => a.User)
+                      .WithMany()
+                      .HasForeignKey(a => a.UserId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(a => a.Hospital)
+                      .WithMany()
+                      .HasForeignKey(a => a.HospitalId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(a => a.ReviewedByAdmin)
+                      .WithMany()
+                      .HasForeignKey(a => a.ReviewedByAdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
             });
 
             // Deterministic Role Seeding

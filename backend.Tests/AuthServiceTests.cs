@@ -186,7 +186,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task LoginAsync_SuspendedAccount_ThrowsInvalidOperationException()
+        public async Task LoginAsync_SuspendedAccount_AllowsLoginInRestrictedGovernanceMode()
         {
             // Arrange
             var context = GetInMemoryDbContext();
@@ -204,6 +204,7 @@ namespace LifeLink.Tests
                 LastName = "User",
                 Email = "suspended@example.com",
                 AccountStatus = AccountStatus.Suspended,
+                IsSuspended = true,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -217,9 +218,13 @@ namespace LifeLink.Tests
                 Password = "Password123!"
             };
 
-            // Act & Assert
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => authService.LoginAsync(loginRequest));
-            Assert.Contains("suspended", ex.Message, StringComparison.OrdinalIgnoreCase);
+            // Act - Under Restricted Governance Mode, authentication succeeds and issues JWT
+            var result = await authService.LoginAsync(loginRequest);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.False(string.IsNullOrWhiteSpace(result.AccessToken));
+            Assert.Equal("Suspended", result.User.AccountStatus);
         }
 
         [Fact]
