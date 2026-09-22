@@ -569,6 +569,12 @@ namespace backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AccreditationDocumentName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AccreditationDocumentUrl")
+                        .HasColumnType("text");
+
                     b.Property<string>("Address")
                         .IsRequired()
                         .HasColumnType("text");
@@ -586,10 +592,22 @@ namespace backend.Migrations
                     b.Property<Guid?>("ApprovedByAdminId")
                         .HasColumnType("uuid");
 
+                    b.Property<string>("City")
+                        .HasColumnType("text");
+
                     b.Property<string>("ContactNumber")
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("ContactPersonEmail")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContactPersonName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContactPersonPhone")
+                        .HasColumnType("text");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -598,6 +616,9 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsPermanentlyBlocked")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsSuspended")
                         .ValueGeneratedOnAdd()
@@ -609,6 +630,12 @@ namespace backend.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<string>("LicenseDocumentName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("LicenseDocumentUrl")
+                        .HasColumnType("text");
+
                     b.Property<string>("LicenseNumber")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -619,9 +646,21 @@ namespace backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<string>("RegistrationNumber")
+                        .HasColumnType("text");
+
                     b.Property<string>("RejectionReason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<string>("RejectionReportName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RejectionReportUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ResubmittedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("SuspendedUntil")
                         .HasColumnType("timestamp with time zone");
@@ -632,6 +671,9 @@ namespace backend.Migrations
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdatedFields")
+                        .HasColumnType("text");
 
                     b.HasKey("HospitalId");
 
@@ -679,6 +721,50 @@ namespace backend.Migrations
                     b.HasIndex("SubmittedAt");
 
                     b.ToTable("HospitalActivityReports");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.HospitalApprovalHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AdminId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AdminName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ChangedFields")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comments")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("HospitalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ReportDocumentName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReportDocumentUrl")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AdminId");
+
+                    b.HasIndex("HospitalId");
+
+                    b.ToTable("HospitalApprovalHistories");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.HospitalTransferRequest", b =>
@@ -826,6 +912,18 @@ namespace backend.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastSentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Otp")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ResetSessionToken")
+                        .HasColumnType("text");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasColumnType("text");
@@ -954,6 +1052,9 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("IsPermanentlyBlocked")
+                        .HasColumnType("boolean");
 
                     b.Property<bool>("IsSuspended")
                         .ValueGeneratedOnAdd()
@@ -1190,6 +1291,24 @@ namespace backend.Migrations
                     b.Navigation("RequestedByAdmin");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.HospitalApprovalHistory", b =>
+                {
+                    b.HasOne("LifeLink.Entities.User", "Admin")
+                        .WithMany()
+                        .HasForeignKey("AdminId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LifeLink.Entities.Hospital", "Hospital")
+                        .WithMany("ApprovalHistories")
+                        .HasForeignKey("HospitalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Admin");
+
+                    b.Navigation("Hospital");
+                });
+
             modelBuilder.Entity("LifeLink.Entities.HospitalTransferRequest", b =>
                 {
                     b.HasOne("LifeLink.Entities.Hospital", "ReceiverHospital")
@@ -1281,6 +1400,8 @@ namespace backend.Migrations
 
             modelBuilder.Entity("LifeLink.Entities.Hospital", b =>
                 {
+                    b.Navigation("ApprovalHistories");
+
                     b.Navigation("BloodInventories");
 
                     b.Navigation("Doctors");

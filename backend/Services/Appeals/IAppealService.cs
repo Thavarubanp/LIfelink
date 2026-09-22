@@ -13,5 +13,6 @@ namespace LifeLink.Services.Appeals
         Task<List<AppealResponseDto>> GetMyAppealsAsync(Guid userId);
         Task<AppealResponseDto> ApproveAppealAsync(Guid appealId, Guid adminId, ReviewAppealDto dto);
         Task<AppealResponseDto> RejectAppealAsync(Guid appealId, Guid adminId, ReviewAppealDto dto);
+        Task<AppealResponseDto> PermanentlyBlockAsync(Guid appealId, Guid adminId, ReviewAppealDto dto);
     }
 }

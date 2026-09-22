@@ -4,6 +4,7 @@ namespace LifeLink.Entities
     {
         Pending,
         Approved,
-        Rejected
+        Rejected,
+        Resubmitted
     }
 }

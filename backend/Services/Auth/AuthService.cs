@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.Auth;
 using LifeLink.Entities;
+using LifeLink.Services.Common;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Auth
@@ -16,28 +17,30 @@ namespace LifeLink.Services.Auth
         private readonly IJwtService _jwtService;
         private readonly IPasswordResetService _passwordResetService;
         private readonly IEmailService _emailService;
+        private readonly Microsoft.Extensions.Logging.ILogger<AuthService> _logger;
 
         public AuthService(
             AppDbContext context,
             IPasswordHasherService passwordHasher,
             IJwtService jwtService,
             IPasswordResetService passwordResetService,
-            IEmailService emailService)
+            IEmailService emailService,
+            Microsoft.Extensions.Logging.ILogger<AuthService>? logger = null)
         {
             _context = context;
             _passwordHasher = passwordHasher;
             _jwtService = jwtService;
             _passwordResetService = passwordResetService;
             _emailService = emailService;
+            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AuthService>.Instance;
         }
 
         public async Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto request)
         {
             var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 
-            // Check duplicate email
-            var existingUser = await _context.Users.AnyAsync(u => u.Email.ToLower() == normalizedEmail);
-            if (existingUser)
+            // Check global duplicate email across entire platform (User, Hospital, Doctor, Admin)
+            if (await EmailUniquenessHelper.IsEmailTakenAsync(_context, normalizedEmail))
             {
                 throw new InvalidOperationException("An account with this email address already exists.");
             }
@@ -171,42 +174,196 @@ namespace LifeLink.Services.Auth
             };
         }
 
+        private async Task<User?> FindOrEnsureUserByEmailAsync(string rawEmail)
+        {
+            if (string.IsNullOrWhiteSpace(rawEmail))
+                return null;
+
+            var normalizedEmail = rawEmail.Trim().ToLowerInvariant();
+
+            // 1. Check in Users table (Donor, Patient, Admin, HospitalStaff, Doctor)
+            var user = await _context.Users
+                .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
+
+            if (user != null)
+                return user;
+
+            // 2. Check in Hospitals table (includes Pending, Approved, and Rejected hospitals)
+            var hospital = await _context.Hospitals
+                .FirstOrDefaultAsync(h => h.Email != null && h.Email.ToLower() == normalizedEmail);
+
+            if (hospital != null)
+            {
+                user = new User
+                {
+                    UserId = Guid.NewGuid(),
+                    FirstName = string.IsNullOrWhiteSpace(hospital.Name) ? "Hospital" : hospital.Name.Trim(),
+                    LastName = "Staff",
+                    Email = normalizedEmail,
+                    PhoneNumber = hospital.ContactNumber?.Trim() ?? string.Empty,
+                    Address = hospital.Address?.Trim() ?? string.Empty,
+                    AccountStatus = AccountStatus.Active,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    PasswordHash = string.Empty
+                };
+
+                await _context.Users.AddAsync(user);
+
+                var staffRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "HospitalStaff");
+                int roleId = staffRole?.RoleId ?? 2;
+
+                await _context.UserRoles.AddAsync(new UserRole
+                {
+                    UserId = user.UserId,
+                    RoleId = roleId
+                });
+
+                await _context.SaveChangesAsync();
+                return user;
+            }
+
+            // 3. Check in Doctors table
+            var doctor = await _context.Doctors
+                .FirstOrDefaultAsync(d => d.Email != null && d.Email.ToLower() == normalizedEmail);
+
+            if (doctor != null)
+            {
+                user = new User
+                {
+                    UserId = Guid.NewGuid(),
+                    FirstName = string.IsNullOrWhiteSpace(doctor.FirstName) ? "Dr." : doctor.FirstName.Trim(),
+                    LastName = string.IsNullOrWhiteSpace(doctor.LastName) ? "Doctor" : doctor.LastName.Trim(),
+                    Email = normalizedEmail,
+                    PhoneNumber = doctor.PhoneNumber?.Trim() ?? string.Empty,
+                    AccountStatus = AccountStatus.Active,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    PasswordHash = string.Empty
+                };
+
+                await _context.Users.AddAsync(user);
+
+                var doctorRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Doctor");
+                int roleId = doctorRole?.RoleId ?? 3;
+
+                await _context.UserRoles.AddAsync(new UserRole
+                {
+                    UserId = user.UserId,
+                    RoleId = roleId
+                });
+
+                doctor.UserId = user.UserId;
+                _context.Doctors.Update(doctor);
+
+                await _context.SaveChangesAsync();
+                return user;
+            }
+
+            return null;
+        }
+
         public async Task ForgotPasswordAsync(ForgotPasswordRequestDto request)
         {
-            var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+            var user = await FindOrEnsureUserByEmailAsync(request.Email);
 
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
-
-            // Anti-account enumeration: do not reveal if user does not exist
+            // Anti-account enumeration: always return generic response if user doesn't exist
             if (user == null)
             {
+                _logger.LogInformation("ForgotPassword: Email {Email} requested password reset, but account was not found (Anti-enumeration triggered).", request.Email);
                 return;
             }
 
-            var resetToken = await _passwordResetService.CreatePasswordResetTokenAsync(user);
-            await _emailService.SendPasswordResetEmailAsync(user.Email, resetToken);
+            var otp = await _passwordResetService.CreatePasswordResetOtpAsync(user);
+
+            var targetEmail = !string.IsNullOrWhiteSpace(user.Email) ? user.Email.Trim() : request.Email.Trim();
+
+            try
+            {
+                await _emailService.SendPasswordResetOtpAsync(targetEmail, otp);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ForgotPassword: Failed to send OTP email to {Email}. Error: {Message}", targetEmail, ex.Message);
+            }
+        }
+
+        public async Task<VerifyOtpResponseDto> VerifyOtpAsync(VerifyOtpRequestDto request)
+        {
+            var user = await FindOrEnsureUserByEmailAsync(request.Email);
+            if (user == null)
+            {
+                throw new InvalidOperationException("Invalid or expired verification code.");
+            }
+
+            var verifiedToken = await _passwordResetService.VerifyOtpAsync(user, request.Otp);
+            if (verifiedToken == null || string.IsNullOrEmpty(verifiedToken.ResetSessionToken))
+            {
+                throw new InvalidOperationException("Invalid or expired verification code. Please enter the correct code or request a new OTP.");
+            }
+
+            return new VerifyOtpResponseDto
+            {
+                Success = true,
+                Message = "OTP verified successfully.",
+                ResetSessionToken = verifiedToken.ResetSessionToken
+            };
+        }
+
+        public async Task ResendOtpAsync(ResendOtpRequestDto request)
+        {
+            var user = await FindOrEnsureUserByEmailAsync(request.Email);
+            if (user == null)
+            {
+                return; // Anti-enumeration
+            }
+
+            if (await _passwordResetService.IsResendOnCooldownAsync(user))
+            {
+                throw new InvalidOperationException("Please wait 30 seconds before requesting a new OTP.");
+            }
+
+            var otp = await _passwordResetService.CreatePasswordResetOtpAsync(user);
+
+            var targetEmail = !string.IsNullOrWhiteSpace(user.Email) ? user.Email.Trim() : request.Email.Trim();
+
+            try
+            {
+                await _emailService.SendPasswordResetOtpAsync(targetEmail, otp);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "ResendOtp: Failed to send OTP email to {Email}. Error: {Message}", targetEmail, ex.Message);
+            }
         }
 
         public async Task ResetPasswordAsync(ResetPasswordRequestDto request)
         {
-            var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == normalizedEmail);
+            var user = await FindOrEnsureUserByEmailAsync(request.Email);
             if (user == null)
             {
                 throw new InvalidOperationException("Invalid password reset request.");
             }
 
-            var validToken = await _passwordResetService.ValidateTokenAsync(user, request.Token);
+            var validToken = await _passwordResetService.ValidateVerifiedResetTokenAsync(user, request.Token);
             if (validToken == null)
             {
-                throw new InvalidOperationException("Invalid or expired password reset token.");
+                // Fallback attempt: if client passed raw OTP directly in token field
+                validToken = await _passwordResetService.VerifyOtpAsync(user, request.Token);
             }
 
-            // Hash new password
+            if (validToken == null)
+            {
+                throw new InvalidOperationException("OTP verification is required before setting a new password, or your reset session has expired.");
+            }
+
+            // Hash new password using ASP.NET Core Identity PBKDF2
             user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
             user.UpdatedAt = DateTime.UtcNow;
 
+            // Immediately mark token as used so it cannot be used again
             await _passwordResetService.MarkTokenAsUsedAsync(validToken);
 
             _context.Users.Update(user);

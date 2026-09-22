@@ -20,5 +20,18 @@ namespace LifeLink.DTOs.Hospitals
         [EmailAddress]
         [StringLength(200)]
         public string Email { get; set; } = string.Empty;
+
+        [StringLength(100)]
+        public string? Password { get; set; }
+
+        public string? RegistrationNumber { get; set; }
+        public string? City { get; set; }
+        public string? ContactPersonName { get; set; }
+        public string? ContactPersonPhone { get; set; }
+        public string? ContactPersonEmail { get; set; }
+        public string? LicenseDocumentUrl { get; set; }
+        public string? LicenseDocumentName { get; set; }
+        public string? AccreditationDocumentUrl { get; set; }
+        public string? AccreditationDocumentName { get; set; }
     }
 }

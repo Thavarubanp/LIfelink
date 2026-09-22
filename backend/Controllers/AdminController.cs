@@ -340,6 +340,25 @@ namespace LifeLink.Controllers
             }
         }
 
+        [HttpPut("appeals/{id:guid}/permanently-block")]
+        [ProducesResponseType(typeof(ApiResponse<AppealResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> PermanentlyBlockAppeal(Guid id, [FromBody] ReviewAppealDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            try
+            {
+                var result = await _appealService.PermanentlyBlockAsync(id, GetAdminId(), dto);
+                return Ok(ApiResponse<AppealResponseDto>.Ok(result, "Account permanently blocked."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
         #endregion
     }
 }

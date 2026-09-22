@@ -22,6 +22,7 @@ namespace LifeLink.Entities
         public bool IsSuspended { get; set; } = false;
         public DateTime? SuspendedUntil { get; set; }
         public string? SuspensionReason { get; set; }
+        public bool IsPermanentlyBlocked { get; set; } = false;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;

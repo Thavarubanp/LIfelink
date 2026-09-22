@@ -39,6 +39,7 @@ namespace LifeLink.Data
         public DbSet<HospitalActivityReport> HospitalActivityReports { get; set; } = null!;
         public DbSet<ComplaintAuditLog> ComplaintAuditLogs { get; set; } = null!;
         public DbSet<Appeal> Appeals { get; set; } = null!;
+        public DbSet<HospitalApprovalHistory> HospitalApprovalHistories { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -121,6 +122,23 @@ namespace LifeLink.Data
                 entity.HasOne(h => h.ApprovedByAdmin)
                       .WithMany()
                       .HasForeignKey(h => h.ApprovedByAdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // HospitalApprovalHistory configuration
+            modelBuilder.Entity<HospitalApprovalHistory>(entity =>
+            {
+                entity.HasKey(h => h.Id);
+                entity.Property(h => h.Status)
+                      .HasConversion<string>()
+                      .HasMaxLength(50);
+                entity.HasOne(h => h.Hospital)
+                      .WithMany(h => h.ApprovalHistories)
+                      .HasForeignKey(h => h.HospitalId)
+                      .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(h => h.Admin)
+                      .WithMany()
+                      .HasForeignKey(h => h.AdminId)
                       .OnDelete(DeleteBehavior.SetNull);
             });
 

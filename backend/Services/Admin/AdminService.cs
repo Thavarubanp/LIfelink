@@ -58,8 +58,9 @@ namespace LifeLink.Services.Admin
         public async Task<List<AdminHospitalResponseDto>> GetPendingHospitalsAsync()
         {
             var list = await _context.Hospitals
-                .Where(h => h.ApprovalStatus == ApprovalStatus.Pending || !h.IsVerified)
-                .OrderByDescending(h => h.CreatedAt)
+                .Include(h => h.ApprovalHistories)
+                .Where(h => h.ApprovalStatus == ApprovalStatus.Pending || h.ApprovalStatus == ApprovalStatus.Resubmitted || !h.IsVerified)
+                .OrderByDescending(h => h.UpdatedAt)
                 .ToListAsync();
 
             return list.Select(MapToHospitalDto).ToList();
@@ -67,7 +68,9 @@ namespace LifeLink.Services.Admin
 
         public async Task<AdminHospitalResponseDto> ApproveHospitalAsync(Guid hospitalId, Guid adminId)
         {
-            var hospital = await _context.Hospitals.FindAsync(hospitalId);
+            var hospital = await _context.Hospitals
+                .Include(h => h.ApprovalHistories)
+                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
             if (hospital == null)
             {
                 throw new KeyNotFoundException($"Hospital with ID {hospitalId} was not found.");
@@ -78,7 +81,18 @@ namespace LifeLink.Services.Admin
             hospital.ApprovedAt = DateTime.UtcNow;
             hospital.ApprovedByAdminId = adminId;
             hospital.RejectionReason = null;
+            hospital.RejectionReportUrl = null;
+            hospital.RejectionReportName = null;
             hospital.UpdatedAt = DateTime.UtcNow;
+
+            await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
+            {
+                HospitalId = hospital.HospitalId,
+                Status = ApprovalStatus.Approved,
+                Timestamp = DateTime.UtcNow,
+                AdminId = adminId,
+                Comments = "Hospital registration verified and approved."
+            });
 
             await _context.SaveChangesAsync();
 
@@ -89,7 +103,9 @@ namespace LifeLink.Services.Admin
 
         public async Task<AdminHospitalResponseDto> RejectHospitalAsync(Guid hospitalId, Guid adminId, RejectHospitalDto dto)
         {
-            var hospital = await _context.Hospitals.FindAsync(hospitalId);
+            var hospital = await _context.Hospitals
+                .Include(h => h.ApprovalHistories)
+                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
             if (hospital == null)
             {
                 throw new KeyNotFoundException($"Hospital with ID {hospitalId} was not found.");
@@ -98,7 +114,20 @@ namespace LifeLink.Services.Admin
             hospital.ApprovalStatus = ApprovalStatus.Rejected;
             hospital.IsVerified = false; // Automatic synchronization
             hospital.RejectionReason = dto.Reason;
+            hospital.RejectionReportName = dto.ReportDocumentName;
+            hospital.RejectionReportUrl = dto.ReportDocumentUrl;
             hospital.UpdatedAt = DateTime.UtcNow;
+
+            await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
+            {
+                HospitalId = hospital.HospitalId,
+                Status = ApprovalStatus.Rejected,
+                Timestamp = DateTime.UtcNow,
+                AdminId = adminId,
+                Comments = dto.Reason,
+                ReportDocumentName = dto.ReportDocumentName,
+                ReportDocumentUrl = dto.ReportDocumentUrl
+            });
 
             await _context.SaveChangesAsync();
 
@@ -204,11 +233,38 @@ namespace LifeLink.Services.Admin
                 ApprovedAt = hospital.ApprovedAt,
                 ApprovedByAdminId = hospital.ApprovedByAdminId,
                 RejectionReason = hospital.RejectionReason,
+                RejectionReportUrl = hospital.RejectionReportUrl,
+                RejectionReportName = hospital.RejectionReportName,
+                RegistrationNumber = hospital.RegistrationNumber,
+                City = hospital.City,
+                ContactPersonName = hospital.ContactPersonName,
+                ContactPersonPhone = hospital.ContactPersonPhone,
+                ContactPersonEmail = hospital.ContactPersonEmail,
+                LicenseDocumentUrl = hospital.LicenseDocumentUrl,
+                LicenseDocumentName = hospital.LicenseDocumentName,
+                AccreditationDocumentUrl = hospital.AccreditationDocumentUrl,
+                AccreditationDocumentName = hospital.AccreditationDocumentName,
+                ResubmittedAt = hospital.ResubmittedAt,
+                UpdatedFields = hospital.UpdatedFields,
                 IsSuspended = hospital.IsSuspended,
                 SuspendedUntil = hospital.SuspendedUntil,
                 SuspensionReason = hospital.SuspensionReason,
                 CreatedAt = hospital.CreatedAt,
-                UpdatedAt = hospital.UpdatedAt
+                UpdatedAt = hospital.UpdatedAt,
+                ApprovalHistory = hospital.ApprovalHistories?
+                    .OrderBy(h => h.Timestamp)
+                    .Select(h => new LifeLink.DTOs.Hospitals.HospitalApprovalHistoryDto
+                    {
+                        Id = h.Id,
+                        Status = h.Status.ToString(),
+                        Timestamp = h.Timestamp,
+                        AdminId = h.AdminId,
+                        AdminName = h.AdminName ?? h.Admin?.FirstName,
+                        Comments = h.Comments,
+                        ReportDocumentName = h.ReportDocumentName,
+                        ReportDocumentUrl = h.ReportDocumentUrl,
+                        ChangedFields = h.ChangedFields
+                    }).ToList() ?? new List<LifeLink.DTOs.Hospitals.HospitalApprovalHistoryDto>()
             };
         }
 

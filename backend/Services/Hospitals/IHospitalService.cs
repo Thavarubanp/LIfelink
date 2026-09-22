@@ -11,5 +11,6 @@ namespace LifeLink.Services.Hospitals
         Task<List<HospitalResponseDto>> GetHospitalsAsync(bool? isVerified = null);
         Task<HospitalResponseDto?> GetHospitalByIdAsync(Guid hospitalId);
         Task<HospitalResponseDto?> VerifyHospitalAsync(Guid hospitalId, bool isVerified);
+        Task<HospitalResponseDto> ResubmitHospitalAsync(Guid hospitalId, ResubmitHospitalDto dto);
     }
 }

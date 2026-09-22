@@ -9,6 +9,7 @@ namespace LifeLink.Services.Complaints
     {
         Task<ComplaintResponseDto> CreateComplaintAsync(Guid? userId, Guid? hospitalId, CreateComplaintDto dto);
         Task<List<ComplaintResponseDto>> GetComplaintsAsync(string? status = null);
+        Task<List<ComplaintResponseDto>> GetMyComplaintsAsync(Guid userId);
         Task<ComplaintResponseDto?> GetComplaintByIdAsync(Guid complaintId);
         Task<ComplaintResponseDto> ReviewComplaintAsync(Guid complaintId, Guid adminId, ReviewComplaintDto? dto = null);
         Task<ComplaintResponseDto> RequestActivityReportAsync(Guid complaintId, Guid adminId, RequestActivityReportDto dto);

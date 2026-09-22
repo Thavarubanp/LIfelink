@@ -73,6 +73,21 @@ namespace LifeLink.Services.Complaints
             return list.Select(MapToDto).ToList();
         }
 
+        public async Task<List<ComplaintResponseDto>> GetMyComplaintsAsync(Guid userId)
+        {
+            var query = _context.Complaints
+                .Include(c => c.User)
+                .Include(c => c.Hospital)
+                .Include(c => c.AssignedAdmin)
+                .Include(c => c.ActivityReports)
+                .Include(c => c.AuditLogs)
+                    .ThenInclude(a => a.Admin)
+                .Where(c => c.UserId == userId);
+
+            var list = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
+            return list.Select(MapToDto).ToList();
+        }
+
         public async Task<ComplaintResponseDto?> GetComplaintByIdAsync(Guid complaintId)
         {
             var complaint = await _context.Complaints

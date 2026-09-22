@@ -25,6 +25,15 @@ namespace LifeLink.Services.BloodRequests
         {
             _logger.LogInformation("RequestExpiryBackgroundService is starting.");
 
+            try
+            {
+                await Task.Delay(5000, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
             using var timer = new PeriodicTimer(_period);
 
             while (!stoppingToken.IsCancellationRequested)

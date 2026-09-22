@@ -43,5 +43,24 @@ namespace LifeLink.Controllers
 
             return StatusCode(StatusCodes.Status201Created, ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint submitted successfully."));
         }
+
+        /// <summary>
+        /// Gets all complaints submitted by the currently authenticated user.
+        /// </summary>
+        [HttpGet("my-complaints")]
+        [HttpGet]
+        [ProducesResponseType(typeof(ApiResponse<System.Collections.Generic.List<ComplaintResponseDto>>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
+        public async Task<IActionResult> GetMyComplaints()
+        {
+            var userId = _currentUserService.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(ApiResponse<object>.Fail("User identity could not be retrieved from token."));
+            }
+
+            var result = await _complaintService.GetMyComplaintsAsync(userId.Value);
+            return Ok(ApiResponse<System.Collections.Generic.List<ComplaintResponseDto>>.Ok(result, "User complaints retrieved successfully."));
+        }
     }
 }

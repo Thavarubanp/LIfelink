@@ -228,7 +228,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task ForgotPasswordAsync_NonExistentEmail_DoesNotThrowAndDoesNotSendEmail()
+        public async Task ForgotPasswordAsync_NonExistentEmail_DoesNotThrowAndDoesNotSendOtp()
         {
             // Arrange
             var context = GetInMemoryDbContext();
@@ -243,11 +243,11 @@ namespace LifeLink.Tests
             await authService.ForgotPasswordAsync(new ForgotPasswordRequestDto { Email = "nonexistent@example.com" });
 
             // Assert
-            mockEmailService.Verify(e => e.SendPasswordResetEmailAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            mockEmailService.Verify(e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
-        public async Task ForgotPasswordAndResetPassword_ValidFlow_ResetsPasswordSuccessfully()
+        public async Task ForgotPasswordAndResetPassword_OtpFlow_ResetsPasswordSuccessfully()
         {
             // Arrange
             var context = GetInMemoryDbContext();
@@ -256,10 +256,10 @@ namespace LifeLink.Tests
             var passwordResetService = new PasswordResetService(context);
             var mockEmailService = new Mock<IEmailService>();
 
-            string? capturedToken = null;
+            string? capturedOtp = null;
             mockEmailService
-                .Setup(e => e.SendPasswordResetEmailAsync(It.IsAny<string>(), It.IsAny<string>()))
-                .Callback<string, string>((email, token) => capturedToken = token)
+                .Setup(e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .Callback<string, string>((email, otp) => capturedOtp = otp)
                 .Returns(Task.CompletedTask);
 
             var authService = new AuthService(context, passwordHasher, jwtService, passwordResetService, mockEmailService.Object);
@@ -273,26 +273,33 @@ namespace LifeLink.Tests
             };
             await authService.RegisterAsync(registerRequest);
 
-            // Act 1: Forgot Password
+            // Act 1: Forgot Password (generates 6-digit OTP)
             await authService.ForgotPasswordAsync(new ForgotPasswordRequestDto { Email = "reset@example.com" });
 
-            Assert.NotNull(capturedToken);
+            Assert.NotNull(capturedOtp);
+            Assert.Equal(6, capturedOtp.Length);
 
-            // Verify raw token is NOT stored in DB
-            var dbToken = await context.PasswordResetTokens.FirstOrDefaultAsync();
-            Assert.NotNull(dbToken);
-            Assert.NotEqual(capturedToken, dbToken.TokenHash);
+            // Act 2: Verify OTP
+            var verifyRes = await authService.VerifyOtpAsync(new VerifyOtpRequestDto
+            {
+                Email = "reset@example.com",
+                Otp = capturedOtp
+            });
 
-            // Act 2: Reset Password
+            Assert.NotNull(verifyRes);
+            Assert.True(verifyRes.Success);
+            Assert.False(string.IsNullOrWhiteSpace(verifyRes.ResetSessionToken));
+
+            // Act 3: Reset Password using resetSessionToken
             var resetRequest = new ResetPasswordRequestDto
             {
                 Email = "reset@example.com",
-                Token = capturedToken,
+                Token = verifyRes.ResetSessionToken,
                 NewPassword = "NewPassword123!"
             };
             await authService.ResetPasswordAsync(resetRequest);
 
-            // Act 3: Login with new password
+            // Act 4: Login with new password
             var loginResponse = await authService.LoginAsync(new LoginRequestDto
             {
                 Email = "reset@example.com",
@@ -339,6 +346,130 @@ namespace LifeLink.Tests
             });
 
             Assert.NotNull(loginRes);
+        }
+
+        [Fact]
+        public async Task ForgotPasswordAsync_AdminAccount_GeneratesOtpAndDispatchesEmail()
+        {
+            // Arrange
+            var context = GetInMemoryDbContext();
+            var passwordHasher = new PasswordHasherService();
+            var jwtService = new JwtService(GetMockConfiguration());
+            var passwordResetService = new PasswordResetService(context);
+            var mockEmailService = new Mock<IEmailService>();
+
+            string? sentEmail = null;
+            string? sentOtp = null;
+            mockEmailService
+                .Setup(e => e.SendPasswordResetOtpAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .Callback<string, string>((e, otp) => { sentEmail = e; sentOtp = otp; })
+                .Returns(Task.CompletedTask);
+
+            var authService = new AuthService(context, passwordHasher, jwtService, passwordResetService, mockEmailService.Object);
+
+            // Create Admin user in DB
+            var adminRole = context.Roles.First(r => r.Name == "Admin");
+            var adminUser = new User
+            {
+                UserId = Guid.NewGuid(),
+                FirstName = "Admin",
+                LastName = "Super",
+                Email = "admin@lifelink.org",
+                AccountStatus = AccountStatus.Active,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            adminUser.PasswordHash = passwordHasher.HashPassword(adminUser, "AdminPass123!");
+            context.Users.Add(adminUser);
+            context.UserRoles.Add(new UserRole { UserId = adminUser.UserId, RoleId = adminRole.RoleId });
+            await context.SaveChangesAsync();
+
+            // Act
+            await authService.ForgotPasswordAsync(new ForgotPasswordRequestDto { Email = "admin@lifelink.org" });
+
+            // Assert
+            Assert.NotNull(sentOtp);
+            Assert.Equal(6, sentOtp.Length);
+            Assert.Equal("admin@lifelink.org", sentEmail);
+
+            // Verify OTP works for reset session token
+            var verifyRes = await authService.VerifyOtpAsync(new VerifyOtpRequestDto
+            {
+                Email = "admin@lifelink.org",
+                Otp = sentOtp
+            });
+            Assert.NotNull(verifyRes);
+            Assert.True(verifyRes.Success);
+            Assert.False(string.IsNullOrWhiteSpace(verifyRes.ResetSessionToken));
+        }
+
+        [Fact]
+        public async Task RegisterAsync_EmailExistsAsHospital_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var context = GetInMemoryDbContext();
+            var passwordHasher = new PasswordHasherService();
+            var jwtService = new JwtService(GetMockConfiguration());
+            var passwordResetService = new PasswordResetService(context);
+            var mockEmailService = new Mock<IEmailService>();
+
+            context.Hospitals.Add(new Hospital
+            {
+                HospitalId = Guid.NewGuid(),
+                Name = "City General",
+                Email = "hospital@lifelink.org",
+                ContactNumber = "123456"
+            });
+            await context.SaveChangesAsync();
+
+            var authService = new AuthService(context, passwordHasher, jwtService, passwordResetService, mockEmailService.Object);
+
+            var req = new RegisterRequestDto
+            {
+                FirstName = "John",
+                LastName = "Doe",
+                Email = "hospital@lifelink.org",
+                Password = "Password123!"
+            };
+
+            // Act & Assert
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => authService.RegisterAsync(req));
+            Assert.Equal("An account with this email address already exists.", ex.Message);
+        }
+
+        [Fact]
+        public async Task RegisterAsync_EmailExistsAsDoctor_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            var context = GetInMemoryDbContext();
+            var passwordHasher = new PasswordHasherService();
+            var jwtService = new JwtService(GetMockConfiguration());
+            var passwordResetService = new PasswordResetService(context);
+            var mockEmailService = new Mock<IEmailService>();
+
+            context.Doctors.Add(new Doctor
+            {
+                DoctorId = Guid.NewGuid(),
+                HospitalId = Guid.NewGuid(),
+                FirstName = "Gregory",
+                LastName = "House",
+                Email = "doctor@lifelink.org"
+            });
+            await context.SaveChangesAsync();
+
+            var authService = new AuthService(context, passwordHasher, jwtService, passwordResetService, mockEmailService.Object);
+
+            var req = new RegisterRequestDto
+            {
+                FirstName = "Jane",
+                LastName = "Doe",
+                Email = "doctor@lifelink.org",
+                Password = "Password123!"
+            };
+
+            // Act & Assert
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => authService.RegisterAsync(req));
+            Assert.Equal("An account with this email address already exists.", ex.Message);
         }
     }
 }

@@ -109,7 +109,7 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Initiates password reset flow with anti-enumeration protection.
+        /// Initiates password reset flow by sending a 6-digit OTP code to the requested email (Anti-enumeration enabled).
         /// </summary>
         [HttpPost("forgot-password")]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
@@ -122,13 +122,50 @@ namespace LifeLink.Controllers
 
             await _authService.ForgotPasswordAsync(request);
             return Ok(ApiResponse<string>.Ok(
-                "If an account exists for this email, a password reset link has been sent.",
-                "Password reset link dispatched if email exists."
+                "If an account exists for this email, a 6-digit verification OTP code has been sent.",
+                "OTP verification code dispatched if account exists."
             ));
         }
 
         /// <summary>
-        /// Resets password using valid token.
+        /// Verifies a 6-digit OTP code and returns a reset session token upon success.
+        /// </summary>
+        [HttpPost("verify-otp")]
+        [ProducesResponseType(typeof(ApiResponse<VerifyOtpResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var result = await _authService.VerifyOtpAsync(request);
+            return Ok(ApiResponse<VerifyOtpResponseDto>.Ok(result, "OTP verified successfully."));
+        }
+
+        /// <summary>
+        /// Resends a 6-digit verification OTP code to the user's email.
+        /// </summary>
+        [HttpPost("resend-otp")]
+        [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> ResendOtp([FromBody] ResendOtpRequestDto request)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            await _authService.ResendOtpAsync(request);
+            return Ok(ApiResponse<string>.Ok(
+                "If an account exists, a new 6-digit OTP has been sent.",
+                "New OTP code dispatched if account exists."
+            ));
+        }
+
+        /// <summary>
+        /// Resets password after successful OTP verification.
         /// </summary>
         [HttpPost("reset-password")]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]

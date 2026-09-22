@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Common;
 using LifeLink.Data;
+using LifeLink.DTOs.Appeals;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Governance;
 using LifeLink.Entities;
@@ -31,7 +32,7 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Retrieves the current entity's suspension notice, reason, expiry, appeal status, and allowed actions.
+        /// Retrieves the current entity's suspension notice, reason, expiry, full appeal history, and allowed actions.
         /// </summary>
         [HttpGet]
         [ProducesResponseType(typeof(ApiResponse<GovernanceStatusDto>), StatusCodes.Status200OK)]
@@ -50,16 +51,27 @@ namespace LifeLink.Controllers
                 return NotFound(ApiResponse<object>.Fail("User not found."));
             }
 
-            // Check if user is also associated with a hospital as a doctor or staff
-            var doctor = await _context.Doctors.Include(d => d.Hospital).AsNoTracking().FirstOrDefaultAsync(d => d.UserId == userId.Value);
+            // Check if user is associated with a hospital as doctor/staff
+            var doctor = await _context.Doctors
+                .Include(d => d.Hospital)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(d => d.UserId == userId.Value);
 
-            bool isHospitalSuspended = doctor?.Hospital != null && doctor.Hospital.IsSuspended;
             bool isUserSuspended = user.IsSuspended;
+            bool isHospitalSuspended = doctor?.Hospital != null && doctor.Hospital.IsSuspended;
+            bool isPermanentlyBlocked = user.IsPermanentlyBlocked ||
+                                        (doctor?.Hospital != null && doctor.Hospital.IsPermanentlyBlocked);
 
-            var latestAppeal = await _context.Appeals
-                .Where(a => a.UserId == user.UserId || (doctor != null && a.HospitalId == doctor.HospitalId))
-                .OrderByDescending(a => a.SubmittedAt)
-                .FirstOrDefaultAsync();
+            // Fetch ALL appeals for this user/hospital, ordered oldest -> newest
+            var allAppeals = await _context.Appeals
+                .Include(a => a.ReviewedByAdmin)
+                .AsNoTracking()
+                .Where(a => a.UserId == user.UserId ||
+                            (doctor != null && a.HospitalId == doctor.HospitalId))
+                .OrderBy(a => a.SubmittedAt)
+                .ToListAsync();
+
+            var latestAppeal = allAppeals.LastOrDefault();
 
             var allowedActions = new List<string>
             {
@@ -78,12 +90,29 @@ namespace LifeLink.Controllers
             var dto = new GovernanceStatusDto
             {
                 IsSuspended = isUserSuspended || isHospitalSuspended,
-                SuspensionReason = isUserSuspended ? user.SuspensionReason : (isHospitalSuspended ? doctor?.Hospital.SuspensionReason : null),
-                SuspendedUntil = isUserSuspended ? user.SuspendedUntil : (isHospitalSuspended ? doctor?.Hospital.SuspendedUntil : null),
+                IsPermanentlyBlocked = isPermanentlyBlocked,
+                SuspensionReason = isUserSuspended
+                    ? user.SuspensionReason
+                    : (isHospitalSuspended ? doctor?.Hospital?.SuspensionReason : null),
+                SuspendedUntil = isUserSuspended
+                    ? user.SuspendedUntil
+                    : (isHospitalSuspended ? doctor?.Hospital?.SuspendedUntil : null),
                 AppealStatus = latestAppeal?.Status.ToString(),
                 HasPendingAppeal = latestAppeal?.Status == AppealStatus.PENDING,
                 SuspendedEntity = isUserSuspended ? "User" : (isHospitalSuspended ? "Hospital" : "None"),
-                AllowedActions = allowedActions
+                AllowedActions = allowedActions,
+                AllAppeals = allAppeals.Select(a => new AppealResponseDto
+                {
+                    AppealId = a.AppealId,
+                    UserId = a.UserId,
+                    HospitalId = a.HospitalId,
+                    Reason = a.Reason,
+                    Status = a.Status.ToString(),
+                    SubmittedAt = a.SubmittedAt,
+                    ReviewedByAdminId = a.ReviewedByAdminId,
+                    ReviewedAt = a.ReviewedAt,
+                    AdminResponse = a.AdminResponse
+                }).ToList()
             };
 
             return Ok(ApiResponse<GovernanceStatusDto>.Ok(dto, "Governance status retrieved successfully."));

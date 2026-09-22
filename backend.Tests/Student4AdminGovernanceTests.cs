@@ -100,7 +100,7 @@ namespace LifeLink.Tests
             Assert.Equal("HospitalApproved", notif.NotificationType);
 
             // Verify email dispatch
-            mockEmail.Verify(e => e.SendEmailAsync(hospital.Email, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(hospital.Email, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Once);
         }
 
         [Fact]
@@ -143,7 +143,72 @@ namespace LifeLink.Tests
             Assert.Equal(ApprovalStatus.Rejected, dbHospital.ApprovalStatus);
             Assert.False(dbHospital.IsVerified);
 
-            mockEmail.Verify(e => e.SendEmailAsync(hospital.Email, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(hospital.Email, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task Hospital_Rejection_With_Report_And_Resubmission_Workflow()
+        {
+            // Arrange
+            var context = GetInMemoryDbContext();
+            var mockEmail = new Mock<IEmailService>();
+            var notifService = new AdminNotificationService(context, mockEmail.Object, NullLogger<AdminNotificationService>.Instance);
+            var adminService = new AdminService(context, notifService);
+            var hospitalService = new LifeLink.Services.Hospitals.HospitalService(context);
+
+            var adminId = Guid.NewGuid();
+            var hospital = new Hospital
+            {
+                HospitalId = Guid.NewGuid(),
+                Name = "Apex Hospital",
+                LicenseNumber = "PHSRC/PH/999",
+                Address = "Old Address",
+                ContactNumber = "0112223334",
+                Email = "admin@apexhospital.org",
+                ApprovalStatus = ApprovalStatus.Pending,
+                IsVerified = false
+            };
+            await context.Hospitals.AddAsync(hospital);
+            await context.SaveChangesAsync();
+
+            // Act 1: Admin rejects with report
+            var rejectDto = new RejectHospitalDto
+            {
+                Reason = "Please re-upload valid 2026 accreditation certificate.",
+                ReportDocumentName = "Audit_Report.pdf",
+                ReportDocumentUrl = "data:application/pdf;base64,dGVzdA=="
+            };
+            var rejectResult = await adminService.RejectHospitalAsync(hospital.HospitalId, adminId, rejectDto);
+
+            // Assert rejection
+            Assert.Equal("Rejected", rejectResult.ApprovalStatus);
+            Assert.Equal("Audit_Report.pdf", rejectResult.RejectionReportName);
+            Assert.Equal("data:application/pdf;base64,dGVzdA==", rejectResult.RejectionReportUrl);
+
+            // Act 2: Hospital resubmits with updated information
+            var resubmitDto = new LifeLink.DTOs.Hospitals.ResubmitHospitalDto
+            {
+                Name = "Apex Hospital Colombo",
+                Address = "New Healthcare Blvd, Colombo",
+                City = "Colombo",
+                AccreditationDocumentName = "Accreditation_2026.pdf",
+                AccreditationDocumentUrl = "data:application/pdf;base64,bmV3",
+                Comments = "Attached renewed 2026 certificate and corrected facility address."
+            };
+            var resubmitResult = await hospitalService.ResubmitHospitalAsync(hospital.HospitalId, resubmitDto);
+
+            // Assert resubmission
+            Assert.Equal("Resubmitted", resubmitResult.ApprovalStatus);
+            Assert.Equal("Apex Hospital Colombo", resubmitResult.Name);
+            Assert.Equal("Colombo", resubmitResult.City);
+            Assert.Contains("Hospital Name", resubmitResult.UpdatedFields!);
+            Assert.Contains("Address", resubmitResult.UpdatedFields!);
+            Assert.NotNull(resubmitResult.ResubmittedAt);
+            Assert.NotEmpty(resubmitResult.ApprovalHistory);
+
+            // Verify queue includes resubmitted hospital
+            var pendingQueue = await adminService.GetPendingHospitalsAsync();
+            Assert.Contains(pendingQueue, h => h.HospitalId == hospital.HospitalId && h.ApprovalStatus == "Resubmitted");
         }
 
         #endregion
@@ -192,7 +257,7 @@ namespace LifeLink.Tests
             Assert.True(dbUser.IsSuspended);
             Assert.Equal(AccountStatus.Suspended, dbUser.AccountStatus);
 
-            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("Appeal Instructions"))), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("Appeal Instructions")), It.IsAny<bool>()), Times.Once);
         }
 
         [Fact]
@@ -233,7 +298,7 @@ namespace LifeLink.Tests
             Assert.False(dbUser.IsSuspended);
             Assert.Equal(AccountStatus.Active, dbUser.AccountStatus);
 
-            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.IsAny<string>()), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Once);
         }
 
         #endregion
@@ -348,7 +413,7 @@ namespace LifeLink.Tests
             Assert.Equal(4, resolved.AuditLogs.Count);
 
             // Verify complainant notification and email dispatch
-            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("RESOLVED"))), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("RESOLVED")), It.IsAny<bool>()), Times.Once);
         }
 
         [Fact]
@@ -505,7 +570,7 @@ namespace LifeLink.Tests
             Assert.Equal(AccountStatus.Active, dbUser.AccountStatus);
 
             // Verify notification and email
-            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("APPROVED"))), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("APPROVED")), It.IsAny<bool>()), Times.Once);
         }
 
         [Fact]
@@ -595,7 +660,7 @@ namespace LifeLink.Tests
             Assert.True(dbUser.IsSuspended);
             Assert.Equal(AccountStatus.Suspended, dbUser.AccountStatus);
 
-            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("REJECTED"))), Times.Once);
+            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("REJECTED")), It.IsAny<bool>()), Times.Once);
         }
 
         #endregion

@@ -32,13 +32,17 @@ namespace LifeLink.Services.Appeals
                 throw new ArgumentException("Appeal must specify either a UserId or HospitalId.");
             }
 
-            // Verify that the entity is actually suspended
+            // Verify that the entity is suspended and not permanently blocked
             if (userId.HasValue)
             {
                 var user = await _context.Users.FindAsync(userId.Value);
                 if (user == null)
                 {
                     throw new KeyNotFoundException($"User with ID {userId.Value} was not found.");
+                }
+                if (user.IsPermanentlyBlocked)
+                {
+                    throw new InvalidOperationException("Your account has been permanently blocked. You cannot submit further appeals.");
                 }
                 if (!user.IsSuspended && user.AccountStatus != AccountStatus.Suspended)
                 {
@@ -51,6 +55,10 @@ namespace LifeLink.Services.Appeals
                 if (hospital == null)
                 {
                     throw new KeyNotFoundException($"Hospital with ID {hospitalId.Value} was not found.");
+                }
+                if (hospital.IsPermanentlyBlocked)
+                {
+                    throw new InvalidOperationException("This hospital has been permanently blocked. You cannot submit further appeals.");
                 }
                 if (!hospital.IsSuspended)
                 {
@@ -104,11 +112,16 @@ namespace LifeLink.Services.Appeals
 
         public async Task<List<AppealResponseDto>> GetMyAppealsAsync(Guid userId)
         {
+            // Also include hospital appeals for hospital staff
+            var doctor = await _context.Doctors.AsNoTracking()
+                .FirstOrDefaultAsync(d => d.UserId == userId);
+
             var list = await _context.Appeals
                 .Include(a => a.User)
                 .Include(a => a.Hospital)
                 .Include(a => a.ReviewedByAdmin)
-                .Where(a => a.UserId == userId)
+                .Where(a => a.UserId == userId ||
+                            (doctor != null && a.HospitalId == doctor.HospitalId))
                 .OrderByDescending(a => a.SubmittedAt)
                 .ToListAsync();
 
@@ -177,6 +190,46 @@ namespace LifeLink.Services.Appeals
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyAppealRejectedAsync(appeal);
+
+            return await GetAppealByIdAsync(appealId) ?? MapToDto(appeal);
+        }
+
+        public async Task<AppealResponseDto> PermanentlyBlockAsync(Guid appealId, Guid adminId, ReviewAppealDto dto)
+        {
+            var appeal = await _context.Appeals.FindAsync(appealId);
+            if (appeal == null)
+            {
+                throw new KeyNotFoundException($"Appeal with ID {appealId} was not found.");
+            }
+
+            // Mark this appeal as rejected
+            appeal.Status = AppealStatus.REJECTED;
+            appeal.ReviewedByAdminId = adminId;
+            appeal.ReviewedAt = DateTime.UtcNow;
+            appeal.AdminResponse = dto.AdminResponse.Trim();
+
+            // Set permanent block on the entity
+            if (appeal.UserId.HasValue)
+            {
+                var user = await _context.Users.FindAsync(appeal.UserId.Value);
+                if (user != null)
+                {
+                    user.IsPermanentlyBlocked = true;
+                    user.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            if (appeal.HospitalId.HasValue)
+            {
+                var hospital = await _context.Hospitals.FindAsync(appeal.HospitalId.Value);
+                if (hospital != null)
+                {
+                    hospital.IsPermanentlyBlocked = true;
+                    hospital.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            await _context.SaveChangesAsync();
 
             return await GetAppealByIdAsync(appealId) ?? MapToDto(appeal);
         }

@@ -50,5 +50,19 @@ namespace LifeLink.Controllers
             if (updated == null) return NotFound(new { message = $"Hospital with ID {id} not found." });
             return Ok(updated);
         }
+
+        [HttpPut("{id:guid}/resubmit")]
+        public async Task<IActionResult> ResubmitHospital(Guid id, [FromBody] ResubmitHospitalDto dto)
+        {
+            try
+            {
+                var result = await _hospitalService.ResubmitHospitalAsync(id, dto);
+                return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+        }
     }
 }

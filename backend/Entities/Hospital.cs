@@ -18,9 +18,25 @@ namespace LifeLink.Entities
         public DateTime? ApprovedAt { get; set; }
         public Guid? ApprovedByAdminId { get; set; }
         public string? RejectionReason { get; set; }
+        public string? RejectionReportUrl { get; set; }
+        public string? RejectionReportName { get; set; }
         public bool IsSuspended { get; set; } = false;
         public DateTime? SuspendedUntil { get; set; }
         public string? SuspensionReason { get; set; }
+        public bool IsPermanentlyBlocked { get; set; } = false;
+
+        // Registration details & Documents
+        public string? RegistrationNumber { get; set; }
+        public string? City { get; set; }
+        public string? ContactPersonName { get; set; }
+        public string? ContactPersonPhone { get; set; }
+        public string? ContactPersonEmail { get; set; }
+        public string? LicenseDocumentUrl { get; set; }
+        public string? LicenseDocumentName { get; set; }
+        public string? AccreditationDocumentUrl { get; set; }
+        public string? AccreditationDocumentName { get; set; }
+        public DateTime? ResubmittedAt { get; set; }
+        public string? UpdatedFields { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -32,5 +48,6 @@ namespace LifeLink.Entities
         public ICollection<EmergencyRequest> EmergencyRequests { get; set; } = new List<EmergencyRequest>();
         public ICollection<HospitalTransferRequest> SentTransferRequests { get; set; } = new List<HospitalTransferRequest>();
         public ICollection<HospitalTransferRequest> ReceivedTransferRequests { get; set; } = new List<HospitalTransferRequest>();
+        public ICollection<HospitalApprovalHistory> ApprovalHistories { get; set; } = new List<HospitalApprovalHistory>();
     }
 }

@@ -6,6 +6,7 @@ using LifeLink.Data;
 using LifeLink.DTOs.Doctors;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Doctors
 {
@@ -24,6 +25,14 @@ namespace LifeLink.Services.Doctors
             if (hospital == null)
             {
                 throw new InvalidOperationException($"Hospital with ID {dto.HospitalId} was not found.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.Email))
+            {
+                if (await EmailUniquenessHelper.IsEmailTakenAsync(_context, dto.Email))
+                {
+                    throw new InvalidOperationException("An account with this email address already exists.");
+                }
             }
 
             var doctor = new Doctor
