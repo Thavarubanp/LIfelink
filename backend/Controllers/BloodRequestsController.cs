@@ -141,7 +141,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Creator permanently deletes their own rejected request and all related records.
+        /// Creator permanently deletes their own request (any status except Completed) and all related records.
+        /// The assigned doctor, the hospital and donors with active acceptances are notified.
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize]
@@ -159,7 +160,7 @@ namespace LifeLink.Controllers
 
             try
             {
-                await _bloodRequestService.DeleteRejectedRequestAsync(id, userId.Value);
+                await _bloodRequestService.DeleteRequestAsync(id, userId.Value);
                 return NoContent();
             }
             catch (KeyNotFoundException ex)

@@ -9,7 +9,7 @@ import { Trash2, Loader2, X, AlertTriangle } from 'lucide-react';
 
 /**
  * "My Requests" list shown below the Create Blood Request form.
- * Rejected requests show their rejection reason; only the creator can permanently delete them.
+ * Rejected requests show their rejection reason. The creator can permanently delete any request except Completed ones.
  * Pass a changing `refreshKey` to reload after a new request is created.
  */
 export const MyRequestsList = ({ refreshKey = 0 }) => {
@@ -35,7 +35,8 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
     fetchMy();
   }, [refreshKey, reloadKey]);
 
-  const canDelete = (row) => row.status === 'Rejected' && row.patientUserId === user?.userId;
+  // Creator can delete any of their requests except Completed ones (mirrors the backend rule)
+  const canDelete = (row) => row.status !== 'Completed' && row.patientUserId === user?.userId;
 
   const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
@@ -44,7 +45,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       await bloodRequestApi.deleteRequest(deleteTarget.bloodRequestId);
       addToast({
         title: 'Request Deleted',
-        message: 'The rejected request and its related records were permanently removed.',
+        message: 'The request and its related records were permanently removed. Affected parties were notified.',
         type: 'success'
       });
       setDeleteTarget(null);
@@ -151,7 +152,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-rose-600" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Delete Rejected Request</h3>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Delete Blood Request</h3>
               </div>
               <button onClick={() => setDeleteTarget(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
                 <X className="w-4 h-4" />
@@ -159,7 +160,9 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Request <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">#{String(deleteTarget.bloodRequestId).substring(0, 8)}</span>{' '}
-              ({deleteTarget.bloodGroup}, {deleteTarget.unitsRequired} units) and all of its related records will be permanently deleted. This cannot be undone.
+              ({deleteTarget.bloodGroup}, {deleteTarget.unitsRequired} units) and all of its related records, including any donor
+              acceptances, will be permanently deleted. The assigned doctor, the hospital and donors who accepted will be notified.
+              This cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button

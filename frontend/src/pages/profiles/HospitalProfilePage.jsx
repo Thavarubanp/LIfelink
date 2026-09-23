@@ -12,16 +12,41 @@ import {
   ArrowLeft,
   Droplet,
   AlertCircle,
-  Loader2
+  Loader2,
+  Pencil
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
+import EditProfileModal from '../../components/common/EditProfileModal';
+
+// Email, license number and registration number are not editable
+const HOSPITAL_EDIT_FIELDS = [
+  { name: 'name', label: 'Hospital Name', fullWidth: true },
+  { name: 'address', label: 'Address', fullWidth: true },
+  { name: 'city', label: 'City' },
+  { name: 'contactNumber', label: 'Contact Number', type: 'tel', placeholder: '10 digits' },
+  { name: 'contactPersonName', label: 'Contact Person Name' },
+  { name: 'contactPersonPhone', label: 'Contact Person Phone', type: 'tel', placeholder: '10 digits' },
+  { name: 'contactPersonEmail', label: 'Contact Person Email', type: 'email', fullWidth: true }
+];
 
 export const HospitalProfilePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  const { addToast } = useNotification();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  const handleSave = async (values) => {
+    const updated = await profileApi.updateHospitalProfile(profile.hospitalId, values);
+    setProfile(updated);
+    setEditing(false);
+    addToast({ title: 'Profile Updated', message: 'Your hospital profile changes were saved.', type: 'success' });
+  };
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -96,6 +121,14 @@ export const HospitalProfilePage = () => {
               <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                 Pending Verification
               </span>
+            )}
+            {profile.canEdit && !currentUser?.isSuspended && (
+              <button
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit Profile
+              </button>
             )}
           </div>
         </div>
@@ -245,6 +278,16 @@ export const HospitalProfilePage = () => {
           </div>
         )}
       </div>
+
+      {editing && (
+        <EditProfileModal
+          title="Edit Hospital Profile"
+          fields={HOSPITAL_EDIT_FIELDS}
+          initialValues={profile}
+          onSave={handleSave}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 };

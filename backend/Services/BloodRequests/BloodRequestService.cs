@@ -146,7 +146,13 @@ namespace LifeLink.Services.BloodRequests
             return await MapManyAsync(requests);
         }
 
-        public async Task DeleteRejectedRequestAsync(Guid requestId, Guid creatorUserId)
+        /// <summary>
+        /// Creator permanently deletes their request (any status except Completed) with all related records,
+        /// and notifies the assigned doctor, the hospital (unless it deleted its own request) and donors with
+        /// active acceptances or matches. Notifications and deletion are saved in one SaveChanges.
+        /// Inventory transactions are never touched.
+        /// </summary>
+        public async Task DeleteRequestAsync(Guid requestId, Guid creatorUserId)
         {
             var request = await _context.BloodRequests.FindAsync(requestId);
             if (request == null)
@@ -159,17 +165,20 @@ namespace LifeLink.Services.BloodRequests
                 throw new UnauthorizedAccessException("Only the request creator can delete this blood request.");
             }
 
-            if (request.Status != BloodRequestStatus.Rejected)
+            if (request.Status == BloodRequestStatus.Completed)
             {
-                throw new InvalidOperationException("Only rejected blood requests can be deleted.");
+                // Completed requests represent fulfilled donations (and stock already added to inventory)
+                throw new InvalidOperationException("Completed blood requests cannot be deleted.");
             }
 
             // Related tables reference BloodRequestId without FK cascades, so remove them explicitly.
             // A single SaveChanges keeps the whole delete atomic.
-            var acceptanceIds = await _context.Acceptances
+            var acceptances = await _context.Acceptances
                 .Where(a => a.BloodRequestId == requestId)
-                .Select(a => a.AcceptanceId)
                 .ToListAsync();
+            var acceptanceIds = acceptances.Select(a => a.AcceptanceId).ToList();
+
+            await AddDeletionNotificationsAsync(request, acceptances);
 
             _context.DonorVerifications.RemoveRange(
                 _context.DonorVerifications.Where(v => acceptanceIds.Contains(v.AcceptanceId)));
@@ -184,6 +193,72 @@ namespace LifeLink.Services.BloodRequests
             _context.BloodRequests.Remove(request);
 
             await _context.SaveChangesAsync();
+        }
+
+        // Staged on the same context as the delete so both commit (or fail) together
+        private async Task AddDeletionNotificationsAsync(BloodRequest request, List<Acceptance> acceptances)
+        {
+            var now = DateTime.UtcNow;
+            var hospitalName = await _context.Hospitals
+                .Where(h => h.HospitalId == request.HospitalId)
+                .Select(h => h.Name)
+                .FirstOrDefaultAsync() ?? "the hospital";
+            var summary = $"Blood request #{request.BloodRequestId.ToString()[..8]} ({request.BloodGroup}, {request.UnitsRequired} unit(s)) at {hospitalName}";
+
+            LifeLink.Entities.Notification Build(Guid? userId, Guid? hospitalId, string role, string message) => new()
+            {
+                NotificationId = Guid.NewGuid(),
+                UserId = userId,
+                HospitalId = hospitalId,
+                Title = "Blood Request Deleted",
+                Message = message,
+                NotificationType = "BloodRequestDeleted",
+                RecipientRole = role,
+                IsRead = false,
+                CreatedAt = now
+            };
+
+            var notifications = new List<LifeLink.Entities.Notification>();
+
+            // Assigned doctor (pending or decided), if the doctor still exists
+            var assignedDoctorUserId = await _context.BloodRequestVerifications
+                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null)
+                .OrderByDescending(v => v.UpdatedAt)
+                .Select(v => v.Doctor!.UserId)
+                .FirstOrDefaultAsync();
+            if (assignedDoctorUserId.HasValue)
+            {
+                notifications.Add(Build(assignedDoctorUserId, null, "Doctor",
+                    $"{summary} assigned to you was deleted by its creator."));
+            }
+
+            // Hospital, unless the hospital itself created (and is now deleting) the request
+            var createdByHospital = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
+            if (!createdByHospital)
+            {
+                notifications.Add(Build(null, request.HospitalId, "HospitalStaff",
+                    $"{summary} sent to your hospital was deleted by its creator."));
+            }
+
+            // Donors with active acceptances (not cancelled/rejected) or active matches
+            var matchedDonorIds = await _context.DonorPatientMatches
+                .Where(m => m.BloodRequestId == request.BloodRequestId && m.Status != MatchStatus.Cancelled)
+                .Select(m => m.DonorUserId)
+                .ToListAsync();
+            var donorIds = acceptances
+                .Where(a => a.Status != AcceptanceStatus.Cancelled && a.Status != AcceptanceStatus.Rejected)
+                .Select(a => a.DonorUserId)
+                .Concat(matchedDonorIds)
+                .Where(id => id != request.PatientUserId)
+                .Distinct();
+            foreach (var donorId in donorIds)
+            {
+                notifications.Add(Build(donorId, null, "Donor",
+                    $"{summary} that you accepted was deleted by its creator. No further action is needed."));
+            }
+
+            await _context.Notifications.AddRangeAsync(notifications);
         }
 
         public async Task<BloodRequestResponseDto?> GetRequestByIdAsync(Guid requestId)

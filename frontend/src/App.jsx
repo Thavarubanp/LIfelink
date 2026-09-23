@@ -23,7 +23,7 @@ import AvailableRequestsPage from './pages/donor/AvailableRequestsPage';
 import RequestDetailPage from './pages/donor/RequestDetailPage';
 import CreatePatientRequestPage from './pages/donor/CreatePatientRequestPage';
 import MyAcceptancesPage from './pages/donor/MyAcceptancesPage';
-import DonorProfilePage from './pages/donor/DonorProfilePage';
+import MyProfilePage from './pages/profiles/MyProfilePage';
 import DonorComplaintsPage from './pages/donor/DonorComplaintsPage';
 
 // Doctor Pages
@@ -143,7 +143,7 @@ export function App() {
               <Route path="/donor/requests/:id" element={<RequestDetailPage />} />
               <Route path="/donor/my-requests" element={<Navigate to="/donor/requests/create" replace />} />
               <Route path="/donor/acceptances" element={<MyAcceptancesPage />} />
-              <Route path="/donor/profile" element={<DonorProfilePage />} />
+              <Route path="/donor/profile" element={<Navigate to="/my-profile" replace />} />
               <Route path="/donor/complaints" element={<DonorComplaintsPage />} />
               <Route path="/complaints" element={<DonorComplaintsPage />} />
 
@@ -242,6 +242,7 @@ export function App() {
               />
 
               {/* Profiles Module (Accessible to all authenticated users) */}
+              <Route path="/my-profile" element={<MyProfilePage />} />
               <Route path="/profiles/hospital/:id" element={<HospitalProfilePage />} />
               <Route path="/profiles/user/:id" element={<UserProfilePage />} />
               <Route path="/profiles/doctor/:id" element={<DoctorProfilePage />} />

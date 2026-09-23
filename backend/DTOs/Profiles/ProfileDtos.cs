@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace LifeLink.DTOs.Profiles
 {
@@ -20,6 +21,7 @@ namespace LifeLink.DTOs.Profiles
         public DateTime CreatedAt { get; set; }
         public int DoctorCount { get; set; }
         public bool CanViewInventory { get; set; }
+        public bool CanEdit { get; set; }
         public List<HospitalInventoryItemDto>? Inventory { get; set; }
     }
 
@@ -45,6 +47,7 @@ namespace LifeLink.DTOs.Profiles
         public List<string> Roles { get; set; } = new();
         public string AccountStatus { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+        public bool CanEdit { get; set; }
     }
 
     public class DoctorProfileDto
@@ -61,5 +64,86 @@ namespace LifeLink.DTOs.Profiles
         public string HospitalAddress { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
+        public bool CanEdit { get; set; }
+    }
+
+    // Own-profile edit DTOs. Email (and a hospital's license/registration numbers) are intentionally not editable.
+
+    public class UpdateUserProfileDto
+    {
+        [Required(ErrorMessage = "First name is required.")]
+        [StringLength(100, ErrorMessage = "First name cannot exceed 100 characters.")]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Last name is required.")]
+        [StringLength(100, ErrorMessage = "Last name cannot exceed 100 characters.")]
+        public string LastName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Phone number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Phone number must be exactly 10 digits.")]
+        public string PhoneNumber { get; set; } = string.Empty;
+
+        [StringLength(20, ErrorMessage = "Gender cannot exceed 20 characters.")]
+        public string? Gender { get; set; }
+
+        [StringLength(500, ErrorMessage = "Address cannot exceed 500 characters.")]
+        public string? Address { get; set; }
+    }
+
+    public class UpdateDoctorProfileDto
+    {
+        [Required(ErrorMessage = "First name is required.")]
+        [StringLength(100, ErrorMessage = "First name cannot exceed 100 characters.")]
+        public string FirstName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Last name is required.")]
+        [StringLength(100, ErrorMessage = "Last name cannot exceed 100 characters.")]
+        public string LastName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Phone number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Phone number must be exactly 10 digits.")]
+        public string PhoneNumber { get; set; } = string.Empty;
+
+        [StringLength(100, ErrorMessage = "Specialization cannot exceed 100 characters.")]
+        public string? Specialization { get; set; }
+
+        [Required(ErrorMessage = "SLMC number is required.")]
+        [StringLength(100, ErrorMessage = "SLMC number cannot exceed 100 characters.")]
+        public string LicenseNumber { get; set; } = string.Empty; // SLMC Registration Number
+    }
+
+    public class UpdateHospitalProfileDto
+    {
+        [Required(ErrorMessage = "Hospital name is required.")]
+        [StringLength(200, ErrorMessage = "Hospital name cannot exceed 200 characters.")]
+        public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Address is required.")]
+        [StringLength(500, ErrorMessage = "Address cannot exceed 500 characters.")]
+        public string Address { get; set; } = string.Empty;
+
+        [StringLength(100, ErrorMessage = "City cannot exceed 100 characters.")]
+        public string? City { get; set; }
+
+        [Required(ErrorMessage = "Contact number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Contact number must be exactly 10 digits.")]
+        public string ContactNumber { get; set; } = string.Empty;
+
+        [StringLength(200, ErrorMessage = "Contact person name cannot exceed 200 characters.")]
+        public string? ContactPersonName { get; set; }
+
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Contact person phone must be exactly 10 digits.")]
+        public string? ContactPersonPhone { get; set; }
+
+        [EmailAddress(ErrorMessage = "Invalid contact person email address.")]
+        [StringLength(200, ErrorMessage = "Contact person email cannot exceed 200 characters.")]
+        public string? ContactPersonEmail { get; set; }
+    }
+
+    /// <summary>Which profile page belongs to the caller: Type is "user", "doctor" or "hospital".</summary>
+    public class MyProfileDto
+    {
+        public string Type { get; set; } = string.Empty;
+        public Guid Id { get; set; }
     }
 }

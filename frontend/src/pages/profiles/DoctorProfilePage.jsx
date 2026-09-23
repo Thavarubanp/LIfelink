@@ -10,16 +10,38 @@ import {
   ArrowLeft,
   AlertCircle,
   Loader2,
-  Award
+  Award,
+  Pencil
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
+import EditProfileModal from '../../components/common/EditProfileModal';
+
+const DOCTOR_EDIT_FIELDS = [
+  { name: 'firstName', label: 'First Name' },
+  { name: 'lastName', label: 'Last Name' },
+  { name: 'phoneNumber', label: 'Phone Number', type: 'tel', placeholder: '10 digits' },
+  { name: 'specialization', label: 'Specialization' },
+  { name: 'licenseNumber', label: 'SLMC Registration Number', placeholder: 'e.g. SLMC/2024/12345', fullWidth: true }
+];
 
 export const DoctorProfilePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user: currentUser } = useAuth();
+  const { addToast } = useNotification();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  const handleSave = async (values) => {
+    const updated = await profileApi.updateDoctorProfile(profile.doctorId, values);
+    setProfile(updated);
+    setEditing(false);
+    addToast({ title: 'Profile Updated', message: 'Your profile changes were saved.', type: 'success' });
+  };
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -105,6 +127,14 @@ export const DoctorProfilePage = () => {
               </span>
             </div>
           </div>
+          {profile.canEdit && !currentUser?.isSuspended && (
+            <button
+              onClick={() => setEditing(true)}
+              className="ml-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit Profile
+            </button>
+          )}
         </div>
 
         {/* Credentials Grid */}
@@ -173,6 +203,16 @@ export const DoctorProfilePage = () => {
           )}
         </div>
       </div>
+
+      {editing && (
+        <EditProfileModal
+          title="Edit My Doctor Profile"
+          fields={DOCTOR_EDIT_FIELDS}
+          initialValues={profile}
+          onSave={handleSave}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 };

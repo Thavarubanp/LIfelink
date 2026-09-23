@@ -217,6 +217,10 @@ namespace LifeLink.Services.Transfer
 
         private async Task EnsureHospitalExistsAsync(Guid hospitalId)
         {
+            // An empty ID would make EF generate a fresh key, adding a new "Hospital 00000000" placeholder on every call
+            if (hospitalId == Guid.Empty)
+                throw new InvalidOperationException("A valid hospital ID is required.");
+
             var hospital = await _context.Hospitals.FindAsync(hospitalId);
             if (hospital == null)
             {

@@ -10,18 +10,38 @@ import {
   ArrowLeft,
   AlertCircle,
   Loader2,
-  Sparkles
+  Sparkles,
+  Pencil
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
+import EditProfileModal from '../../components/common/EditProfileModal';
+
+const USER_EDIT_FIELDS = [
+  { name: 'firstName', label: 'First Name' },
+  { name: 'lastName', label: 'Last Name' },
+  { name: 'phoneNumber', label: 'Phone Number', type: 'tel', placeholder: '10 digits' },
+  { name: 'gender', label: 'Gender', options: ['Male', 'Female', 'Other'] },
+  { name: 'address', label: 'Address', fullWidth: true }
+];
 
 export const UserProfilePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
+  const { addToast } = useNotification();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+
+  const handleSave = async (values) => {
+    const updated = await profileApi.updateUserProfile(profile.userId, values);
+    setProfile(updated);
+    setEditing(false);
+    addToast({ title: 'Profile Updated', message: 'Your profile changes were saved.', type: 'success' });
+  };
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -115,6 +135,14 @@ export const UserProfilePage = () => {
               </span>
             </div>
           </div>
+          {profile.canEdit && !currentUser?.isSuspended && (
+            <button
+              onClick={() => setEditing(true)}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit Profile
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 text-xs">
@@ -153,6 +181,16 @@ export const UserProfilePage = () => {
           </div>
         </div>
       </div>
+
+      {editing && (
+        <EditProfileModal
+          title="Edit My Profile"
+          fields={USER_EDIT_FIELDS}
+          initialValues={profile}
+          onSave={handleSave}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   );
 };

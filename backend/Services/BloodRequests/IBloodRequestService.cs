@@ -11,7 +11,7 @@ namespace LifeLink.Services.BloodRequests
         Task<IEnumerable<BloodRequestResponseDto>> GetMyRequestsAsync(Guid patientUserId);
         Task<IEnumerable<BloodRequestResponseDto>> GetHospitalRequestsAsync(Guid hospitalId);
         Task<IEnumerable<BloodRequestResponseDto>> GetAssignedRequestsAsync(Guid doctorUserId);
-        Task DeleteRejectedRequestAsync(Guid requestId, Guid creatorUserId);
+        Task DeleteRequestAsync(Guid requestId, Guid creatorUserId);
         Task<BloodRequestResponseDto?> GetRequestByIdAsync(Guid requestId);
         Task<IEnumerable<BloodRequestResponseDto>> GetPublicRequestsAsync(string? bloodGroup = null, int? expiringWithinHours = null);
         Task<IEnumerable<BloodRequestResponseDto>> GetPendingRequestsAsync(Guid? hospitalId = null);

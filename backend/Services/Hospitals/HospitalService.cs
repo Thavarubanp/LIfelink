@@ -35,6 +35,13 @@ namespace LifeLink.Services.Hospitals
                 }
             }
 
+            // Registration number is unique system-wide (stored trimmed + upper-cased; unique index is the final guard)
+            var registrationNumber = NormalizeRegistrationNumber(dto.RegistrationNumber ?? dto.LicenseNumber);
+            if (registrationNumber != null && await IsRegistrationNumberTakenAsync(registrationNumber))
+            {
+                throw new InvalidOperationException(DuplicateRegistrationMessage);
+            }
+
             var hospital = new Hospital
             {
                 HospitalId = Guid.NewGuid(),
@@ -43,7 +50,7 @@ namespace LifeLink.Services.Hospitals
                 Address = dto.Address?.Trim() ?? string.Empty,
                 ContactNumber = dto.ContactNumber?.Trim() ?? string.Empty,
                 Email = normalizedEmail,
-                RegistrationNumber = dto.RegistrationNumber?.Trim() ?? dto.LicenseNumber?.Trim(),
+                RegistrationNumber = registrationNumber,
                 City = dto.City?.Trim(),
                 ContactPersonName = dto.ContactPersonName?.Trim(),
                 ContactPersonPhone = dto.ContactPersonPhone?.Trim(),
@@ -103,7 +110,7 @@ namespace LifeLink.Services.Hospitals
                 }
             }
 
-            await _context.SaveChangesAsync();
+            await SaveWithRegistrationNumberGuardAsync();
 
             return MapToResponseDto(hospital);
         }
@@ -179,10 +186,15 @@ namespace LifeLink.Services.Hospitals
                 changedFields.Add("License Number");
                 hospital.LicenseNumber = dto.LicenseNumber.Trim();
             }
-            if (!string.IsNullOrWhiteSpace(dto.RegistrationNumber) && dto.RegistrationNumber.Trim() != hospital.RegistrationNumber)
+            var registrationNumber = NormalizeRegistrationNumber(dto.RegistrationNumber);
+            if (registrationNumber != null && registrationNumber != hospital.RegistrationNumber)
             {
+                if (await IsRegistrationNumberTakenAsync(registrationNumber, hospital.HospitalId))
+                {
+                    throw new InvalidOperationException(DuplicateRegistrationMessage);
+                }
                 changedFields.Add("Registration Number");
-                hospital.RegistrationNumber = dto.RegistrationNumber.Trim();
+                hospital.RegistrationNumber = registrationNumber;
             }
             if (!string.IsNullOrWhiteSpace(dto.Address) && dto.Address.Trim() != hospital.Address)
             {
@@ -242,8 +254,37 @@ namespace LifeLink.Services.Hospitals
             };
             await _context.HospitalApprovalHistories.AddAsync(history);
 
-            await _context.SaveChangesAsync();
+            await SaveWithRegistrationNumberGuardAsync();
             return MapToResponseDto(hospital);
+        }
+
+        private const string DuplicateRegistrationMessage = "A hospital with this registration number already exists.";
+
+        /// <summary>Registration numbers are stored trimmed + upper-cased; blank becomes null (no NOT NULL constraint).</summary>
+        private static string? NormalizeRegistrationNumber(string? raw)
+        {
+            var normalized = raw?.Trim().ToUpperInvariant();
+            return string.IsNullOrEmpty(normalized) ? null : normalized;
+        }
+
+        private Task<bool> IsRegistrationNumberTakenAsync(string normalized, Guid? excludeHospitalId = null) =>
+            _context.Hospitals.AnyAsync(h =>
+                h.RegistrationNumber != null &&
+                h.RegistrationNumber.Trim().ToUpper() == normalized &&
+                (excludeHospitalId == null || h.HospitalId != excludeHospitalId));
+
+        // A concurrent duplicate is caught by IX_Hospitals_RegistrationNumber; report it with the same message
+        private async Task SaveWithRegistrationNumberGuardAsync()
+        {
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation } pg
+                                               && pg.ConstraintName == "IX_Hospitals_RegistrationNumber")
+            {
+                throw new InvalidOperationException(DuplicateRegistrationMessage);
+            }
         }
 
         private static HospitalResponseDto MapToResponseDto(Hospital hospital)

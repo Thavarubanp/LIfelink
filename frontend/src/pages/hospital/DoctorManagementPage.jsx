@@ -149,6 +149,13 @@ export const DoctorManagementPage = () => {
       return;
     }
 
+    // Quick check against this hospital's doctors; the backend enforces uniqueness system-wide
+    const slmc = form.licenseNumber.trim().toUpperCase();
+    if (doctors.some((d) => (d.licenseNumber || '').trim().toUpperCase() === slmc)) {
+      setFormError('A doctor with this SLMC number already exists.');
+      return;
+    }
+
     setFormLoading(true);
     try {
       await doctorApi.createDoctor({
@@ -369,6 +376,7 @@ export const DoctorManagementPage = () => {
                 <input
                   id="doctor-slmc"
                   type="text"
+                  required
                   maxLength={100}
                   value={form.licenseNumber}
                   onChange={(e) => handleFieldChange('licenseNumber', e.target.value)}

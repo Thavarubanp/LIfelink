@@ -38,6 +38,17 @@ namespace LifeLink.Services.Doctors
                 throw new InvalidOperationException("An account with this email address already exists.");
             }
 
+            // Enforce system-wide SLMC uniqueness (stored trimmed + upper-cased; unique index is the final guard)
+            var normalizedSlmc = SlmcUniquenessHelper.Normalize(dto.LicenseNumber);
+            if (normalizedSlmc.Length == 0)
+            {
+                throw new InvalidOperationException("SLMC number is required.");
+            }
+            if (await SlmcUniquenessHelper.IsSlmcTakenAsync(_context, normalizedSlmc))
+            {
+                throw new InvalidOperationException(SlmcUniquenessHelper.DuplicateMessage);
+            }
+
             // Get or ensure the Doctor role exists
             var doctorRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Doctor");
             if (doctorRole == null)
@@ -78,7 +89,7 @@ namespace LifeLink.Services.Doctors
                 LastName = dto.LastName.Trim(),
                 Email = normalizedEmail,
                 PhoneNumber = dto.PhoneNumber?.Trim() ?? string.Empty,
-                LicenseNumber = dto.LicenseNumber?.Trim() ?? string.Empty,
+                LicenseNumber = normalizedSlmc,
                 Specialization = dto.Specialization?.Trim() ?? string.Empty,
                 IsActive = true,
                 MustChangePassword = true,
@@ -89,7 +100,14 @@ namespace LifeLink.Services.Doctors
             await _context.Doctors.AddAsync(doctor);
 
             // Save atomically
-            await _context.SaveChangesAsync();
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (SlmcUniquenessHelper.IsSlmcUniqueViolation(ex))
+            {
+                throw new InvalidOperationException(SlmcUniquenessHelper.DuplicateMessage);
+            }
 
             return MapToResponseDto(doctor, hospital.Name);
         }

@@ -107,6 +107,7 @@ namespace LifeLink.Data
                 entity.HasKey(h => h.HospitalId);
                 entity.Property(h => h.Name).IsRequired().HasMaxLength(200);
                 entity.Property(h => h.LicenseNumber).HasMaxLength(100);
+                entity.HasIndex(h => h.RegistrationNumber).IsUnique(); // trimmed + upper-cased; NULLs allowed
                 entity.Property(h => h.Email).HasMaxLength(200);
                 entity.Property(h => h.ContactNumber).HasMaxLength(50);
                 entity.Property(h => h.IsVerified).IsRequired().HasDefaultValue(false);
@@ -219,6 +220,7 @@ namespace LifeLink.Data
                 entity.HasKey(d => d.DoctorId);
                 entity.HasIndex(d => d.HospitalId);
                 entity.HasIndex(d => d.Email).IsUnique();
+                entity.HasIndex(d => d.LicenseNumber).IsUnique(); // SLMC number, stored trimmed + upper-cased
 
                 entity.Property(d => d.FirstName).IsRequired().HasMaxLength(100);
                 entity.Property(d => d.LastName).IsRequired().HasMaxLength(100);

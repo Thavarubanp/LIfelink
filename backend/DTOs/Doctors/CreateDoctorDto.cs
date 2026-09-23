@@ -33,6 +33,7 @@ namespace LifeLink.DTOs.Doctors
         /// <summary>
         /// SLMC Registration Number — stored in LicenseNumber field.
         /// </summary>
+        [Required(ErrorMessage = "SLMC number is required.")]
         [StringLength(100)]
         public string LicenseNumber { get; set; } = string.Empty;
 
