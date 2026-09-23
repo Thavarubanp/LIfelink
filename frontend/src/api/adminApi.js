@@ -41,6 +41,16 @@ export const adminApi = {
     return response.data;
   },
 
+  getUsers: async () => {
+    const response = await client.get('/Admin/users');
+    return response.data;
+  },
+
+  getAllHospitals: async () => {
+    const response = await client.get('/Admin/hospitals');
+    return response.data;
+  },
+
   getComplaints: async (status = null) => {
     const params = status ? { status } : {};
     const response = await client.get('/Admin/complaints', { params });

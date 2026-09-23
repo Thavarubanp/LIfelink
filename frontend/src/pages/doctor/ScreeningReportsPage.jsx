@@ -55,7 +55,7 @@ export const ScreeningReportsPage = () => {
     },
     {
       header: 'Action',
-      accessor: 'acceptanceId',
+      accessor: 'actions',
       sortable: false,
       cell: (row) => (
         <Link

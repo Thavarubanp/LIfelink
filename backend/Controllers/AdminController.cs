@@ -178,6 +178,22 @@ namespace LifeLink.Controllers
             }
         }
 
+        [HttpGet("users")]
+        [ProducesResponseType(typeof(ApiResponse<List<AdminUserResponseDto>>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetUsers()
+        {
+            var list = await _adminService.GetUsersAsync();
+            return Ok(ApiResponse<List<AdminUserResponseDto>>.Ok(list, "Registered users retrieved successfully."));
+        }
+
+        [HttpGet("hospitals")]
+        [ProducesResponseType(typeof(ApiResponse<List<AdminHospitalResponseDto>>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAllHospitals()
+        {
+            var list = await _adminService.GetAllHospitalsAsync();
+            return Ok(ApiResponse<List<AdminHospitalResponseDto>>.Ok(list, "Registered hospitals retrieved successfully."));
+        }
+
         #endregion
 
         #region Complaints

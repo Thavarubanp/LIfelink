@@ -12,5 +12,11 @@ namespace LifeLink.DTOs.Auth
         public List<string> Roles { get; set; } = new List<string>();
         public string AccountStatus { get; set; } = string.Empty;
         public bool IsSuspended { get; set; } = false;
+        /// <summary>
+        /// True only for Doctor accounts that have not yet changed their hospital-assigned password.
+        /// Frontend uses this to force redirect to /doctor/change-password.
+        /// </summary>
+        public bool MustChangePassword { get; set; } = false;
     }
 }
+

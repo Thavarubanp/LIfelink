@@ -14,6 +14,16 @@ export const complaintApi = {
   submitActivityReport: async (dto) => {
     const response = await client.post('/hospital/activity-reports', dto);
     return response.data;
+  },
+
+  solveComplaint: async (id, dto) => {
+    const response = await client.put(`/Complaints/${id}/solve`, dto || {});
+    return response.data;
+  },
+
+  cancelComplaint: async (id) => {
+    const response = await client.put(`/Complaints/${id}/cancel`);
+    return response.data;
   }
 };
 

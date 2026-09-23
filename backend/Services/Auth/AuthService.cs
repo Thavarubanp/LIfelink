@@ -131,6 +131,15 @@ namespace LifeLink.Services.Auth
 
             var (token, expiresAt) = _jwtService.GenerateToken(user, roles);
 
+            // Determine MustChangePassword for Doctor accounts
+            bool mustChangePassword = false;
+            if (roles.Contains("Doctor"))
+            {
+                var doctorRecord = await _context.Doctors
+                    .FirstOrDefaultAsync(d => d.UserId == user.UserId);
+                mustChangePassword = doctorRecord?.MustChangePassword ?? false;
+            }
+
             return new LoginResponseDto
             {
                 AccessToken = token,
@@ -143,7 +152,8 @@ namespace LifeLink.Services.Auth
                     Email = user.Email,
                     Roles = roles,
                     AccountStatus = user.AccountStatus.ToString(),
-                    IsSuspended = user.IsSuspended
+                    IsSuspended = user.IsSuspended,
+                    MustChangePassword = mustChangePassword
                 }
             };
         }
@@ -160,7 +170,22 @@ namespace LifeLink.Services.Auth
                 throw new KeyNotFoundException("User not found.");
             }
 
+            // Inactive accounts cannot sign in; end any session still holding a token issued before deactivation
+            if (user.AccountStatus == AccountStatus.Inactive)
+            {
+                throw new UnauthorizedAccessException("Your account is inactive. Please contact support.");
+            }
+
             var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
+
+            // Enrich with MustChangePassword for Doctor accounts
+            bool mustChangePassword = false;
+            if (roles.Contains("Doctor"))
+            {
+                var doctorRecord = await _context.Doctors
+                    .FirstOrDefaultAsync(d => d.UserId == userId);
+                mustChangePassword = doctorRecord?.MustChangePassword ?? false;
+            }
 
             return new CurrentUserDto
             {
@@ -170,7 +195,8 @@ namespace LifeLink.Services.Auth
                 Email = user.Email,
                 Roles = roles,
                 AccountStatus = user.AccountStatus.ToString(),
-                IsSuspended = user.IsSuspended
+                IsSuspended = user.IsSuspended,
+                MustChangePassword = mustChangePassword
             };
         }
 
@@ -372,7 +398,10 @@ namespace LifeLink.Services.Auth
 
         public async Task ChangePasswordAsync(Guid userId, ChangePasswordRequestDto request)
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+            var user = await _context.Users
+                .Include(u => u.UserRoles)
+                .ThenInclude(ur => ur.Role)
+                .FirstOrDefaultAsync(u => u.UserId == userId);
             if (user == null)
             {
                 throw new KeyNotFoundException("User not found.");
@@ -388,6 +417,22 @@ namespace LifeLink.Services.Auth
             user.UpdatedAt = DateTime.UtcNow;
 
             _context.Users.Update(user);
+
+            // If this user is a Doctor with a pending first-login password change,
+            // automatically clear the flag so they can access the dashboard normally.
+            var isDoctor = user.UserRoles.Any(ur => ur.Role.Name == "Doctor");
+            if (isDoctor)
+            {
+                var doctorRecord = await _context.Doctors
+                    .FirstOrDefaultAsync(d => d.UserId == userId);
+                if (doctorRecord != null && doctorRecord.MustChangePassword)
+                {
+                    doctorRecord.MustChangePassword = false;
+                    doctorRecord.UpdatedAt = DateTime.UtcNow;
+                    _context.Doctors.Update(doctorRecord);
+                }
+            }
+
             await _context.SaveChangesAsync();
         }
 

@@ -6,8 +6,28 @@ export const notificationApi = {
     return response.data;
   },
 
+  getMyNotifications: async () => {
+    const response = await client.get('/notifications/my');
+    return response.data;
+  },
+
   getUserNotifications: async (userId) => {
     const response = await client.get(`/notifications/user/${userId}`);
+    return response.data;
+  },
+
+  getUnreadCount: async () => {
+    const response = await client.get('/notifications/unread-count');
+    return response.data;
+  },
+
+  markRead: async (notificationId) => {
+    const response = await client.patch(`/notifications/${notificationId}/read`);
+    return response.data;
+  },
+
+  markAllRead: async () => {
+    const response = await client.patch('/notifications/read-all');
     return response.data;
   },
 

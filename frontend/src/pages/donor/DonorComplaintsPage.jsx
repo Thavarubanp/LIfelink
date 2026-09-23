@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { complaintApi, hospitalApi, adminApi } from '../../api';
+import { complaintApi, hospitalApi, searchApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
+import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
 import {
   AlertTriangle,
   Send,
@@ -14,26 +15,36 @@ import {
   ShieldCheck,
   Sparkles,
   X,
-  Inbox
+  XCircle,
+  Inbox,
+  ChevronDown,
+  ChevronUp,
+  User
 } from 'lucide-react';
+
+const EMPTY_FORM = {
+  complaintType: 'Hospital Service',
+  subject: '',
+  description: '',
+  hospitalId: null,
+  targetUserId: null
+};
 
 export const DonorComplaintsPage = () => {
   const { user } = useAuth();
   const { addToast } = useNotification();
 
   // Form State
-  const [formData, setFormData] = useState({
-    complaintType: 'Hospital Service',
-    subject: '',
-    description: '',
-    hospitalId: null
-  });
+  const [formData, setFormData] = useState(EMPTY_FORM);
 
-  // Target Autocomplete State
+  // Target Autocomplete State (doctors cannot be targeted; doctor-caused issues go against the hospital)
+  const [targetCategory, setTargetCategory] = useState('HOSPITAL'); // 'HOSPITAL' | 'USER'
   const [targetSearch, setTargetSearch] = useState('');
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [hospitalsList, setHospitalsList] = useState([]);
+  const [userResults, setUserResults] = useState([]);
+  const [searchingUsers, setSearchingUsers] = useState(false);
   const [loadingTargets, setLoadingTargets] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -41,8 +52,86 @@ export const DonorComplaintsPage = () => {
   const [myComplaints, setMyComplaints] = useState([]);
   const [loadingComplaints, setLoadingComplaints] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [expandedComplaintIds, setExpandedComplaintIds] = useState(new Set());
+  const [cancellingId, setCancellingId] = useState(null);
 
-  // Fetch Registered Hospitals for Target Autocomplete
+  // Solve Modal State (Only complaint owner can mark solved)
+  const [solveModal, setSolveModal] = useState({ isOpen: false, complaint: null, notes: '' });
+  const [solvingId, setSolvingId] = useState(null);
+
+  const toggleExpand = (id) => {
+    setExpandedComplaintIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleOpenSolveModal = (complaint) => {
+    setSolveModal({
+      isOpen: true,
+      complaint,
+      notes: ''
+    });
+  };
+
+  const handleConfirmSolve = async (e) => {
+    e.preventDefault();
+    if (!solveModal.complaint) return;
+    const complaintId = solveModal.complaint.complaintId || solveModal.complaint.id;
+    setSolvingId(complaintId);
+    try {
+      await complaintApi.solveComplaint(complaintId, { notes: solveModal.notes.trim() || undefined });
+      addToast({
+        title: 'Complaint Marked as Solved',
+        message: 'Grievance resolved and permanently closed. It remains visible in your history.',
+        type: 'success'
+      });
+      setSolveModal({ isOpen: false, complaint: null, notes: '' });
+      await loadComplaintsHistory();
+    } catch (err) {
+      addToast({
+        title: 'Action Failed',
+        message: err.response?.data?.message || 'Could not mark complaint as solved.',
+        type: 'error'
+      });
+    } finally {
+      setSolvingId(null);
+    }
+  };
+
+  const handleCancelComplaint = async (complaint) => {
+    const complaintId = complaint.complaintId || complaint.id;
+    if (
+      !window.confirm(
+        `Are you sure you want to cancel this complaint ("${complaint.subject}")? Once cancelled, this complaint and its entire activity history will be permanently deleted from the database.`
+      )
+    ) {
+      return;
+    }
+
+    setCancellingId(complaintId);
+    try {
+      await complaintApi.cancelComplaint(complaintId);
+      addToast({
+        title: 'Complaint Cancelled',
+        message: 'Your complaint has been permanently cancelled and removed from the system.',
+        type: 'info'
+      });
+      await loadComplaintsHistory();
+    } catch (err) {
+      addToast({
+        title: 'Action Failed',
+        message: err.response?.data?.message || 'Could not cancel complaint.',
+        type: 'error'
+      });
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  // Fetch Registered Directories for Target Autocomplete
   useEffect(() => {
     const loadInitialData = async () => {
       setLoadingTargets(true);
@@ -52,7 +141,7 @@ export const DonorComplaintsPage = () => {
           setHospitalsList(hospitalsData);
         }
       } catch (err) {
-        console.error('Failed to load hospitals list:', err);
+        console.error('Failed to load target directories:', err);
       } finally {
         setLoadingTargets(false);
       }
@@ -62,6 +151,30 @@ export const DonorComplaintsPage = () => {
 
     loadInitialData();
   }, [user]);
+
+  // Real-user search for the USER target (reuses the global search API; min 2 characters, debounced)
+  const userSearchActive = targetCategory === 'USER' && !selectedTarget && targetSearch.trim().length >= 2;
+
+  useEffect(() => {
+    if (!userSearchActive) return;
+    const query = targetSearch.trim();
+
+    const timer = setTimeout(async () => {
+      setSearchingUsers(true);
+      try {
+        const data = await searchApi.globalSearch(query);
+        // The search already excludes doctor and hospital accounts; also drop admins and yourself
+        const users = (data?.users || []).filter((u) => u.extraInfo !== 'Admin' && u.id !== user?.userId);
+        setUserResults(users);
+      } catch {
+        setUserResults([]);
+      } finally {
+        setSearchingUsers(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [userSearchActive, targetSearch, user?.userId]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -89,14 +202,30 @@ export const DonorComplaintsPage = () => {
     }
   };
 
-  // Filter Real Registered Hospitals
+  // Filter Targets based on Active Target Category (Hospital or User)
   const getFilteredTargets = () => {
     const query = targetSearch.trim().toLowerCase();
+
+    if (targetCategory === 'USER') {
+      // Only real registered users returned by the search API can be selected
+      if (!userSearchActive) return [];
+      return userResults.map((u) => ({
+        id: u.id,
+        name: u.displayName,
+        type: 'Donor / Patient',
+        subtitle: u.subText || 'Registered platform user',
+        hospitalId: null,
+        targetUserId: u.id
+      }));
+    }
+
+    // Default: HOSPITAL
     const hospitalResults = hospitalsList.map((h) => ({
       id: h.hospitalId,
       name: h.name,
       type: 'Registered Hospital',
       subtitle: `${h.licenseNumber || 'Verified Medical Center'} • ${h.email || h.address || 'Sri Lanka'}`,
+      hospitalId: h.hospitalId,
       raw: h
     }));
 
@@ -112,27 +241,44 @@ export const DonorComplaintsPage = () => {
     setSelectedTarget(target);
     setTargetSearch(target.name);
     setIsDropdownOpen(false);
-    setFormData((prev) => ({ ...prev, hospitalId: target.id }));
+    setFormData((prev) => ({
+      ...prev,
+      hospitalId: target.hospitalId || null,
+      targetUserId: target.targetUserId || null
+    }));
   };
 
   const handleClearTarget = () => {
     setSelectedTarget(null);
     setTargetSearch('');
-    setFormData((prev) => ({ ...prev, hospitalId: null }));
+    setUserResults([]);
+    setFormData((prev) => ({ ...prev, hospitalId: null, targetUserId: null }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Typed text that was never picked from the list is not a valid target
+    if (targetSearch.trim() && !selectedTarget) {
+      addToast({
+        title: 'Select a Target',
+        message: `Choose a ${targetCategory === 'USER' ? 'registered user' : 'hospital'} from the list, or clear the target field.`,
+        type: 'error'
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     try {
       const payload = {
         complaintType: formData.complaintType,
         subject: selectedTarget
-          ? `[Target: ${selectedTarget.name}] ${formData.subject.trim()}`
+          ? `[Target: ${selectedTarget.type} - ${selectedTarget.name}] ${formData.subject.trim()}`
           : formData.subject.trim(),
         description: formData.description.trim(),
-        hospitalId: formData.hospitalId
+        hospitalId: formData.hospitalId,
+        targetUserId: formData.targetUserId
       };
 
       await complaintApi.createComplaint(payload);
@@ -144,7 +290,7 @@ export const DonorComplaintsPage = () => {
       });
 
       // Reset Form & Reload Database Complaints
-      setFormData({ complaintType: 'Hospital Service', subject: '', description: '', hospitalId: null });
+      setFormData(EMPTY_FORM);
       setSelectedTarget(null);
       setTargetSearch('');
       await loadComplaintsHistory();
@@ -175,6 +321,14 @@ export const DonorComplaintsPage = () => {
         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center gap-1.5 shrink-0">
           <Clock className="w-3 h-3 animate-spin" />
           <span>Under Investigation</span>
+        </span>
+      );
+    }
+    if (normalized === 'CANCELLED') {
+      return (
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center gap-1.5 shrink-0">
+          <XCircle className="w-3 h-3" />
+          <span>Closed / Cancelled</span>
         </span>
       );
     }
@@ -267,11 +421,44 @@ export const DonorComplaintsPage = () => {
               </select>
             </div>
 
-            {/* Target Autocomplete - Registered Hospitals */}
+            {/* Target Selection: Hospital, Doctor, or User */}
             <div className="relative" ref={dropdownRef}>
-              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1.5 uppercase tracking-wider text-[11px]">
-                Complaint Target (Registered Hospital)
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-slate-700 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
+                  Target Entity
+                </label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetCategory('HOSPITAL');
+                      handleClearTarget();
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors flex items-center gap-1 ${
+                      targetCategory === 'HOSPITAL'
+                        ? 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:text-slate-700'
+                    }`}
+                  >
+                    <Building2 className="w-3 h-3" /> Hospital
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTargetCategory('USER');
+                      handleClearTarget();
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors flex items-center gap-1 ${
+                      targetCategory === 'USER'
+                        ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:text-slate-700'
+                    }`}
+                  >
+                    <User className="w-3 h-3" /> User
+                  </button>
+                </div>
+              </div>
+
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
                 <input
@@ -283,10 +470,14 @@ export const DonorComplaintsPage = () => {
                     setIsDropdownOpen(true);
                     if (selectedTarget && e.target.value !== selectedTarget.name) {
                       setSelectedTarget(null);
-                      setFormData((prev) => ({ ...prev, hospitalId: null }));
+                      setFormData((prev) => ({ ...prev, hospitalId: null, targetUserId: null }));
                     }
                   }}
-                  placeholder="Search registered hospital..."
+                  placeholder={
+                    targetCategory === 'HOSPITAL'
+                      ? 'Search registered hospitals...'
+                      : 'Search registered users by name or email...'
+                  }
                   className="w-full pl-10 pr-9 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:border-red-500 transition-colors"
                 />
                 {selectedTarget ? (
@@ -305,7 +496,11 @@ export const DonorComplaintsPage = () => {
               {selectedTarget && (
                 <div className="mt-2 p-2 px-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center justify-between text-[11px] text-red-300">
                   <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                    {targetCategory === 'USER' ? (
+                      <User className="w-4 h-4 text-purple-400 shrink-0" />
+                    ) : (
+                      <Building2 className="w-4 h-4 text-cyan-400 shrink-0" />
+                    )}
                     <div>
                       <span className="font-bold text-white">{selectedTarget.name}</span>
                       <span className="text-[10px] text-slate-400 ml-1.5">({selectedTarget.type})</span>
@@ -318,10 +513,14 @@ export const DonorComplaintsPage = () => {
               {/* Autocomplete Results Dropdown */}
               {isDropdownOpen && (
                 <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
-                  {loadingTargets ? (
+                  {loadingTargets || (userSearchActive && searchingUsers) ? (
                     <div className="p-3 text-center text-slate-400 flex items-center justify-center gap-2 text-xs">
                       <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
-                      <span>Loading registered hospitals...</span>
+                      <span>{loadingTargets ? 'Loading target directory...' : 'Searching registered users...'}</span>
+                    </div>
+                  ) : targetCategory === 'USER' && targetSearch.trim().length < 2 ? (
+                    <div className="p-3.5 text-center text-slate-400 text-xs">
+                      Type at least 2 characters of a user's name or email.
                     </div>
                   ) : getFilteredTargets().length > 0 ? (
                     getFilteredTargets().map((item) => (
@@ -333,7 +532,11 @@ export const DonorComplaintsPage = () => {
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                            <Building2 className="w-3.5 h-3.5" />
+                            {item.type === 'Donor / Patient' ? (
+                              <User className="w-3.5 h-3.5 text-purple-400" />
+                            ) : (
+                              <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                            )}
                           </div>
                           <div className="truncate">
                             <p className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-red-400 transition-colors truncate">
@@ -342,14 +545,14 @@ export const DonorComplaintsPage = () => {
                             <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{item.subtitle}</p>
                           </div>
                         </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shrink-0 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-                          Hospital
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                          {item.type}
                         </span>
                       </button>
                     ))
                   ) : (
                     <div className="p-3.5 text-center text-slate-400 text-xs">
-                      No matching registered hospitals found in database.
+                      No matching registered {targetCategory === 'USER' ? 'users' : 'hospitals'} found.
                     </div>
                   )}
                 </div>
@@ -444,19 +647,27 @@ export const DonorComplaintsPage = () => {
         ) : (
           <div className="space-y-4">
             {myComplaints.map((item) => {
+              const complaintId = item.complaintId || item.id;
+              const isExpanded = expandedComplaintIds.has(complaintId);
+              const statusUpper = (item.status || 'OPEN').toUpperCase();
+              const isClosed = statusUpper === 'CANCELLED' || statusUpper === 'RESOLVED' || statusUpper === 'REJECTED';
               const hasAdminReply = Boolean(item.resolutionNotes || item.adminResponse || item.status === 'RESOLVED');
 
               return (
                 <div
-                  key={item.complaintId || item.id}
+                  key={complaintId}
                   className={`rounded-2xl p-5 border transition-all duration-300 shadow-md ${
                     hasAdminReply
-                      ? 'bg-gradient-to-b from-purple-950/30 via-slate-900 to-slate-900 border-purple-500/40 shadow-purple-950/20'
+                      ? 'bg-gradient-to-b from-purple-950/20 via-slate-900 to-slate-900 border-purple-500/40 shadow-purple-950/10'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
                     <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-[10px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                        #{String(complaintId).substring(0, 8)}
+                      </span>
+
                       <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 uppercase tracking-wider">
                         {item.complaintType || 'Grievance'}
                       </span>
@@ -496,34 +707,207 @@ export const DonorComplaintsPage = () => {
                     </p>
                   </div>
 
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800/80 text-xs text-slate-700 dark:text-slate-300 leading-relaxed mb-4">
-                    {item.description}
-                  </div>
-
-                  {hasAdminReply && (
-                    <div className="mb-4 p-4 bg-purple-950/40 border border-purple-500/40 rounded-xl relative overflow-hidden shadow-inner">
-                      <div className="flex items-center gap-2 mb-2 text-xs font-bold text-purple-300">
-                        <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
-                        <span>Official LifeLink System Admin Response</span>
-                      </div>
-                      <p className="text-xs text-slate-200 leading-relaxed font-medium">
-                        {item.resolutionNotes || item.adminResponse || 'Your complaint has been formally reviewed and addressed by System Governance Administration.'}
-                      </p>
-                      {item.assignedAdminEmail && (
-                        <p className="text-[10px] text-purple-300/80 mt-2 italic">
-                          Reviewed by: {item.assignedAdminEmail}
-                        </p>
+                  {/* Actions & Toggle Bar */}
+                  <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
+                    <div>
+                      {!isClosed ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenSolveModal(item)}
+                            disabled={solvingId === complaintId}
+                            className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Mark as Solved</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCancelComplaint(item)}
+                            disabled={cancellingId === complaintId}
+                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                          >
+                            {cancellingId === complaintId ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <XCircle className="w-3.5 h-3.5 text-rose-500" />
+                            )}
+                            <span>Cancel Complaint</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-semibold text-slate-400 italic px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                          {statusUpper === 'RESOLVED'
+                            ? 'Complaint Solved (Read-Only)'
+                            : statusUpper === 'REJECTED'
+                            ? 'Complaint Rejected (Read-Only)'
+                            : 'Complaint Closed (Read-Only)'}
+                        </span>
                       )}
                     </div>
-                  )}
 
-                  {renderTimeline(item.status, hasAdminReply)}
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(complaintId)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                        isExpanded
+                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 border-slate-300 dark:border-slate-600'
+                          : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <span>{isExpanded ? 'Hide Details' : 'View Details & Timeline'}</span>
+                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+
+                  {/* Expanded Details Panel */}
+                  {isExpanded && (
+                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800/80 space-y-5 animate-in fade-in duration-200">
+                      {/* Description */}
+                      <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800/80 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                        <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                          Grievance Description
+                        </span>
+                        {item.description}
+                      </div>
+
+                      {/* Official Admin Reply */}
+                      {hasAdminReply && (
+                        <div className="p-4 bg-purple-950/40 border border-purple-500/40 rounded-xl relative overflow-hidden shadow-inner">
+                          <div className="flex items-center gap-2 mb-2 text-xs font-bold text-purple-300">
+                            <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
+                            <span>Official LifeLink System Admin Response</span>
+                          </div>
+                          <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                            {item.resolutionNotes || item.adminResponse || 'Your complaint has been formally reviewed and addressed by System Governance Administration.'}
+                          </p>
+                          {item.assignedAdminEmail && (
+                            <p className="text-[10px] text-purple-300/80 mt-2 italic">
+                              Reviewed by: {item.assignedAdminEmail}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Attached Hospital Evidence Reports */}
+                      {Array.isArray(item.activityReports) && item.activityReports.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="w-4 h-4 text-cyan-400" />
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                              Hospital Activity Evidence Reports ({item.activityReports.length})
+                            </h4>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {item.activityReports.map((report) => (
+                              <div
+                                key={report.reportId}
+                                className="p-3 bg-slate-50 dark:bg-slate-950/60 border border-cyan-500/30 rounded-xl text-xs space-y-1"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-cyan-400">{report.title}</span>
+                                  <span className="text-[10px] text-slate-400 font-mono">
+                                    {new Date(report.submittedAt).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <p className="text-slate-300">{report.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Chronological Activity Timeline */}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-slate-200 dark:border-slate-800">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-slate-400" />
+                            <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
+                              Activity History Timeline
+                            </h4>
+                          </div>
+                          <span className="text-[10px] text-slate-400">Chronological case progress</span>
+                        </div>
+                        <ComplaintActivityTimeline complaint={item} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {/* Solve Complaint Confirmation Modal */}
+      {solveModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  Mark Complaint as Solved
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSolveModal({ isOpen: false, complaint: null, notes: '' })}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Are you satisfied that the grievance regarding{' '}
+              <strong className="text-slate-900 dark:text-slate-100">{solveModal.complaint?.subject}</strong> has been resolved?
+              Once marked as solved, the complaint becomes permanently read-only.
+            </p>
+
+            <form onSubmit={handleConfirmSolve} className="space-y-4 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Resolution Notes (Optional)
+                </label>
+                <textarea
+                  rows={3}
+                  value={solveModal.notes}
+                  onChange={(e) => setSolveModal({ ...solveModal, notes: e.target.value })}
+                  placeholder="Describe how the matter was remedied (e.g. Received clarification, medical team apologized, hospital adjusted record)..."
+                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-red-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setSolveModal({ isOpen: false, complaint: null, notes: '' })}
+                  disabled={Boolean(solvingId)}
+                  className="px-4 py-2 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  Keep Open
+                </button>
+                <button
+                  type="submit"
+                  disabled={Boolean(solvingId)}
+                  className="px-4 py-2 rounded-xl font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  {solvingId ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Closing case...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" /> Confirm Solved
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LifeLink.DTOs.HospitalActivity;
 
 namespace LifeLink.DTOs.Complaints
 {
@@ -10,6 +11,9 @@ namespace LifeLink.DTOs.Complaints
         public string? UserEmail { get; set; }
         public Guid? HospitalId { get; set; }
         public string? HospitalName { get; set; }
+        public Guid? TargetUserId { get; set; }
+        public string? TargetUserName { get; set; }
+        public string? TargetUserEmail { get; set; }
         public string ComplaintType { get; set; } = string.Empty;
         public string Subject { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
@@ -20,6 +24,7 @@ namespace LifeLink.DTOs.Complaints
         public DateTime? ResolvedAt { get; set; }
         public string? ResolutionNotes { get; set; }
         public int ActivityReportsCount { get; set; }
+        public List<ActivityReportResponseDto> ActivityReports { get; set; } = new List<ActivityReportResponseDto>();
         public List<ComplaintAuditLogDto> AuditLogs { get; set; } = new List<ComplaintAuditLogDto>();
     }
 }

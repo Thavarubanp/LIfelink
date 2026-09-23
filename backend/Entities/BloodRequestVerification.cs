@@ -6,7 +6,8 @@ namespace LifeLink.Entities
     {
         public Guid VerificationId { get; set; } = Guid.NewGuid();
         public Guid BloodRequestId { get; set; }
-        public Guid DoctorId { get; set; }
+        // Nullable so verification history survives when the hospital deletes the doctor
+        public Guid? DoctorId { get; set; }
 
         public VerificationStatus Status { get; set; } = VerificationStatus.Pending;
         public string? Notes { get; set; }
@@ -16,6 +17,6 @@ namespace LifeLink.Entities
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        public Doctor Doctor { get; set; } = null!;
+        public Doctor? Doctor { get; set; }
     }
 }

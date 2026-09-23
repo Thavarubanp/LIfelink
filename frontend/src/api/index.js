@@ -11,3 +11,6 @@ export { default as adminApi } from './adminApi';
 export { default as notificationApi } from './notificationApi';
 export { default as governanceApi } from './governanceApi';
 export { default as hospitalApi } from './hospitalApi';
+export { default as doctorApi } from './doctorApi';
+export { default as searchApi } from './searchApi';
+export { default as profileApi } from './profileApi';

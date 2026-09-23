@@ -2,12 +2,14 @@ using System;
 using System.Threading.Tasks;
 using LifeLink.DTOs.Verification;
 using LifeLink.Services.Verification;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/donor-verification")]
+    [Authorize(Roles = "Doctor,Admin,InternalAgent")]
     public class DonorVerificationController : ControllerBase
     {
         private readonly IVerificationService _verificationService;

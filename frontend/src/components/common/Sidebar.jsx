@@ -13,7 +13,6 @@ import {
   FileText,
   Users,
   AlertTriangle,
-  History,
   UserCheck
 } from 'lucide-react';
 
@@ -25,13 +24,11 @@ export const Sidebar = () => {
     if (userRoles.includes('Admin')) {
       return [
         { label: 'Admin Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-        { label: 'Hospital Approvals', path: '/admin/hospitals/pending', icon: Building2 },
-        { label: 'Hospitals Directory', path: '/admin/hospitals', icon: Building2 },
-        { label: 'User Governance', path: '/admin/users', icon: Users },
+        { label: 'Hospital Registration Requests', path: '/admin/hospitals/pending', icon: Building2 },
         { label: 'Complaints Hub', path: '/admin/complaints', icon: AlertTriangle },
-        { label: 'Appeals Queue', path: '/admin/appeals', icon: FileText },
-        { label: 'Platform Governance', path: '/admin/governance', icon: ShieldCheck },
-        { label: 'Audit Logs', path: '/admin/audit-logs', icon: History }
+        { label: 'Suspension Appeals', path: '/admin/appeals', icon: FileText },
+        { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
+        { label: 'Donate Blood', path: '/donor/requests', icon: Droplet }
       ];
     }
 
@@ -40,10 +37,12 @@ export const Sidebar = () => {
         { label: 'Hospital Overview', path: '/hospital/dashboard', icon: LayoutDashboard },
         { label: 'Blood Inventory', path: '/hospital/inventory', icon: Droplet },
         { label: 'Emergency Center', path: '/hospital/emergency', icon: Zap },
-        { label: 'Hospital Requests', path: '/hospital/requests', icon: ClipboardList },
-        { label: 'Patient Verification', path: '/hospital/requests/verify', icon: UserCheck },
+        { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
+        { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck },
         { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight },
-        { label: 'Submit Evidence', path: '/hospital/activity-reports', icon: FileText }
+        { label: 'Doctor Management', path: '/hospital/doctors', icon: Stethoscope },
+        { label: 'Submit Evidence', path: '/hospital/activity-reports', icon: FileText },
+        { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
       ];
     }
 
@@ -51,8 +50,7 @@ export const Sidebar = () => {
       return [
         { label: 'Doctor Dashboard', path: '/doctor/dashboard', icon: LayoutDashboard },
         { label: 'Screening Queue', path: '/doctor/screenings', icon: Stethoscope },
-        { label: 'Hospital Requests', path: '/doctor/blood-requests', icon: ClipboardList },
-        { label: 'Donor Final Selection', path: '/doctor/reviews', icon: UserCheck }
+        { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
       ];
     }
 
@@ -60,8 +58,7 @@ export const Sidebar = () => {
     return [
       { label: 'Donor Dashboard', path: '/donor/dashboard', icon: LayoutDashboard },
       { label: 'Available Requests', path: '/donor/requests', icon: Droplet },
-      { label: 'Create Request', path: '/donor/requests/create', icon: ClipboardList },
-      { label: 'My Requests', path: '/donor/my-requests', icon: History },
+      { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
       { label: 'My Acceptances', path: '/donor/acceptances', icon: UserCheck },
       { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
     ];

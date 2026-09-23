@@ -6,6 +6,8 @@ namespace LifeLink.Entities
         Approved,
         Rejected,
         Completed,
-        Cancelled
+        Cancelled,
+        // Hospital verified the request and assigned a doctor; awaiting the doctor's approve/reject decision.
+        Verified
     }
 }

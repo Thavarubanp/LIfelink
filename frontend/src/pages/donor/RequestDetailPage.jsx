@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { bloodRequestApi, acceptanceApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingProgress';
@@ -8,6 +9,7 @@ import { Building2, MapPin, Calendar, Clock, Heart, AlertCircle, CheckCircle2, L
 
 export const RequestDetailPage = () => {
   const { id } = useParams();
+  const { user } = useAuth();
   const [request, setRequest] = useState(null);
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -33,7 +35,10 @@ export const RequestDetailPage = () => {
   const handleAccept = async () => {
     setAccepting(true);
     try {
-      await acceptanceApi.acceptRequest({ bloodRequestId: id });
+      await acceptanceApi.acceptRequest({
+        bloodRequestId: id,
+        donorBloodGroup: user?.bloodGroup || request?.bloodGroup || 'O+'
+      });
       setAccepted(true);
       addToast({
         title: 'Acceptance Registered!',

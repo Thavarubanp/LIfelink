@@ -10,5 +10,6 @@ namespace LifeLink.Services.Doctors
         Task<DoctorResponseDto> CreateDoctorAsync(CreateDoctorDto dto);
         Task<List<DoctorResponseDto>> GetDoctorsAsync(Guid? hospitalId = null);
         Task<DoctorResponseDto?> GetDoctorByIdAsync(Guid doctorId);
+        Task DeleteDoctorAsync(Guid doctorId, Guid hospitalId);
     }
 }

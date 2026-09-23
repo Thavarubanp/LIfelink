@@ -13,7 +13,8 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const res = await authApi.getCurrentUser();
-          if (res.isSuccess && res.data) {
+          // ApiResponse<T> serializes as { success, message, data }
+          if (res?.success === true && res.data) {
             setUser(res.data);
           } else {
             localStorage.removeItem('lifelink_token');
@@ -31,7 +32,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (credentials) => {
     const res = await authApi.login(credentials);
-    const isSuccess = res && (res.success === true || res.isSuccess === true);
+    const isSuccess = res?.success === true;
     const token = res?.data?.accessToken || res?.data?.token;
 
     if (isSuccess && token) {

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { getDashboardPath } from './utils/roleUtils';
 
 import Navbar from './components/common/Navbar';
 import Sidebar from './components/common/Sidebar';
@@ -21,7 +22,6 @@ import DonorDashboard from './pages/donor/DonorDashboard';
 import AvailableRequestsPage from './pages/donor/AvailableRequestsPage';
 import RequestDetailPage from './pages/donor/RequestDetailPage';
 import CreatePatientRequestPage from './pages/donor/CreatePatientRequestPage';
-import MyRequestsPage from './pages/donor/MyRequestsPage';
 import MyAcceptancesPage from './pages/donor/MyAcceptancesPage';
 import DonorProfilePage from './pages/donor/DonorProfilePage';
 import DonorComplaintsPage from './pages/donor/DonorComplaintsPage';
@@ -29,11 +29,14 @@ import DonorComplaintsPage from './pages/donor/DonorComplaintsPage';
 // Doctor Pages
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
 import ScreeningReportsPage from './pages/doctor/ScreeningReportsPage';
+import DoctorChangePasswordPage from './pages/doctor/DoctorChangePasswordPage';
 
 // Hospital Staff Pages
 import HospitalDashboard from './pages/hospital/HospitalDashboard';
 import InventoryManagementPage from './pages/hospital/InventoryManagementPage';
 import EmergencyHubPage from './pages/hospital/EmergencyHubPage';
+import DoctorManagementPage from './pages/hospital/DoctorManagementPage';
+import VerifyBloodRequestsPage from './pages/hospital/VerifyBloodRequestsPage';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -43,6 +46,11 @@ import AdminAppealsPage from './pages/admin/AdminAppealsPage';
 
 // Governance Page
 import SuspendedGovernancePage from './pages/governance/SuspendedGovernancePage';
+
+// Profile Pages
+import HospitalProfilePage from './pages/profiles/HospitalProfilePage';
+import UserProfilePage from './pages/profiles/UserProfilePage';
+import DoctorProfilePage from './pages/profiles/DoctorProfilePage';
 
 // Authenticated Shell Layout with Navbar & Sidebar
 const DashboardLayout = ({ onOpenNotifications }) => {
@@ -57,6 +65,12 @@ const DashboardLayout = ({ onOpenNotifications }) => {
       </div>
     </div>
   );
+};
+
+// Sends "/" (and the catch-all fallback) to the signed-in user's own dashboard
+const RoleHomeRedirect = () => {
+  const { user } = useAuth();
+  return <Navigate to={getDashboardPath(user)} replace />;
 };
 
 export function App() {
@@ -85,6 +99,16 @@ export function App() {
               }
             />
 
+            {/* Doctor First-Login Change Password — standalone full-screen, outside DashboardLayout */}
+            <Route
+              path="/doctor/change-password"
+              element={
+                <ProtectedRoute allowedRoles={['Doctor']}>
+                  <DoctorChangePasswordPage />
+                </ProtectedRoute>
+              }
+            />
+
             {/* Authenticated Dashboard Routes */}
             <Route
               element={
@@ -93,18 +117,35 @@ export function App() {
                 </ProtectedRoute>
               }
             >
-              {/* Default Root Redirect */}
-              <Route path="/" element={<Navigate to="/donor/dashboard" replace />} />
+              {/* Default Root Redirect (role-aware) */}
+              <Route path="/" element={<RoleHomeRedirect />} />
+
 
               {/* Donor Module */}
-              <Route path="/donor/dashboard" element={<DonorDashboard />} />
+              <Route
+                path="/donor/dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['User']}>
+                    <DonorDashboard />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/donor/requests" element={<AvailableRequestsPage />} />
-              <Route path="/donor/requests/create" element={<CreatePatientRequestPage />} />
+              {/* Shared Create Blood Request page (with My Requests below the form) */}
+              <Route
+                path="/donor/requests/create"
+                element={
+                  <ProtectedRoute allowedRoles={['User', 'HospitalStaff', 'Admin']}>
+                    <CreatePatientRequestPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/donor/requests/:id" element={<RequestDetailPage />} />
-              <Route path="/donor/my-requests" element={<MyRequestsPage />} />
+              <Route path="/donor/my-requests" element={<Navigate to="/donor/requests/create" replace />} />
               <Route path="/donor/acceptances" element={<MyAcceptancesPage />} />
               <Route path="/donor/profile" element={<DonorProfilePage />} />
               <Route path="/donor/complaints" element={<DonorComplaintsPage />} />
+              <Route path="/complaints" element={<DonorComplaintsPage />} />
 
               {/* Doctor Module */}
               <Route
@@ -149,6 +190,22 @@ export function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/hospital/requests/verify"
+                element={
+                  <ProtectedRoute allowedRoles={['HospitalStaff']}>
+                    <VerifyBloodRequestsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/hospital/doctors"
+                element={
+                  <ProtectedRoute allowedRoles={['HospitalStaff']}>
+                    <DoctorManagementPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* System Admin Module */}
               <Route
@@ -183,6 +240,11 @@ export function App() {
                   </ProtectedRoute>
                 }
               />
+
+              {/* Profiles Module (Accessible to all authenticated users) */}
+              <Route path="/profiles/hospital/:id" element={<HospitalProfilePage />} />
+              <Route path="/profiles/user/:id" element={<UserProfilePage />} />
+              <Route path="/profiles/doctor/:id" element={<DoctorProfilePage />} />
             </Route>
 
             {/* Fallback Catch-all Route */}

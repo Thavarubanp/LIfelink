@@ -6,6 +6,7 @@ namespace LifeLink.Entities
         UNDER_REVIEW,
         AWAITING_INFORMATION,
         RESOLVED,
-        REJECTED
+        REJECTED,
+        CANCELLED
     }
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { getUserRoles, getDashboardPath } from '../../utils/roleUtils';
 import { Loader2 } from 'lucide-react';
 
 export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = false }) => {
@@ -25,17 +26,24 @@ export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = f
     return <Navigate to="/governance/status" replace />;
   }
 
+  // Doctor first-login enforcement: redirect to change-password page if flag is set.
+  // Allow the change-password page itself to avoid an infinite redirect loop.
+  const userRoles = getUserRoles(user);
+  if (
+    userRoles.includes('Doctor') &&
+    user.mustChangePassword === true &&
+    location.pathname !== '/doctor/change-password'
+  ) {
+    return <Navigate to="/doctor/change-password" replace />;
+  }
+
   // Role check
   if (allowedRoles.length > 0) {
-    const userRoles = Array.isArray(user.roles) ? user.roles : [user.roles];
     const hasRole = allowedRoles.some((role) => userRoles.includes(role));
 
     if (!hasRole) {
       // Redirect to appropriate dashboard based on primary role
-      if (userRoles.includes('Admin')) return <Navigate to="/admin/dashboard" replace />;
-      if (userRoles.includes('HospitalStaff')) return <Navigate to="/hospital/dashboard" replace />;
-      if (userRoles.includes('Doctor')) return <Navigate to="/doctor/dashboard" replace />;
-      return <Navigate to="/donor/dashboard" replace />;
+      return <Navigate to={getDashboardPath(user)} replace />;
     }
   }
 

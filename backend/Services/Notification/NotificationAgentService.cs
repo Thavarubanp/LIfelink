@@ -288,6 +288,112 @@ namespace LifeLink.Services.Notification
                 .ToListAsync();
         }
 
+        public async Task<int> GetUnreadCountAsync(Guid? userId, Guid? hospitalId = null)
+        {
+            if (!userId.HasValue && !hospitalId.HasValue) return 0;
+
+            var query = _context.Notifications.Where(n => !n.IsRead);
+            if (userId.HasValue && hospitalId.HasValue)
+            {
+                query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
+            }
+            else if (userId.HasValue)
+            {
+                query = query.Where(n => n.UserId == userId.Value);
+            }
+            else if (hospitalId.HasValue)
+            {
+                query = query.Where(n => n.HospitalId == hospitalId.Value);
+            }
+
+            return await query.CountAsync();
+        }
+
+        public async Task<List<NotificationResponseDto>> GetNotificationsForCallerAsync(Guid? userId, Guid? hospitalId = null)
+        {
+            if (!userId.HasValue && !hospitalId.HasValue) return new List<NotificationResponseDto>();
+
+            var query = _context.Notifications.AsQueryable();
+            if (userId.HasValue && hospitalId.HasValue)
+            {
+                query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
+            }
+            else if (userId.HasValue)
+            {
+                query = query.Where(n => n.UserId == userId.Value);
+            }
+            else if (hospitalId.HasValue)
+            {
+                query = query.Where(n => n.HospitalId == hospitalId.Value);
+            }
+
+            return await query
+                .OrderByDescending(n => n.CreatedAt)
+                .Select(n => new NotificationResponseDto
+                {
+                    NotificationId = n.NotificationId,
+                    UserId = n.UserId,
+                    HospitalId = n.HospitalId,
+                    Title = n.Title,
+                    Message = n.Message,
+                    NotificationType = n.NotificationType,
+                    RecipientRole = n.RecipientRole,
+                    IsRead = n.IsRead,
+                    CreatedAt = n.CreatedAt
+                })
+                .ToListAsync();
+        }
+
+        public async Task<bool> MarkNotificationReadAsync(Guid notificationId, Guid? userId, Guid? hospitalId = null, bool isAdmin = false)
+        {
+            var notification = await _context.Notifications.FindAsync(notificationId);
+            if (notification == null) return false;
+
+            if (!isAdmin)
+            {
+                bool matchesUser = userId.HasValue && notification.UserId == userId.Value;
+                bool matchesHospital = hospitalId.HasValue && notification.HospitalId == hospitalId.Value;
+                if (!matchesUser && !matchesHospital) return false;
+            }
+
+            notification.IsRead = true;
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<int> MarkAllNotificationsReadAsync(Guid? userId, Guid? hospitalId = null, bool isAdmin = false)
+        {
+            var query = _context.Notifications.Where(n => !n.IsRead);
+            if (!isAdmin)
+            {
+                if (userId.HasValue && hospitalId.HasValue)
+                {
+                    query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
+                }
+                else if (userId.HasValue)
+                {
+                    query = query.Where(n => n.UserId == userId.Value);
+                }
+                else if (hospitalId.HasValue)
+                {
+                    query = query.Where(n => n.HospitalId == hospitalId.Value);
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+
+            var unreadNotifications = await query.ToListAsync();
+            foreach (var n in unreadNotifications)
+            {
+                n.IsRead = true;
+            }
+
+            await _context.SaveChangesAsync();
+            return unreadNotifications.Count;
+        }
+
         private class AgentProcessResponseDto
         {
             public string RequestId { get; set; } = string.Empty;

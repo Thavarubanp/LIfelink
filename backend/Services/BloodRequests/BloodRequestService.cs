@@ -12,6 +12,8 @@ namespace LifeLink.Services.BloodRequests
 {
     public class BloodRequestService : IBloodRequestService
     {
+        public const string ExpiryRejectionReason = "Request expired before it was fulfilled.";
+
         private readonly AppDbContext _context;
 
         public BloodRequestService(AppDbContext context)
@@ -71,7 +73,7 @@ namespace LifeLink.Services.BloodRequests
                 r.PatientUserId == patientUserId &&
                 r.HospitalId == dto.HospitalId &&
                 r.BloodGroup == normalizedBloodGroup &&
-                (r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Approved));
+                (r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Verified || r.Status == BloodRequestStatus.Approved));
 
             if (hasActiveDuplicate)
             {
@@ -99,7 +101,7 @@ namespace LifeLink.Services.BloodRequests
             await _context.BloodRequests.AddAsync(request);
             await _context.SaveChangesAsync();
 
-            return MapToResponseDto(request);
+            return (await MapManyAsync(new[] { request })).First();
         }
 
         public async Task<IEnumerable<BloodRequestResponseDto>> GetMyRequestsAsync(Guid patientUserId)
@@ -109,7 +111,79 @@ namespace LifeLink.Services.BloodRequests
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();
 
-            return requests.Select(MapToResponseDto);
+            return await MapManyAsync(requests);
+        }
+
+        public async Task<IEnumerable<BloodRequestResponseDto>> GetHospitalRequestsAsync(Guid hospitalId)
+        {
+            // All statuses, including rejected, so the hospital keeps a full record of requests sent to it
+            var requests = await _context.BloodRequests
+                .Where(r => r.HospitalId == hospitalId)
+                .OrderByDescending(r => r.CreatedAt)
+                .ToListAsync();
+
+            return await MapManyAsync(requests);
+        }
+
+        public async Task<IEnumerable<BloodRequestResponseDto>> GetAssignedRequestsAsync(Guid doctorUserId)
+        {
+            var doctor = await _context.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId);
+            if (doctor == null)
+            {
+                throw new UnauthorizedAccessException("Only doctor accounts can view assigned blood requests.");
+            }
+
+            var assignedRequestIds = _context.BloodRequestVerifications
+                .Where(v => v.DoctorId == doctor.DoctorId)
+                .Select(v => v.BloodRequestId);
+
+            var requests = await _context.BloodRequests
+                .Where(r => assignedRequestIds.Contains(r.BloodRequestId))
+                .OrderByDescending(r => r.Status == BloodRequestStatus.Verified)
+                .ThenByDescending(r => r.CreatedAt)
+                .ToListAsync();
+
+            return await MapManyAsync(requests);
+        }
+
+        public async Task DeleteRejectedRequestAsync(Guid requestId, Guid creatorUserId)
+        {
+            var request = await _context.BloodRequests.FindAsync(requestId);
+            if (request == null)
+            {
+                throw new KeyNotFoundException($"Blood request with ID {requestId} was not found.");
+            }
+
+            if (request.PatientUserId != creatorUserId)
+            {
+                throw new UnauthorizedAccessException("Only the request creator can delete this blood request.");
+            }
+
+            if (request.Status != BloodRequestStatus.Rejected)
+            {
+                throw new InvalidOperationException("Only rejected blood requests can be deleted.");
+            }
+
+            // Related tables reference BloodRequestId without FK cascades, so remove them explicitly.
+            // A single SaveChanges keeps the whole delete atomic.
+            var acceptanceIds = await _context.Acceptances
+                .Where(a => a.BloodRequestId == requestId)
+                .Select(a => a.AcceptanceId)
+                .ToListAsync();
+
+            _context.DonorVerifications.RemoveRange(
+                _context.DonorVerifications.Where(v => acceptanceIds.Contains(v.AcceptanceId)));
+            _context.RequestFulfillmentHistories.RemoveRange(
+                _context.RequestFulfillmentHistories.Where(h => h.BloodRequestId == requestId));
+            _context.DonorPatientMatches.RemoveRange(
+                _context.DonorPatientMatches.Where(m => m.BloodRequestId == requestId));
+            _context.Acceptances.RemoveRange(
+                _context.Acceptances.Where(a => a.BloodRequestId == requestId));
+            _context.BloodRequestVerifications.RemoveRange(
+                _context.BloodRequestVerifications.Where(v => v.BloodRequestId == requestId));
+            _context.BloodRequests.Remove(request);
+
+            await _context.SaveChangesAsync();
         }
 
         public async Task<BloodRequestResponseDto?> GetRequestByIdAsync(Guid requestId)
@@ -128,11 +202,12 @@ namespace LifeLink.Services.BloodRequests
                 request.Status != BloodRequestStatus.Rejected)
             {
                 request.Status = BloodRequestStatus.Rejected;
+                request.RejectionReason = ExpiryRejectionReason;
                 request.UpdatedAt = now;
                 await _context.SaveChangesAsync();
             }
 
-            return MapToResponseDto(request);
+            return (await MapManyAsync(new[] { request })).First();
         }
 
         public async Task<IEnumerable<BloodRequestResponseDto>> GetPublicRequestsAsync(string? bloodGroup = null, int? expiringWithinHours = null)
@@ -165,7 +240,7 @@ namespace LifeLink.Services.BloodRequests
                 .ThenBy(r => r.ExpiryDate)
                 .ToListAsync();
 
-            return list.Select(MapToResponseDto);
+            return await MapManyAsync(list);
         }
 
         public async Task<IEnumerable<BloodRequestResponseDto>> GetPendingRequestsAsync(Guid? hospitalId = null)
@@ -182,7 +257,7 @@ namespace LifeLink.Services.BloodRequests
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();
 
-            return list.Select(MapToResponseDto);
+            return await MapManyAsync(list);
         }
 
         public async Task<BloodRequestResponseDto> CancelRequestAsync(Guid requestId, Guid patientUserId)
@@ -214,7 +289,7 @@ namespace LifeLink.Services.BloodRequests
 
             await _context.SaveChangesAsync();
 
-            return MapToResponseDto(request);
+            return (await MapManyAsync(new[] { request })).First();
         }
 
         public async Task<BloodRequestAnalyticsDto> GetRequestAnalyticsAsync(Guid requestId)
@@ -266,6 +341,51 @@ namespace LifeLink.Services.BloodRequests
             });
         }
 
+        /// <summary>
+        /// Maps requests and resolves hospital name, creator name and assigned doctor with one query per table.
+        /// </summary>
+        private async Task<List<BloodRequestResponseDto>> MapManyAsync(IEnumerable<BloodRequest> requests)
+        {
+            var list = requests.ToList();
+            if (list.Count == 0) return new List<BloodRequestResponseDto>();
+
+            var requestIds = list.Select(r => r.BloodRequestId).ToList();
+            var hospitalIds = list.Select(r => r.HospitalId).Distinct().ToList();
+            var creatorIds = list.Select(r => r.PatientUserId).Distinct().ToList();
+
+            var hospitalNames = await _context.Hospitals
+                .Where(h => hospitalIds.Contains(h.HospitalId))
+                .ToDictionaryAsync(h => h.HospitalId, h => h.Name);
+
+            var creatorNames = await _context.Users
+                .Where(u => creatorIds.Contains(u.UserId))
+                .ToDictionaryAsync(u => u.UserId, u => $"{u.FirstName} {u.LastName}".Trim());
+
+            // Latest verification per request carries the assigned doctor
+            var verifications = await _context.BloodRequestVerifications
+                .Include(v => v.Doctor)
+                .Where(v => requestIds.Contains(v.BloodRequestId))
+                .ToListAsync();
+            var assignments = verifications
+                .GroupBy(v => v.BloodRequestId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.UpdatedAt).First());
+
+            return list.Select(r =>
+            {
+                var dto = MapToResponseDto(r);
+                dto.HospitalName = hospitalNames.GetValueOrDefault(r.HospitalId);
+                dto.CreatedByName = creatorNames.GetValueOrDefault(r.PatientUserId);
+                if (assignments.TryGetValue(r.BloodRequestId, out var v))
+                {
+                    dto.AssignedDoctorId = v.DoctorId;
+                    dto.AssignedDoctorName = v.Doctor != null
+                        ? $"Dr. {v.Doctor.FirstName} {v.Doctor.LastName}".Trim()
+                        : (v.DoctorId == null ? "Removed doctor" : null);
+                }
+                return dto;
+            }).ToList();
+        }
+
         private static BloodRequestResponseDto MapToResponseDto(BloodRequest request)
         {
             return new BloodRequestResponseDto
@@ -282,7 +402,8 @@ namespace LifeLink.Services.BloodRequests
                 CreatedAt = request.CreatedAt,
                 UpdatedAt = request.UpdatedAt,
                 ExpiryDate = request.ExpiryDate,
-                CancelledAt = request.CancelledAt
+                CancelledAt = request.CancelledAt,
+                RejectionReason = request.RejectionReason
             };
         }
     }

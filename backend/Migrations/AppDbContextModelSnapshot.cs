@@ -200,6 +200,10 @@ namespace backend.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
@@ -244,7 +248,7 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("DoctorId")
+                    b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("Notes")
@@ -311,6 +315,9 @@ namespace backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<Guid?>("TargetUserId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("UserId")
                         .HasColumnType("uuid");
 
@@ -323,6 +330,8 @@ namespace backend.Migrations
                     b.HasIndex("HospitalId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex("TargetUserId");
 
                     b.HasIndex("UserId");
 
@@ -401,15 +410,23 @@ namespace backend.Migrations
 
                     b.Property<string>("LicenseNumber")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<bool>("MustChangePassword")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Specialization")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -419,7 +436,8 @@ namespace backend.Migrations
 
                     b.HasKey("DoctorId");
 
-                    b.HasIndex("Email");
+                    b.HasIndex("Email")
+                        .IsUnique();
 
                     b.HasIndex("HospitalId");
 
@@ -440,7 +458,7 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("DoctorId")
+                    b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("DonorUserId")
@@ -485,7 +503,7 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<Guid>("DoctorId")
+                    b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
                     b.Property<string>("MedicalReportSummary")
@@ -1148,8 +1166,7 @@ namespace backend.Migrations
                     b.HasOne("LifeLink.Entities.Doctor", "Doctor")
                         .WithMany()
                         .HasForeignKey("DoctorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Doctor");
                 });
@@ -1166,6 +1183,11 @@ namespace backend.Migrations
                         .HasForeignKey("HospitalId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("LifeLink.Entities.User", "TargetUser")
+                        .WithMany()
+                        .HasForeignKey("TargetUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("LifeLink.Entities.User", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -1174,6 +1196,8 @@ namespace backend.Migrations
                     b.Navigation("AssignedAdmin");
 
                     b.Navigation("Hospital");
+
+                    b.Navigation("TargetUser");
 
                     b.Navigation("User");
                 });
@@ -1219,8 +1243,7 @@ namespace backend.Migrations
                     b.HasOne("LifeLink.Entities.Doctor", "Doctor")
                         .WithMany()
                         .HasForeignKey("DoctorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("LifeLink.Entities.User", "DonorUser")
                         .WithMany()
@@ -1238,8 +1261,7 @@ namespace backend.Migrations
                     b.HasOne("LifeLink.Entities.Doctor", "Doctor")
                         .WithMany()
                         .HasForeignKey("DoctorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Doctor");
                 });

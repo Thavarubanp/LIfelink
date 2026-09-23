@@ -8,7 +8,7 @@ namespace LifeLink.DTOs.Matching
         public Guid BloodRequestId { get; set; }
         public Guid DonorUserId { get; set; }
         public string? DonorName { get; set; }
-        public Guid DoctorId { get; set; }
+        public Guid? DoctorId { get; set; } // null when the doctor account was deleted
         public string DoctorName { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public bool IsRemovedFromPublicDashboard { get; set; }

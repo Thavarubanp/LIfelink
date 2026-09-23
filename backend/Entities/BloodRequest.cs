@@ -18,5 +18,10 @@ namespace LifeLink.Entities
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public DateTime ExpiryDate { get; set; }
         public DateTime? CancelledAt { get; set; }
+
+        /// <summary>
+        /// Message shown to the creator when the hospital, the assigned doctor, or expiry rejects the request.
+        /// </summary>
+        public string? RejectionReason { get; set; }
     }
 }

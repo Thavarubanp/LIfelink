@@ -1,17 +1,31 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { bloodRequestApi, hospitalApi } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
-import { ClipboardList, AlertCircle, Loader2, Building2, Search, X, CheckCircle2 } from 'lucide-react';
+import { getUserRoles } from '../../utils/roleUtils';
+import { getApiErrorMessage } from '../../utils/errorUtils';
+import { MyRequestsList } from './MyRequestsPage';
+import { AlertCircle, Loader2, Building2, X, Lock } from 'lucide-react';
 
+const INITIAL_FORM = {
+  hospitalId: '',
+  bloodGroup: 'O+',
+  unitsRequired: 2,
+  reason: '',
+  priority: 'High'
+};
+
+/**
+ * Shared Create Blood Request page for Users (Donor/Patient), Admins and Hospital Staff.
+ * Users/Admins must select a hospital; Hospital Staff are locked to their own hospital.
+ * The creator's requests are listed below the form.
+ */
 export const CreatePatientRequestPage = () => {
-  const [formData, setFormData] = useState({
-    hospitalId: '',
-    bloodGroup: 'O+',
-    unitsRequired: 2,
-    reason: '',
-    priority: 'High'
-  });
+  const { user } = useAuth();
+  const isHospitalStaff = getUserRoles(user).includes('HospitalStaff');
+
+  const [formData, setFormData] = useState(INITIAL_FORM);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Hospital Autocomplete State
   const [hospitals, setHospitals] = useState([]);
@@ -23,7 +37,6 @@ export const CreatePatientRequestPage = () => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const navigate = useNavigate();
   const { addToast } = useNotification();
 
   // Fetch active/approved hospitals from database
@@ -36,6 +49,19 @@ export const CreatePatientRequestPage = () => {
         // Display verified / active hospitals only
         const activeList = list.filter((h) => h.isVerified === true);
         setHospitals(activeList);
+
+        // Hospital staff always request for their own hospital (matched by account email, as the backend does)
+        if (isHospitalStaff) {
+          const normEmail = user?.email?.trim().toLowerCase();
+          const own = activeList.find((h) => h.email?.toLowerCase() === normEmail);
+          if (own) {
+            setSelectedHospital(own);
+            setSearchQuery(own.name);
+            setFormData((prev) => ({ ...prev, hospitalId: own.hospitalId }));
+          } else {
+            setError('Your hospital could not be loaded. Please refresh the page.');
+          }
+        }
       } catch (err) {
         console.error('Failed to load active hospitals:', err);
       } finally {
@@ -43,7 +69,7 @@ export const CreatePatientRequestPage = () => {
       }
     };
     fetchHospitals();
-  }, []);
+  }, [isHospitalStaff, user?.email]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -100,18 +126,22 @@ export const CreatePatientRequestPage = () => {
         message: `Your request for ${selectedHospital?.name || 'the hospital'} has been submitted for verification.`,
         type: 'success'
       });
-      navigate('/donor/my-requests');
+      // Stay on the page: reset the form (hospital staff keep their locked hospital) and reload My Requests
+      setFormData((prev) => ({ ...INITIAL_FORM, hospitalId: isHospitalStaff ? prev.hospitalId : '' }));
+      if (!isHospitalStaff) handleClearHospital();
+      setRefreshKey((k) => k + 1);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to create blood request.');
+      setError(getApiErrorMessage(err));
     } finally {
       setLoading(false);
     }
   };
 
   return (
+    <div className="space-y-8">
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Create Patient Blood Request</h1>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Create Blood Request</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Submit a blood requirement request for hospital verification and donor matching.
         </p>
@@ -126,7 +156,25 @@ export const CreatePatientRequestPage = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          {/* Mandatory Searchable Hospital Dropdown */}
+          {/* Hospital staff: own hospital, locked */}
+          {isHospitalStaff ? (
+            <div>
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 uppercase tracking-wider text-[11px]">
+                HOSPITAL <span className="text-slate-400 font-medium normal-case tracking-normal">(your hospital — cannot be changed)</span>
+              </label>
+              <div className="relative">
+                <Building2 className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
+                <input
+                  type="text"
+                  readOnly
+                  value={loadingHospitals ? 'Loading your hospital...' : selectedHospital?.name || ''}
+                  className="w-full pl-10 pr-9 py-2.5 bg-slate-100 dark:bg-slate-800/60 border border-emerald-500/80 rounded-xl text-slate-900 dark:text-slate-100 cursor-not-allowed focus:outline-none"
+                />
+                <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+              </div>
+            </div>
+          ) : (
+          /* Mandatory Searchable Hospital Dropdown */
           <div className="relative" ref={dropdownRef}>
             <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 uppercase tracking-wider text-[11px]">
               SELECT HOSPITAL * <span className="text-red-500 font-bold">(Mandatory)</span>
@@ -223,6 +271,7 @@ export const CreatePatientRequestPage = () => {
               </div>
             )}
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -285,6 +334,9 @@ export const CreatePatientRequestPage = () => {
           </button>
         </form>
       </div>
+    </div>
+
+      <MyRequestsList refreshKey={refreshKey} />
     </div>
   );
 };

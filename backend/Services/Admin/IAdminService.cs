@@ -8,6 +8,8 @@ namespace LifeLink.Services.Admin
     public interface IAdminService
     {
         Task<AdminDashboardStatsDto> GetDashboardStatsAsync();
+        Task<List<AdminUserResponseDto>> GetUsersAsync();
+        Task<List<AdminHospitalResponseDto>> GetAllHospitalsAsync();
         Task<List<AdminHospitalResponseDto>> GetPendingHospitalsAsync();
         Task<AdminHospitalResponseDto> ApproveHospitalAsync(Guid hospitalId, Guid adminId);
         Task<AdminHospitalResponseDto> RejectHospitalAsync(Guid hospitalId, Guid adminId, RejectHospitalDto dto);

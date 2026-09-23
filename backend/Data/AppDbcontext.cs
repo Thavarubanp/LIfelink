@@ -218,11 +218,15 @@ namespace LifeLink.Data
             {
                 entity.HasKey(d => d.DoctorId);
                 entity.HasIndex(d => d.HospitalId);
-                entity.HasIndex(d => d.Email);
+                entity.HasIndex(d => d.Email).IsUnique();
 
                 entity.Property(d => d.FirstName).IsRequired().HasMaxLength(100);
                 entity.Property(d => d.LastName).IsRequired().HasMaxLength(100);
                 entity.Property(d => d.Email).IsRequired().HasMaxLength(200);
+                entity.Property(d => d.LicenseNumber).HasMaxLength(100);
+                entity.Property(d => d.PhoneNumber).HasMaxLength(20);
+                entity.Property(d => d.Specialization).HasMaxLength(100);
+                entity.Property(d => d.MustChangePassword).IsRequired().HasDefaultValue(true);
 
                 entity.HasOne(d => d.Hospital)
                       .WithMany(h => h.Doctors)
@@ -235,6 +239,7 @@ namespace LifeLink.Data
                       .OnDelete(DeleteBehavior.SetNull);
             });
 
+
             // BloodRequestVerification configuration
             modelBuilder.Entity<BloodRequestVerification>(entity =>
             {
@@ -246,10 +251,11 @@ namespace LifeLink.Data
                       .HasConversion<string>()
                       .IsRequired();
 
+                // SetNull: deleting a doctor must not delete the request verification history
                 entity.HasOne(v => v.Doctor)
                       .WithMany()
                       .HasForeignKey(v => v.DoctorId)
-                      .OnDelete(DeleteBehavior.Cascade);
+                      .OnDelete(DeleteBehavior.SetNull);
             });
 
             // DonorVerification configuration
@@ -263,10 +269,11 @@ namespace LifeLink.Data
                       .HasConversion<string>()
                       .IsRequired();
 
+                // SetNull: deleting a doctor must not delete donor screening history
                 entity.HasOne(v => v.Doctor)
                       .WithMany()
                       .HasForeignKey(v => v.DoctorId)
-                      .OnDelete(DeleteBehavior.Cascade);
+                      .OnDelete(DeleteBehavior.SetNull);
             });
 
             // DonorPatientMatch configuration
@@ -281,10 +288,11 @@ namespace LifeLink.Data
                       .HasConversion<string>()
                       .IsRequired();
 
+                // SetNull: deleting a doctor must not delete donor match history
                 entity.HasOne(m => m.Doctor)
                       .WithMany()
                       .HasForeignKey(m => m.DoctorId)
-                      .OnDelete(DeleteBehavior.Cascade);
+                      .OnDelete(DeleteBehavior.SetNull);
 
                 entity.HasOne(m => m.DonorUser)
                       .WithMany()
@@ -328,6 +336,7 @@ namespace LifeLink.Data
                 entity.Property(b => b.FulfilledUnits).IsRequired().HasDefaultValue(0);
                 entity.Property(b => b.Reason).IsRequired().HasMaxLength(500);
                 entity.Property(b => b.Priority).IsRequired().HasMaxLength(20);
+                entity.Property(b => b.RejectionReason).HasMaxLength(500);
                 entity.Property(b => b.ConcurrencyToken).IsConcurrencyToken();
                 entity.Property(b => b.Status)
                       .HasConversion<string>()
@@ -387,6 +396,11 @@ namespace LifeLink.Data
                 entity.HasOne(c => c.User)
                       .WithMany()
                       .HasForeignKey(c => c.UserId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(c => c.TargetUser)
+                      .WithMany()
+                      .HasForeignKey(c => c.TargetUserId)
                       .OnDelete(DeleteBehavior.SetNull);
 
                 entity.HasOne(c => c.Hospital)

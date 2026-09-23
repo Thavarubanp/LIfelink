@@ -15,6 +15,7 @@ namespace LifeLink.DTOs.Doctors
         public string LicenseNumber { get; set; } = string.Empty;
         public string Specialization { get; set; } = string.Empty;
         public bool IsActive { get; set; }
+        public bool MustChangePassword { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

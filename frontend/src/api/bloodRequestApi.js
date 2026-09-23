@@ -11,6 +11,42 @@ export const bloodRequestApi = {
     return response.data;
   },
 
+  // Hospital staff: every request sent to the signed-in hospital (all statuses)
+  getHospitalRequests: async () => {
+    const response = await client.get('/BloodRequests/hospital');
+    return response.data;
+  },
+
+  // Doctor: requests assigned to the signed-in doctor
+  getAssignedRequests: async () => {
+    const response = await client.get('/BloodRequests/assigned');
+    return response.data;
+  },
+
+  // Creator: permanently delete own rejected request
+  deleteRequest: async (id) => {
+    const response = await client.delete(`/BloodRequests/${id}`);
+    return response.data;
+  },
+
+  // Hospital: verify a pending request and assign one of its doctors (mandatory)
+  verifyRequest: async (id, doctorId) => {
+    const response = await client.put(`/requests/${id}/verify`, { doctorId });
+    return response.data;
+  },
+
+  // Assigned doctor: approve a verified request
+  approveRequest: async (id, notes = '') => {
+    const response = await client.put(`/requests/${id}/approve`, { notes });
+    return response.data;
+  },
+
+  // Hospital (pending/verified) or assigned doctor (verified): reject with a mandatory reason
+  rejectRequest: async (id, reason) => {
+    const response = await client.put(`/requests/${id}/reject`, { notes: reason });
+    return response.data;
+  },
+
   getPublicRequests: async (bloodGroup = null, expiringWithinHours = null) => {
     const params = {};
     if (bloodGroup) params.bloodGroup = bloodGroup;

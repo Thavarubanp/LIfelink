@@ -13,5 +13,9 @@ namespace LifeLink.Services.Notification
         Task<NotificationResponseDto> CreateRecommendationNotificationAsync(CreateRecommendationNotificationDto dto);
         Task<List<NotificationResponseDto>> GetNotificationsForUserAsync(Guid userId);
         Task<List<NotificationResponseDto>> GetAllNotificationsAsync();
+        Task<int> GetUnreadCountAsync(Guid? userId, Guid? hospitalId = null);
+        Task<List<NotificationResponseDto>> GetNotificationsForCallerAsync(Guid? userId, Guid? hospitalId = null);
+        Task<bool> MarkNotificationReadAsync(Guid notificationId, Guid? userId, Guid? hospitalId = null, bool isAdmin = false);
+        Task<int> MarkAllNotificationsReadAsync(Guid? userId, Guid? hospitalId = null, bool isAdmin = false);
     }
 }

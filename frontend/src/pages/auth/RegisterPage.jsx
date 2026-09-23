@@ -95,7 +95,7 @@ export const RegisterPage = () => {
 
     try {
       const res = await authApi.register(formData);
-      if (res.isSuccess) {
+      if (res?.success) {
         setSuccess(true);
         setTimeout(() => navigate('/login'), 2500);
       } else {

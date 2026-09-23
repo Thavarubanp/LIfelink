@@ -7,7 +7,8 @@ namespace LifeLink.Entities
         public Guid MatchId { get; set; } = Guid.NewGuid();
         public Guid BloodRequestId { get; set; }
         public Guid DonorUserId { get; set; }
-        public Guid DoctorId { get; set; }
+        // Nullable so match history survives when the hospital deletes the doctor
+        public Guid? DoctorId { get; set; }
 
         public MatchStatus Status { get; set; } = MatchStatus.Matched;
         public bool IsRemovedFromPublicDashboard { get; set; } = true;
@@ -18,7 +19,7 @@ namespace LifeLink.Entities
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation properties
-        public Doctor Doctor { get; set; } = null!;
+        public Doctor? Doctor { get; set; }
         public User? DonorUser { get; set; }
     }
 }

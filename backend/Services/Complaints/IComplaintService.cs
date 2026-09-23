@@ -14,5 +14,7 @@ namespace LifeLink.Services.Complaints
         Task<ComplaintResponseDto> ReviewComplaintAsync(Guid complaintId, Guid adminId, ReviewComplaintDto? dto = null);
         Task<ComplaintResponseDto> RequestActivityReportAsync(Guid complaintId, Guid adminId, RequestActivityReportDto dto);
         Task<ComplaintResponseDto> ResolveComplaintAsync(Guid complaintId, Guid adminId, ResolveComplaintDto dto);
+        Task<ComplaintResponseDto> SolveComplaintAsync(Guid complaintId, Guid userId, string? notes = null);
+        Task<ComplaintResponseDto> CancelComplaintAsync(Guid complaintId, Guid userId);
     }
 }

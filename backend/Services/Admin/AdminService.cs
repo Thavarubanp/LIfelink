@@ -27,7 +27,7 @@ namespace LifeLink.Services.Admin
             var totalDoctors = await _context.Doctors.CountAsync();
 
             var activeRequests = await _context.BloodRequests.CountAsync(r =>
-                r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Approved);
+                r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Verified || r.Status == BloodRequestStatus.Approved);
 
             var pendingComplaints = await _context.Complaints.CountAsync(c =>
                 c.Status == ComplaintStatus.OPEN ||
@@ -144,6 +144,13 @@ namespace LifeLink.Services.Admin
                 throw new KeyNotFoundException($"User with ID {userId} was not found.");
             }
 
+            // Doctor lifecycle is owned by the hospital that created the doctor, not by admins
+            var isDoctor = await _context.UserRoles.AnyAsync(ur => ur.UserId == userId && ur.Role.Name == "Doctor");
+            if (isDoctor)
+            {
+                throw new InvalidOperationException("Doctor accounts are managed by their hospital and cannot be suspended by an admin.");
+            }
+
             user.IsSuspended = true;
             user.SuspendedUntil = dto.SuspendedUntil;
             user.SuspensionReason = dto.Reason;
@@ -216,6 +223,25 @@ namespace LifeLink.Services.Admin
             await _notificationService.NotifyHospitalReinstatedAsync(hospital);
 
             return MapToHospitalDto(hospital);
+        }
+
+        public async Task<List<AdminUserResponseDto>> GetUsersAsync()
+        {
+            var users = await _context.Users
+                .OrderByDescending(u => u.CreatedAt)
+                .ToListAsync();
+
+            return users.Select(MapToUserDto).ToList();
+        }
+
+        public async Task<List<AdminHospitalResponseDto>> GetAllHospitalsAsync()
+        {
+            var hospitals = await _context.Hospitals
+                .Include(h => h.ApprovalHistories)
+                .OrderByDescending(h => h.CreatedAt)
+                .ToListAsync();
+
+            return hospitals.Select(MapToHospitalDto).ToList();
         }
 
         private static AdminHospitalResponseDto MapToHospitalDto(Hospital hospital)

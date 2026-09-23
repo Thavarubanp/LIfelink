@@ -68,7 +68,7 @@ namespace LifeLink.Tests
         {
             var context = GetInMemoryDbContext();
             var hospitalService = new HospitalService(context);
-            var doctorService = new DoctorService(context);
+            var doctorService = new DoctorService(context, new LifeLink.Services.Auth.PasswordHasherService());
 
             var hospital = await hospitalService.CreateHospitalAsync(new CreateHospitalDto
             {
@@ -81,7 +81,8 @@ namespace LifeLink.Tests
                 FirstName = "Gregory",
                 LastName = "House",
                 Email = "house@apex.org",
-                PhoneNumber = "555-9999",
+                Password = "Initial#Pass1",
+                PhoneNumber = "5559999000",
                 LicenseNumber = "DOC-9876",
                 Specialization = "Diagnostic Medicine"
             };
@@ -94,6 +95,32 @@ namespace LifeLink.Tests
             var list = await doctorService.GetDoctorsAsync(hospital.HospitalId);
             Assert.Single(list);
             Assert.Equal(doctor.DoctorId, list.First().DoctorId);
+        }
+
+        // A request the hospital has verified and assigned to the given doctor (awaiting the doctor's decision)
+        private static async Task<Guid> SeedVerifiedRequestAsync(AppDbContext context, Guid hospitalId, Guid doctorId, string bloodGroup, string priority)
+        {
+            var request = new BloodRequest
+            {
+                BloodRequestId = Guid.NewGuid(),
+                PatientUserId = Guid.NewGuid(),
+                HospitalId = hospitalId,
+                BloodGroup = bloodGroup,
+                UnitsRequired = 2,
+                Reason = "Surgery",
+                Priority = priority,
+                Status = BloodRequestStatus.Verified,
+                ExpiryDate = DateTime.UtcNow.AddDays(7)
+            };
+            await context.BloodRequests.AddAsync(request);
+            await context.BloodRequestVerifications.AddAsync(new BloodRequestVerification
+            {
+                BloodRequestId = request.BloodRequestId,
+                DoctorId = doctorId,
+                Status = VerificationStatus.Pending
+            });
+            await context.SaveChangesAsync();
+            return request.BloodRequestId;
         }
 
         private NotificationAgentService CreateNotificationService(AppDbContext context)
@@ -117,24 +144,18 @@ namespace LifeLink.Tests
 
             // Seed hospital and doctor
             var hospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "St. Jude", IsVerified = true };
-            var doctor = new Doctor { DoctorId = Guid.NewGuid(), HospitalId = hospital.HospitalId, FirstName = "John", LastName = "Watson", Email = "watson@stjude.org" };
+            // Doctor login id without a Users row so the doctor is not counted as a donor recipient
+            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = hospital.HospitalId, FirstName = "John", LastName = "Watson", Email = "watson@stjude.org" };
             await context.Hospitals.AddAsync(hospital);
             await context.Doctors.AddAsync(doctor);
             await context.SaveChangesAsync();
 
-            var requestId = Guid.NewGuid();
-            var approveDto = new ApproveRejectRequestDto
-            {
-                DoctorId = doctor.DoctorId,
-                HospitalId = hospital.HospitalId,
-                BloodGroup = "A+",
-                Priority = "Normal",
-                Notes = "Patient verified and cleared for matching."
-            };
+            var requestId = await SeedVerifiedRequestAsync(context, hospital.HospitalId, doctor.DoctorId, "A+", "Normal");
 
-            var result = await verificationService.ApproveBloodRequestAsync(requestId, approveDto);
+            var result = await verificationService.ApproveBloodRequestAsync(requestId, doctor.UserId!.Value, "Patient verified and cleared for matching.");
             Assert.NotNull(result);
             Assert.Equal("Approved", result.Status);
+            Assert.Equal(BloodRequestStatus.Approved, (await context.BloodRequests.FindAsync(requestId))!.Status);
 
             // Verify notifications
             var notifications = await context.Notifications.ToListAsync();
@@ -163,7 +184,7 @@ namespace LifeLink.Tests
             var otherHospital2 = new Hospital { HospitalId = Guid.NewGuid(), Name = "Backup Hospital 2", IsVerified = true };
             var unverifiedHospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Pending Hospital", IsVerified = false };
 
-            var doctor = new Doctor { DoctorId = Guid.NewGuid(), HospitalId = requestingHospital.HospitalId, FirstName = "Stephen", LastName = "Strange", Email = "strange@origin.org" };
+            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = requestingHospital.HospitalId, FirstName = "Stephen", LastName = "Strange", Email = "strange@origin.org" };
 
             await context.Roles.AddAsync(adminRole);
             await context.Users.AddRangeAsync(adminUser, donorUser);
@@ -171,17 +192,9 @@ namespace LifeLink.Tests
             await context.Doctors.AddAsync(doctor);
             await context.SaveChangesAsync();
 
-            var requestId = Guid.NewGuid();
-            var approveDto = new ApproveRejectRequestDto
-            {
-                DoctorId = doctor.DoctorId,
-                HospitalId = requestingHospital.HospitalId,
-                BloodGroup = "O-",
-                Priority = "Critical",
-                Notes = "CRITICAL: Urgent emergency blood requirement!"
-            };
+            var requestId = await SeedVerifiedRequestAsync(context, requestingHospital.HospitalId, doctor.DoctorId, "O-", "Critical");
 
-            var result = await verificationService.ApproveBloodRequestAsync(requestId, approveDto);
+            var result = await verificationService.ApproveBloodRequestAsync(requestId, doctor.UserId!.Value, "CRITICAL: Urgent emergency blood requirement!");
             Assert.NotNull(result);
             Assert.Equal("Approved", result.Status);
 

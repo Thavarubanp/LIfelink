@@ -402,18 +402,20 @@ namespace LifeLink.Tests
             var hospitalNotif = await context.Notifications.FirstOrDefaultAsync(n => n.HospitalId == hospitalId && n.NotificationType == "ActivityReportRequested");
             Assert.NotNull(hospitalNotif);
 
-            // Step 4: Admin Resolves Complaint (Status: RESOLVED)
-            var resolved = await complaintService.ResolveComplaintAsync(complaint.ComplaintId, adminId, new ResolveComplaintDto
-            {
-                Status = "RESOLVED",
-                ResolutionNotes = "Hospital provided proof of traffic road blockage; procedure guidelines updated."
-            });
+            // Step 4: Admins cannot mark a complaint as solved (current rule: creator only)
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                complaintService.ResolveComplaintAsync(complaint.ComplaintId, adminId, new ResolveComplaintDto
+                {
+                    Status = "RESOLVED",
+                    ResolutionNotes = "Hospital provided proof of traffic road blockage; procedure guidelines updated."
+                }));
+
+            // Step 5: The complaint creator marks it solved (Status: RESOLVED)
+            var resolved = await complaintService.SolveComplaintAsync(complaint.ComplaintId, userId,
+                "Hospital provided proof of traffic road blockage; procedure guidelines updated.");
             Assert.Equal("RESOLVED", resolved.Status);
             Assert.NotNull(resolved.ResolvedAt);
-            Assert.Equal(4, resolved.AuditLogs.Count);
-
-            // Verify complainant notification and email dispatch
-            mockEmail.Verify(e => e.SendEmailAsync(user.Email, It.IsAny<string>(), It.Is<string>(b => b.Contains("RESOLVED")), It.IsAny<bool>()), Times.Once);
+            Assert.Equal(4, resolved.AuditLogs.Count); // refused admin attempt adds no audit entry
         }
 
         [Fact]

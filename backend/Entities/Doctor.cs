@@ -16,6 +16,12 @@ namespace LifeLink.Entities
         public string Specialization { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
 
+        /// <summary>
+        /// When true, the doctor must change their password before accessing the dashboard.
+        /// Set to true on creation (by hospital) and cleared to false after first successful password change.
+        /// </summary>
+        public bool MustChangePassword { get; set; } = true;
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
@@ -24,3 +30,4 @@ namespace LifeLink.Entities
         public User? User { get; set; }
     }
 }
+

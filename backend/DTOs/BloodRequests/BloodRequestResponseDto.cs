@@ -17,5 +17,12 @@ namespace LifeLink.DTOs.BloodRequests
         public DateTime UpdatedAt { get; set; }
         public DateTime ExpiryDate { get; set; }
         public DateTime? CancelledAt { get; set; }
+        public string? RejectionReason { get; set; }
+
+        // Display details resolved from related records
+        public string? HospitalName { get; set; }
+        public string? CreatedByName { get; set; }
+        public Guid? AssignedDoctorId { get; set; }
+        public string? AssignedDoctorName { get; set; }
     }
 }

@@ -2,12 +2,14 @@ using System;
 using System.Threading.Tasks;
 using LifeLink.DTOs.Matching;
 using LifeLink.Services.Matching;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/matching")]
+    [Authorize(Roles = "Doctor,Admin,InternalAgent")]
     public class MatchingController : ControllerBase
     {
         private readonly IMatchingService _matchingService;

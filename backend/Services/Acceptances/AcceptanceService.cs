@@ -373,6 +373,10 @@ namespace LifeLink.Services.Acceptances
 
             request.UpdatedAt = DateTime.UtcNow;
 
+            // Hospital-created requests restock that hospital: collected units go into its inventory.
+            // Staged on the same context so the inventory update commits atomically with the selection.
+            await AddCollectedUnitsToHospitalInventoryAsync(request, selectedAcceptances.Count);
+
             await _context.SaveChangesAsync();
 
             return new FinalizeDonorSelectionResponseDto
@@ -383,6 +387,50 @@ namespace LifeLink.Services.Acceptances
                 RemainingUnits = Math.Max(0, request.UnitsRequired - request.FulfilledUnits),
                 Message = "Donor selection completed successfully."
             };
+        }
+
+        private async Task AddCollectedUnitsToHospitalInventoryAsync(BloodRequest request, int collectedUnits)
+        {
+            if (collectedUnits <= 0) return;
+
+            var createdByHospital = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
+            if (!createdByHospital) return;
+
+            var now = DateTime.UtcNow;
+            var inventory = await _context.BloodInventories
+                .FirstOrDefaultAsync(i => i.HospitalId == request.HospitalId && i.BloodGroup == request.BloodGroup);
+
+            if (inventory == null)
+            {
+                // First stock for this blood group; the hospital can adjust threshold/capacity later
+                inventory = new BloodInventory
+                {
+                    InventoryId = Guid.NewGuid(),
+                    HospitalId = request.HospitalId,
+                    BloodGroup = request.BloodGroup,
+                    UnitsAvailable = 0,
+                    MinimumThreshold = 0,
+                    MaximumCapacity = 100,
+                    CreatedAt = now
+                };
+                await _context.BloodInventories.AddAsync(inventory);
+            }
+
+            // Collected blood is never capped at capacity; discarding donated units would lose real stock
+            inventory.UnitsAvailable += collectedUnits;
+            inventory.LastUpdated = now;
+            inventory.UpdatedAt = now;
+
+            await _context.InventoryTransactions.AddAsync(new InventoryTransaction
+            {
+                TransactionId = Guid.NewGuid(),
+                InventoryId = inventory.InventoryId,
+                TransactionType = TransactionType.StockAddition,
+                Units = collectedUnits,
+                Notes = $"Collected from donors for blood request {request.BloodRequestId}",
+                CreatedAt = now
+            });
         }
 
         public async Task<AcceptanceResponseDto> UpdateScreeningStatusAsync(Guid acceptanceId, AcceptanceStatus newStatus)

@@ -123,6 +123,18 @@ namespace LifeLink.Services.Hospitals
             return list.Select(MapToResponseDto).ToList();
         }
 
+        public async Task<Guid?> GetHospitalIdByEmailAsync(string? email)
+        {
+            // Hospital staff accounts share the hospital's registered email address
+            if (string.IsNullOrWhiteSpace(email)) return null;
+
+            var normalizedEmail = email.Trim().ToLowerInvariant();
+            return await _context.Hospitals
+                .Where(h => h.Email != null && h.Email.ToLower() == normalizedEmail)
+                .Select(h => (Guid?)h.HospitalId)
+                .FirstOrDefaultAsync();
+        }
+
         public async Task<HospitalResponseDto?> GetHospitalByIdAsync(Guid hospitalId)
         {
             var hospital = await _context.Hospitals

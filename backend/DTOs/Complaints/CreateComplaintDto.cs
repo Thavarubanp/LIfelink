@@ -20,5 +20,11 @@ namespace LifeLink.DTOs.Complaints
         public string Description { get; set; } = string.Empty;
 
         public Guid? HospitalId { get; set; }
+
+        /// <summary>
+        /// Individual user the complaint is filed against. Doctors cannot be targeted;
+        /// doctor-caused issues are filed against the doctor's hospital (HospitalId).
+        /// </summary>
+        public Guid? TargetUserId { get; set; }
     }
 }

@@ -1,11 +1,16 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Common;
+using LifeLink.Data;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Notification;
+using LifeLink.Services.Common;
 using LifeLink.Services.Notification;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Controllers
 {
@@ -15,10 +20,36 @@ namespace LifeLink.Controllers
     public class NotificationsController : ControllerBase
     {
         private readonly INotificationAgentService _notificationService;
+        private readonly ICurrentUserService _currentUserService;
+        private readonly AppDbContext _context;
 
-        public NotificationsController(INotificationAgentService notificationService)
+        public NotificationsController(
+            INotificationAgentService notificationService,
+            ICurrentUserService currentUserService,
+            AppDbContext context)
         {
             _notificationService = notificationService;
+            _currentUserService = currentUserService;
+            _context = context;
+        }
+
+        private async Task<(Guid? UserId, Guid? HospitalId, bool IsAdmin)> ResolveCallerAsync()
+        {
+            var userId = _currentUserService.UserId;
+            bool isAdmin = _currentUserService.Roles.Contains("Admin");
+            Guid? hospitalId = null;
+
+            if (_currentUserService.Roles.Contains("HospitalStaff") && !string.IsNullOrWhiteSpace(_currentUserService.Email))
+            {
+                var hospital = await _context.Hospitals
+                    .FirstOrDefaultAsync(h => h.Email != null && h.Email.ToLower() == _currentUserService.Email.ToLower());
+                if (hospital != null)
+                {
+                    hospitalId = hospital.HospitalId;
+                }
+            }
+
+            return (userId, hospitalId, isAdmin);
         }
 
         [HttpGet]
@@ -26,6 +57,46 @@ namespace LifeLink.Controllers
         {
             var list = await _notificationService.GetAllNotificationsAsync();
             return Ok(list);
+        }
+
+        [HttpGet("my")]
+        [Authorize]
+        public async Task<IActionResult> GetMyNotifications()
+        {
+            var caller = await ResolveCallerAsync();
+            var list = await _notificationService.GetNotificationsForCallerAsync(caller.UserId, caller.HospitalId);
+            return Ok(list);
+        }
+
+        [HttpGet("unread-count")]
+        [Authorize]
+        public async Task<IActionResult> GetUnreadCount()
+        {
+            var caller = await ResolveCallerAsync();
+            int count = await _notificationService.GetUnreadCountAsync(caller.UserId, caller.HospitalId);
+            return Ok(new { count });
+        }
+
+        [HttpPatch("{id:guid}/read")]
+        [Authorize]
+        public async Task<IActionResult> MarkAsRead(Guid id)
+        {
+            var caller = await ResolveCallerAsync();
+            bool success = await _notificationService.MarkNotificationReadAsync(id, caller.UserId, caller.HospitalId, caller.IsAdmin);
+            if (!success)
+            {
+                return NotFound(ApiResponse<object>.Fail("Notification not found or access denied."));
+            }
+            return Ok(ApiResponse<object>.Ok(new object(), "Notification marked as read."));
+        }
+
+        [HttpPatch("read-all")]
+        [Authorize]
+        public async Task<IActionResult> MarkAllAsRead()
+        {
+            var caller = await ResolveCallerAsync();
+            int count = await _notificationService.MarkAllNotificationsReadAsync(caller.UserId, caller.HospitalId, caller.IsAdmin);
+            return Ok(new { count, message = $"Marked {count} notifications as read." });
         }
 
         [HttpGet("user/{userId:guid}")]

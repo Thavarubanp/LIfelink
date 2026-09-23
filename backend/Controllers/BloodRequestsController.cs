@@ -6,6 +6,7 @@ using LifeLink.DTOs.BloodRequests;
 using LifeLink.Services.Acceptances;
 using LifeLink.Services.BloodRequests;
 using LifeLink.Services.Common;
+using LifeLink.Services.Hospitals;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -19,22 +20,26 @@ namespace LifeLink.Controllers
         private readonly IBloodRequestService _bloodRequestService;
         private readonly IAcceptanceService _acceptanceService;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IHospitalService _hospitalService;
 
         public BloodRequestsController(
             IBloodRequestService bloodRequestService,
             IAcceptanceService acceptanceService,
-            ICurrentUserService currentUserService)
+            ICurrentUserService currentUserService,
+            IHospitalService hospitalService)
         {
             _bloodRequestService = bloodRequestService;
             _acceptanceService = acceptanceService;
             _currentUserService = currentUserService;
+            _hospitalService = hospitalService;
         }
 
         /// <summary>
-        /// Patient creates a blood request.
+        /// User (Donor/Patient), Hospital staff or Admin creates a blood request. Doctors cannot.
+        /// Hospital staff always request for their own hospital; others must select a hospital.
         /// </summary>
         [HttpPost]
-        [Authorize]
+        [Authorize(Roles = "User,HospitalStaff,Admin")]
         [ProducesResponseType(typeof(BloodRequestResponseDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -44,6 +49,16 @@ namespace LifeLink.Controllers
             if (!userId.HasValue || userId.Value == Guid.Empty)
             {
                 return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            if (_currentUserService.Roles.Contains("HospitalStaff"))
+            {
+                var ownHospitalId = await _hospitalService.GetHospitalIdByEmailAsync(_currentUserService.Email);
+                if (ownHospitalId == null)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "Your account is not linked to a hospital." });
+                }
+                dto.HospitalId = ownHospitalId.Value; // hospital cannot request on behalf of another hospital
             }
 
             try
@@ -81,6 +96,87 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// Returns every blood request sent to the signed-in hospital (all statuses, including rejected).
+        /// </summary>
+        [HttpGet("hospital")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(IEnumerable<BloodRequestResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetHospitalRequests()
+        {
+            var hospitalId = await _hospitalService.GetHospitalIdByEmailAsync(_currentUserService.Email);
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = "Your account is not linked to a hospital." });
+            }
+
+            var requests = await _bloodRequestService.GetHospitalRequestsAsync(hospitalId.Value);
+            return Ok(requests);
+        }
+
+        /// <summary>
+        /// Returns blood requests assigned to the signed-in doctor.
+        /// </summary>
+        [HttpGet("assigned")]
+        [Authorize(Roles = "Doctor")]
+        [ProducesResponseType(typeof(IEnumerable<BloodRequestResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> GetAssignedRequests()
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue || userId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            try
+            {
+                var requests = await _bloodRequestService.GetAssignedRequestsAsync(userId.Value);
+                return Ok(requests);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Creator permanently deletes their own rejected request and all related records.
+        /// </summary>
+        [HttpDelete("{id:guid}")]
+        [Authorize]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> DeleteRequest(Guid id)
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue || userId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            try
+            {
+                await _bloodRequestService.DeleteRejectedRequestAsync(id, userId.Value);
+                return NoContent();
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Returns public active approved blood requests for donors and agents.
         /// </summary>
         [HttpGet("public")]
@@ -98,10 +194,22 @@ namespace LifeLink.Controllers
         /// Returns pending blood requests for hospital verification dashboard.
         /// </summary>
         [HttpGet("pending")]
-        [Authorize]
+        [Authorize(Roles = "HospitalStaff,Admin")]
         [ProducesResponseType(typeof(IEnumerable<BloodRequestResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> GetPendingRequests([FromQuery] Guid? hospitalId = null)
         {
+            // Hospital staff only ever see their own hospital's pending requests; admins may filter by any hospital
+            if (_currentUserService.Roles.Contains("HospitalStaff"))
+            {
+                var ownHospitalId = await _hospitalService.GetHospitalIdByEmailAsync(_currentUserService.Email);
+                if (ownHospitalId == null)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "Your account is not linked to a hospital." });
+                }
+                hospitalId = ownHospitalId.Value;
+            }
+
             var requests = await _bloodRequestService.GetPendingRequestsAsync(hospitalId);
             return Ok(requests);
         }

@@ -3,7 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { hospitalApi } from '../../api';
 import { getApiErrorMessage } from '../../utils/errorUtils';
-import { Mail, Lock, Sparkles, AlertCircle, Loader2, Heart, Building2, ShieldCheck, ArrowRight } from 'lucide-react';
+import { getDashboardPath } from '../../utils/roleUtils';
+import { Mail, Lock, Sparkles, AlertCircle, Loader2, Heart, Building2, ShieldCheck, Stethoscope, ArrowRight } from 'lucide-react';
 
 export const LoginPage = ({ initialRole }) => {
   const location = useLocation();
@@ -15,6 +16,7 @@ export const LoginPage = ({ initialRole }) => {
     if (initialRole) return initialRole;
     if (location.pathname === '/admin/login' || tabParam === 'admin' || tabParam === 'administrator') return 'admin';
     if (tabParam === 'hospital' || tabParam === 'staff') return 'hospital';
+    if (tabParam === 'doctor') return 'doctor';
     return 'donor';
   };
 
@@ -50,11 +52,15 @@ export const LoginPage = ({ initialRole }) => {
         return;
       }
 
+      // Doctor with first-login flag must change their password before anything else
+      if (userRoles.includes('Doctor') && userObj.mustChangePassword) {
+        navigate('/doctor/change-password', { replace: true });
+        return;
+      }
+
       // Default route based on primary JWT role
-      let targetDashboard = '/donor/dashboard';
-      if (userRoles.includes('Admin')) {
-        targetDashboard = '/admin/dashboard';
-      } else if (userRoles.includes('HospitalStaff') || activeTab === 'hospital') {
+      let targetDashboard = getDashboardPath(userObj);
+      if (!userRoles.includes('Admin') && (userRoles.includes('HospitalStaff') || activeTab === 'hospital')) {
         // Check hospital approval & verification status
         try {
           const hospitals = await hospitalApi.getHospitals();
@@ -69,15 +75,13 @@ export const LoginPage = ({ initialRole }) => {
         } catch {
           targetDashboard = '/hospital/dashboard';
         }
-      } else if (userRoles.includes('Doctor')) {
-        targetDashboard = '/doctor/dashboard';
-      } else if (userRoles.includes('User')) {
-        targetDashboard = '/donor/dashboard';
       }
 
-      // Route to target or original attempted page
+      // Route to the originally attempted page, unless it was the generic root ("/"),
+      // which would otherwise resolve before the role-aware dashboard is chosen
       const from = location.state?.from?.pathname;
-      const destination = (from && from !== '/login' && from !== '/admin/login' && from !== '/hospital/waiting-approval') ? from : targetDashboard;
+      const excludedFrom = ['/', '/login', '/admin/login', '/hospital/waiting-approval'];
+      const destination = (from && !excludedFrom.includes(from)) ? from : targetDashboard;
       navigate(destination, { replace: true });
     } catch (err) {
       const parsedMessage = getApiErrorMessage(err);
@@ -87,7 +91,7 @@ export const LoginPage = ({ initialRole }) => {
     }
   };
 
-  // Tab dynamic styling details
+  // Tab dynamic styling details (4 roles: Donor, Hospital, Doctor, Admin)
   const roleConfig = {
     donor: {
       title: 'Donor & Patient Portal',
@@ -114,6 +118,19 @@ export const LoginPage = ({ initialRole }) => {
       registerText: 'Register new healthcare facility?',
       registerLinkText: 'Onboard Hospital Facility',
       registerUrl: '/register-hospital'
+    },
+    doctor: {
+      title: 'Doctor Portal',
+      subtitle: 'Clinical access for donor screening, verification, and patient management',
+      badge: 'Medical Specialist',
+      glowColor: 'bg-emerald-600/10',
+      activeTabStyle: 'bg-emerald-600/20 text-emerald-400 border-emerald-500/30',
+      buttonStyle: 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/25 focus:ring-emerald-500',
+      inputFocusStyle: 'focus:border-emerald-500',
+      placeholder: 'doctor@hospital.org',
+      registerText: 'Doctor accounts are created by your hospital administrator.',
+      registerLinkText: null,
+      registerUrl: null
     },
     admin: {
       title: 'Administrator Console',
@@ -151,44 +168,61 @@ export const LoginPage = ({ initialRole }) => {
           </p>
         </div>
 
-        {/* Role Selection Tabs */}
-        <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-950/80 border border-slate-800 rounded-xl mb-6">
+        {/* Role Selection Tabs — 4 roles */}
+        <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950/80 border border-slate-800 rounded-xl mb-6">
           <button
             type="button"
+            id="login-tab-donor"
             onClick={() => { setActiveTab('donor'); setError(''); }}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all border ${
+            className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
               activeTab === 'donor'
                 ? roleConfig.donor.activeTabStyle
                 : 'text-slate-400 hover:text-slate-200 border-transparent'
             }`}
           >
-            <Heart className="w-3.5 h-3.5 shrink-0" />
+            <Heart className="w-3 h-3 shrink-0" />
             <span>Donor</span>
           </button>
 
           <button
             type="button"
+            id="login-tab-hospital"
             onClick={() => { setActiveTab('hospital'); setError(''); }}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all border ${
+            className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
               activeTab === 'hospital'
                 ? roleConfig.hospital.activeTabStyle
                 : 'text-slate-400 hover:text-slate-200 border-transparent'
             }`}
           >
-            <Building2 className="w-3.5 h-3.5 shrink-0" />
+            <Building2 className="w-3 h-3 shrink-0" />
             <span>Hospital</span>
           </button>
 
           <button
             type="button"
+            id="login-tab-doctor"
+            onClick={() => { setActiveTab('doctor'); setError(''); }}
+            className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
+              activeTab === 'doctor'
+                ? roleConfig.doctor.activeTabStyle
+                : 'text-slate-400 hover:text-slate-200 border-transparent'
+            }`}
+          >
+            <Stethoscope className="w-3 h-3 shrink-0" />
+            <span>Doctor</span>
+          </button>
+
+          <button
+            type="button"
+            id="login-tab-admin"
             onClick={() => { setActiveTab('admin'); setError(''); }}
-            className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all border ${
+            className={`flex items-center justify-center gap-1 py-2 px-1.5 rounded-lg text-[11px] font-semibold transition-all border ${
               activeTab === 'admin'
                 ? roleConfig.admin.activeTabStyle
                 : 'text-slate-400 hover:text-slate-200 border-transparent'
             }`}
           >
-            <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+            <ShieldCheck className="w-3 h-3 shrink-0" />
             <span>Admin</span>
           </button>
         </div>
@@ -257,6 +291,7 @@ export const LoginPage = ({ initialRole }) => {
 
           <button
             type="submit"
+            id="login-submit-btn"
             disabled={loading}
             className={`w-full py-3 text-white font-semibold rounded-xl text-xs shadow-lg transition-all flex items-center justify-center gap-2 mt-2 disabled:opacity-50 ${currentRole.buttonStyle}`}
           >
@@ -274,7 +309,7 @@ export const LoginPage = ({ initialRole }) => {
           </button>
         </form>
 
-        {/* Hospital Staff Onboarding Card Callout (if activeTab is hospital) */}
+        {/* Hospital Staff Onboarding Card Callout */}
         {activeTab === 'hospital' && (
           <div className="mt-6 p-4 bg-cyan-950/40 border border-cyan-800/60 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-left">
             <div>
@@ -293,21 +328,33 @@ export const LoginPage = ({ initialRole }) => {
           </div>
         )}
 
+        {/* Doctor info callout */}
+        {activeTab === 'doctor' && (
+          <div className="mt-6 p-4 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-left">
+            <p className="text-xs font-semibold text-emerald-300">Doctor Account Information</p>
+            <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">
+              Doctor accounts are provisioned by your affiliated hospital. Contact your Hospital Administrator to have your account created. You will be required to change your password on first login.
+            </p>
+          </div>
+        )}
+
         {/* Footer Navigation */}
-        {activeTab !== 'hospital' && (
+        {activeTab === 'donor' && (
           <div className="mt-6 pt-5 border-t border-slate-800 text-center">
-            {activeTab === 'donor' ? (
-              <p className="text-xs text-slate-400">
-                {currentRole.registerText}{' '}
-                <Link to={currentRole.registerUrl} className="text-slate-200 font-semibold hover:underline">
-                  {currentRole.registerLinkText}
-                </Link>
-              </p>
-            ) : (
-              <p className="text-[11px] text-slate-500">
-                🔒 Multi-Factor Authentication enabled. System log audit active.
-              </p>
-            )}
+            <p className="text-xs text-slate-400">
+              {currentRole.registerText}{' '}
+              <Link to={currentRole.registerUrl} className="text-slate-200 font-semibold hover:underline">
+                {currentRole.registerLinkText}
+              </Link>
+            </p>
+          </div>
+        )}
+
+        {(activeTab === 'admin') && (
+          <div className="mt-6 pt-5 border-t border-slate-800 text-center">
+            <p className="text-[11px] text-slate-500">
+              🔒 Multi-Factor Authentication enabled. System log audit active.
+            </p>
           </div>
         )}
       </div>

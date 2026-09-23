@@ -38,6 +38,7 @@ namespace LifeLink.Services.BloodRequests
             foreach (var req in expiredRequests)
             {
                 req.Status = BloodRequestStatus.Rejected;
+                req.RejectionReason = BloodRequestService.ExpiryRejectionReason;
                 req.UpdatedAt = now;
             }
 
