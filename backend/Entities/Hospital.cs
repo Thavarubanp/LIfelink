@@ -25,6 +25,10 @@ namespace LifeLink.Entities
         public string? SuspensionReason { get; set; }
         public bool IsPermanentlyBlocked { get; set; } = false;
 
+        // Blood packet settings: shelf life of collected packets (21-35 days) and the "going to expire" window
+        public int PacketShelfLifeDays { get; set; } = 35;
+        public int ExpiryAlertDays { get; set; } = 5;
+
         // Registration details & Documents
         public string? RegistrationNumber { get; set; }
         public string? City { get; set; }

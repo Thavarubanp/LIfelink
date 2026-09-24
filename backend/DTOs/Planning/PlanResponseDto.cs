@@ -22,6 +22,28 @@ namespace LifeLink.DTOs.Planning
 
         [JsonPropertyName("executionTrace")]
         public List<string> ExecutionTrace { get; set; } = new();
+
+        // Alerts composed by the Notification agent; the backend saves them after checking every recipient
+        [JsonPropertyName("notifications")]
+        public List<AgentNotificationDto> Notifications { get; set; } = new();
+    }
+
+    public class AgentNotificationDto
+    {
+        [JsonPropertyName("recipientType")]
+        public string RecipientType { get; set; } = string.Empty; // Donor or Hospital
+
+        [JsonPropertyName("recipientId")]
+        public string? RecipientId { get; set; }
+
+        [JsonPropertyName("notificationType")]
+        public string? NotificationType { get; set; }
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = string.Empty;
+
+        [JsonPropertyName("message")]
+        public string Message { get; set; } = string.Empty;
     }
 
     public class ExecutionPlanDto

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { bloodRequestApi, acceptanceApi } from '../../api';
+import { bloodRequestApi, acceptanceApi, profileApi } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../../components/common/Badge';
 import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingProgress';
 import { AgentStatusCard } from '../../components/workflow/AgentStatusCard';
@@ -9,17 +10,21 @@ import { Link } from 'react-router-dom';
 export const DonorDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [acceptances, setAcceptances] = useState([]);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [reqRes, accRes] = await Promise.all([
+        const [reqRes, accRes, me] = await Promise.all([
           bloodRequestApi.getPublicRequests(),
-          acceptanceApi.getMyAcceptances().catch(() => [])
+          acceptanceApi.getMyAcceptances().catch(() => []),
+          user?.userId ? profileApi.getUserProfile(user.userId).catch(() => null) : Promise.resolve(null)
         ]);
         setRequests(Array.isArray(reqRes) ? reqRes : []);
-        setAcceptances(Array.isArray(accRes) ? accRes : []);
+        setAcceptances(Array.isArray(accRes) ? accRes.filter((a) => ['Accepted', 'ScreeningPending', 'ScreeningCompleted', 'Verified'].includes(a.status)) : []);
+        setProfile(me);
       } catch (err) {
         console.error('Failed to load donor dashboard data:', err);
       } finally {
@@ -28,7 +33,10 @@ export const DonorDashboard = () => {
     };
 
     fetchData();
-  }, []);
+  }, [user?.userId]);
+
+  const nextEligible = profile?.nextEligibleDonationDate ? new Date(profile.nextEligibleDonationDate) : null;
+  const canDonate = !nextEligible || nextEligible <= new Date();
 
   return (
     <div className="space-y-6">
@@ -57,10 +65,13 @@ export const DonorDashboard = () => {
             <ShieldCheck className="w-5 h-5 text-emerald-500" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-lg font-bold text-slate-900 dark:text-slate-100">Eligible</span>
-            <Badge variant="success">Ready to Donate</Badge>
+            <span className="text-lg font-bold text-slate-900 dark:text-slate-100">{canDonate ? 'Eligible' : 'Resting'}</span>
+            <Badge variant={canDonate ? 'success' : 'warning'}>{canDonate ? 'Ready to Donate' : '120-day interval'}</Badge>
           </div>
-          <p className="text-[11px] text-slate-400 mt-1">Cooldown period clear</p>
+          <p className="text-[11px] text-slate-400 mt-1">
+            {canDonate ? 'At least 120 days since your last donation' : `You can donate again from ${nextEligible.toLocaleDateString()}`}
+            {profile?.bloodGroup ? ` - Blood group ${profile.bloodGroup}` : ''}
+          </p>
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">

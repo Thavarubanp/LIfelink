@@ -456,18 +456,30 @@ namespace LifeLink.Services.Auth
             await _context.SaveChangesAsync();
         }
 
-        public async Task<UserScreeningProfileDto?> GetUserScreeningProfileAsync(Guid userId)
+        public async Task<UserScreeningProfileDto?> GetUserScreeningProfileAsync(Guid userId, bool includeScreeningPrefill = false)
         {
             var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId);
             if (user == null) return null;
 
-            return new UserScreeningProfileDto
+            var dto = new UserScreeningProfileDto
             {
                 UserId = user.UserId,
                 FullName = $"{user.FirstName} {user.LastName}".Trim(),
                 Gender = user.Gender,
                 DateOfBirth = user.DateOfBirth
             };
+
+            // Contact details pre-fill screening Section 1 for the donor to confirm; only the screening agent gets them
+            if (includeScreeningPrefill)
+            {
+                dto.Email = user.Email;
+                dto.PhoneNumber = user.PhoneNumber;
+                dto.Address = user.Address;
+                dto.BloodGroup = user.BloodGroup;
+                dto.LastDonationDate = user.LastDonationDate;
+            }
+
+            return dto;
         }
     }
 }

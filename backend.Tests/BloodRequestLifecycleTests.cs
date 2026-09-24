@@ -168,7 +168,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Only_Creator_Can_Delete_Completed_Is_Refused_And_Related_Rows_Are_Removed()
+        public async Task Only_Creator_Can_Delete_Completed_Is_Refused_And_History_Is_Kept()
         {
             var s = await SeedAsync();
             var service = new BloodRequestService(s.Context);
@@ -188,13 +188,17 @@ namespace LifeLink.Tests
 
             await service.DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId);
 
-            Assert.Null(await s.Context.BloodRequests.FindAsync(request.BloodRequestId));
-            Assert.Empty(s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId));
-            Assert.Empty(s.Context.DonorVerifications.Where(v => v.AcceptanceId == acceptanceId));
-            Assert.Empty(s.Context.BloodRequestVerifications.Where(v => v.BloodRequestId == request.BloodRequestId));
-            Assert.Empty(s.Context.DonorPatientMatches.Where(m => m.BloodRequestId == request.BloodRequestId));
-            Assert.Empty(s.Context.RequestFulfillmentHistories.Where(h => h.BloodRequestId == request.BloodRequestId));
-            Assert.NotNull(await s.Context.BloodRequests.FindAsync(completed.BloodRequestId));
+            // Soft delete: out of every active list, but acceptances, reports, decisions, matches and donations stay
+            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
+            var acceptance = Assert.Single(s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId));
+            Assert.Equal(AcceptanceStatus.Cancelled, acceptance.Status);
+            Assert.Equal(VerificationStatus.Closed, Assert.Single(s.Context.DonorVerifications.Where(v => v.AcceptanceId == acceptanceId)).Status);
+            Assert.Equal(VerificationStatus.Rejected, Assert.Single(s.Context.BloodRequestVerifications.Where(v => v.BloodRequestId == request.BloodRequestId)).Status);
+            Assert.Single(s.Context.DonorPatientMatches.Where(m => m.BloodRequestId == request.BloodRequestId));
+            Assert.Single(s.Context.RequestFulfillmentHistories.Where(h => h.BloodRequestId == request.BloodRequestId));
+            Assert.Empty(await service.GetPublicRequestsAsync());
+            Assert.Contains(await service.GetMyRequestsAsync(s.Patient.UserId), r => r.BloodRequestId == request.BloodRequestId && r.Status == "Deleted");
+            Assert.Equal(BloodRequestStatus.Completed, (await s.Context.BloodRequests.FindAsync(completed.BloodRequestId))!.Status);
         }
 
         [Theory]
@@ -210,7 +214,7 @@ namespace LifeLink.Tests
 
             await new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId);
 
-            Assert.Null(await s.Context.BloodRequests.FindAsync(request.BloodRequestId));
+            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
         }
 
         [Fact]
@@ -247,8 +251,11 @@ namespace LifeLink.Tests
             Assert.Single(sent, n => n.UserId == donors[1].UserId); // accepted + matched -> one notification
             Assert.DoesNotContain(sent, n => n.UserId == donors[2].UserId || n.UserId == donors[3].UserId);
 
-            Assert.Null(await s.Context.BloodRequests.FindAsync(request.BloodRequestId));
-            Assert.Empty(s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId));
+            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
+            var kept = s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId).ToList();
+            Assert.Equal(4, kept.Count);
+            Assert.Equal(AcceptanceStatus.Cancelled, kept.Single(a => a.DonorUserId == donors[0].UserId).Status);
+            Assert.Equal(AcceptanceStatus.Matched, kept.Single(a => a.DonorUserId == donors[1].UserId).Status);
             Assert.Equal(5, (await s.Context.BloodInventories.FindAsync(inventory.InventoryId))!.UnitsAvailable);
             Assert.Equal(1, await s.Context.InventoryTransactions.CountAsync());
         }
@@ -261,7 +268,7 @@ namespace LifeLink.Tests
 
             await new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.HospitalStaff.UserId);
 
-            Assert.Null(await s.Context.BloodRequests.FindAsync(request.BloodRequestId));
+            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
             Assert.Empty(s.Context.Notifications.Where(n => n.NotificationType == "BloodRequestDeleted"));
         }
 
@@ -446,9 +453,9 @@ namespace LifeLink.Tests
         }
 
         [Theory]
-        [InlineData(true, 2)]   // hospital-created: collected units added to hospital inventory
+        [InlineData(true, 2)]   // hospital-created: each recorded donation becomes a packet in the hospital's stock
         [InlineData(false, 0)]  // patient-created: inventory untouched
-        public async Task Finalizing_Donors_Updates_Inventory_Only_For_Hospital_Created_Requests(bool hospitalCreated, int expectedUnits)
+        public async Task Recording_Donations_Updates_Inventory_Only_For_Hospital_Created_Requests(bool hospitalCreated, int expectedUnits)
         {
             var s = await SeedAsync();
             var acceptanceService = new AcceptanceService(s.Context, new BloodCompatibilityService());
@@ -475,12 +482,17 @@ namespace LifeLink.Tests
                 acceptanceIds.Add(acc.AcceptanceId);
             }
 
+            await TestReservations.ReserveAsync(s.Context, acceptanceIds.ToArray());
             await acceptanceService.FinalizeDonorSelectionAsync(request.BloodRequestId, acceptanceIds, s.Doctor.DoctorId);
 
             var inventory = await s.Context.BloodInventories
                 .FirstOrDefaultAsync(i => i.HospitalId == s.Hospital.HospitalId && i.BloodGroup == "A+");
             Assert.Equal(expectedUnits, inventory?.UnitsAvailable ?? 0);
-            Assert.Equal(expectedUnits == 0 ? 0 : 1, await s.Context.InventoryTransactions.CountAsync());
+            // One audited packet per donated unit, traceable to the acceptance it came from
+            Assert.Equal(expectedUnits, await s.Context.InventoryTransactions.CountAsync(t => t.TransactionType == TransactionType.DonationCollected));
+            var packets = await s.Context.BloodPackets.ToListAsync();
+            Assert.Equal(expectedUnits, packets.Count);
+            Assert.All(packets, p => Assert.Contains(p.SourceReferenceId!.Value, acceptanceIds));
             Assert.Equal(BloodRequestStatus.Completed, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
         }
     }

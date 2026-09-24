@@ -158,6 +158,12 @@ namespace backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -189,6 +195,67 @@ namespace backend.Migrations
                         .IsUnique();
 
                     b.ToTable("BloodInventories");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.BloodPacket", b =>
+                {
+                    b.Property<Guid>("PacketId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BloodGroup")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTime>("CollectionDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiryDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("HospitalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("SourceReferenceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("VolumeMl")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(440);
+
+                    b.HasKey("PacketId");
+
+                    b.HasIndex("ExpiryDate");
+
+                    b.HasIndex("SourceReferenceId");
+
+                    b.HasIndex("HospitalId", "BloodGroup", "Status");
+
+                    b.ToTable("BloodPackets");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.BloodRequest", b =>
@@ -240,6 +307,11 @@ namespace backend.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<int>("ReservedUnits")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text");
@@ -267,6 +339,8 @@ namespace backend.Migrations
                     b.ToTable("BloodRequests", t =>
                         {
                             t.HasCheckConstraint("CK_BloodRequests_FulfilledUnits", "\"FulfilledUnits\" >= 0 AND \"FulfilledUnits\" <= \"UnitsRequired\"");
+
+                            t.HasCheckConstraint("CK_BloodRequests_ReservedUnits", "\"ReservedUnits\" >= 0 AND \"FulfilledUnits\" + \"ReservedUnits\" <= \"UnitsRequired\"");
 
                             t.HasCheckConstraint("CK_BloodRequests_UnitsRequired", "\"UnitsRequired\" >= 1 AND \"UnitsRequired\" <= 10");
                         });
@@ -549,6 +623,9 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("DecidedByDoctorId")
+                        .HasColumnType("uuid");
+
                     b.Property<Guid?>("DoctorId")
                         .HasColumnType("uuid");
 
@@ -557,6 +634,14 @@ namespace backend.Migrations
 
                     b.Property<string>("Notes")
                         .HasColumnType("text");
+
+                    b.Property<string>("ReportJson")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ReportVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -572,7 +657,12 @@ namespace backend.Migrations
 
                     b.HasIndex("AcceptanceId");
 
+                    b.HasIndex("DecidedByDoctorId");
+
                     b.HasIndex("DoctorId");
+
+                    b.HasIndex("AcceptanceId", "ReportVersion")
+                        .IsUnique();
 
                     b.ToTable("DonorVerifications");
                 });
@@ -681,6 +771,11 @@ namespace backend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<int>("ExpiryAlertDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(5);
+
                     b.Property<bool>("IsPermanentlyBlocked")
                         .HasColumnType("boolean");
 
@@ -709,6 +804,11 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
+
+                    b.Property<int>("PacketShelfLifeDays")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(35);
 
                     b.Property<string>("RegistrationNumber")
                         .HasColumnType("text");
@@ -746,7 +846,12 @@ namespace backend.Migrations
                     b.HasIndex("RegistrationNumber")
                         .IsUnique();
 
-                    b.ToTable("Hospitals");
+                    b.ToTable("Hospitals", t =>
+                        {
+                            t.HasCheckConstraint("CK_Hospitals_ExpiryAlertDays", "\"ExpiryAlertDays\" >= 1 AND \"ExpiryAlertDays\" <= 20");
+
+                            t.HasCheckConstraint("CK_Hospitals_PacketShelfLifeDays", "\"PacketShelfLifeDays\" >= 21 AND \"PacketShelfLifeDays\" <= 35");
+                        });
                 });
 
             modelBuilder.Entity("LifeLink.Entities.HospitalActivityReport", b =>
@@ -861,6 +966,10 @@ namespace backend.Migrations
                     b.Property<DateTime?>("RejectedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTime>("RequestedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -871,6 +980,13 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TransferType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("Request");
 
                     b.Property<int>("UnitsRequested")
                         .HasColumnType("integer");
@@ -907,6 +1023,15 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<Guid?>("PacketId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("PerformedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("ReferenceId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("TransactionType")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -918,6 +1043,10 @@ namespace backend.Migrations
                     b.HasKey("TransactionId");
 
                     b.HasIndex("InventoryId");
+
+                    b.HasIndex("PacketId");
+
+                    b.HasIndex("ReferenceId");
 
                     b.ToTable("InventoryTransactions");
                 });
@@ -1099,6 +1228,10 @@ namespace backend.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<string>("BloodGroup")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1127,6 +1260,9 @@ namespace backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("LastDonationDate")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -1232,6 +1368,17 @@ namespace backend.Migrations
                     b.Navigation("Hospital");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.BloodPacket", b =>
+                {
+                    b.HasOne("LifeLink.Entities.Hospital", "Hospital")
+                        .WithMany()
+                        .HasForeignKey("HospitalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Hospital");
+                });
+
             modelBuilder.Entity("LifeLink.Entities.BloodRequestVerification", b =>
                 {
                     b.HasOne("LifeLink.Entities.Doctor", "Doctor")
@@ -1329,10 +1476,17 @@ namespace backend.Migrations
 
             modelBuilder.Entity("LifeLink.Entities.DonorVerification", b =>
                 {
+                    b.HasOne("LifeLink.Entities.Doctor", "DecidedByDoctor")
+                        .WithMany()
+                        .HasForeignKey("DecidedByDoctorId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("LifeLink.Entities.Doctor", "Doctor")
                         .WithMany()
                         .HasForeignKey("DoctorId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("DecidedByDoctor");
 
                     b.Navigation("Doctor");
                 });

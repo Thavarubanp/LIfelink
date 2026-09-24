@@ -4,6 +4,8 @@ namespace LifeLink.Entities
     {
         Pending,
         Approved,
-        Rejected
+        Rejected,
+        Superseded, // donor resubmitted answers; a newer report version replaced this one
+        Closed      // no decision needed any more (donor withdrew, request fulfilled, deleted or expired)
     }
 }

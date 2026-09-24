@@ -9,7 +9,8 @@ namespace LifeLink.Entities
         public Guid HospitalId { get; set; }
         public string BloodGroup { get; set; } = string.Empty;
         public int UnitsRequired { get; set; }
-        public int FulfilledUnits { get; set; } = 0;
+        public int FulfilledUnits { get; set; } = 0; // donations actually recorded
+        public int ReservedUnits { get; set; } = 0;  // doctor-approved donors who have not donated yet
         public int ConcurrencyToken { get; set; } = 0;
         public string Reason { get; set; } = string.Empty;
         public string Priority { get; set; } = string.Empty;

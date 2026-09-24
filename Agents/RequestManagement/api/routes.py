@@ -1,243 +1,92 @@
+import json
 import logging
-from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from config.settings import settings
 from api.dependencies import get_database_session
-from models.api_models import (
-    HealthCheckResponse,
-    StartScreeningResponse,
-    SessionProgressResponse,
-    NextQuestionsResponse,
-    SubmitAnswerRequest,
-    SubmitAnswerResponse,
-    CompleteScreeningResponse
-)
-from models.report import FullDoctorScreeningReport
-from models.doctor_review import DoctorReviewSubmission, DoctorReviewResponse
-from services.screening_service import screening_service
-from services.report_service import report_service
-from services.doctor_review_service import doctor_review_service
+from api.security import require_internal_key
+from config.settings import settings
+from database.models import DonorScreeningReport
+from graph.workflow import screening_turn_graph
+from models.api_models import HealthCheckResponse, TurnRequest, TurnResponse
+from models.donor_screening import render_question
+from services.backend_client import BackendUnavailableError
+from services.screening_service import ScreeningClosedError, screening_service
 
 logger = logging.getLogger("ScreeningAgentRoutes")
-router = APIRouter(prefix="/api/agent", tags=["Student 1 AI Donor Screening"])
+router = APIRouter(prefix="/api/agent", tags=["Request Management Agent (Donor Screening)"])
+protected = [Depends(require_internal_key)]
 
-# -------------------------------------------------------------
-# HEALTH CHECK
-# -------------------------------------------------------------
+
 @router.get("/health", response_model=HealthCheckResponse)
 def health_check():
-    """Returns agent service operational status and configuration."""
-    return HealthCheckResponse(
-        status="Healthy",
-        agent="LifeLink Student 1 - Donor Screening Agent",
-        framework="FastAPI + LangGraph + Gemini",
-        model=settings.MODEL_NAME,
-        gemini_configured=bool(settings.GEMINI_API_KEY),
-        database_url=settings.DATABASE_URL.split("@")[-1] if "@" in settings.DATABASE_URL else settings.DATABASE_URL
-    )
+    return HealthCheckResponse(status="Healthy", agent="LifeLink Request Management Agent", framework="FastAPI + LangGraph + Gemini",
+                               model=settings.MODEL_NAME, gemini_configured=bool(settings.GEMINI_API_KEY))
 
-# -------------------------------------------------------------
-# SCREENING WORKFLOW ENDPOINTS
-# -------------------------------------------------------------
-@router.post("/screening/start/{acceptanceId}", response_model=StartScreeningResponse)
-async def start_screening(
-    acceptanceId: str,
-    db: Session = Depends(get_database_session)
-):
-    """
-    Initializes a new conversational screening session for the donor acceptance.
-    Fetches donor/request context and returns session ID and Section 1 Question 1.
-    """
+
+def _closed(detail: str) -> TurnResponse:
+    return TurnResponse(kind="closed", reply=detail, screening={"status": "Closed", "isComplete": False})
+
+
+@router.post("/screening/start/{acceptanceId}", dependencies=protected)
+async def start_screening(acceptanceId: str, db: Session = Depends(get_database_session)):
+    """Opens (or resumes) the interview when a donor accepts a request (Supervisor DonorAccepted workflow)."""
     try:
-        session, first_q, total_est = await screening_service.start_screening_session(db, acceptanceId)
-        return StartScreeningResponse(
-            session_id=session.session_id,
-            acceptance_id=session.acceptance_id,
-            donor_user_id=session.donor_user_id,
-            blood_request_id=session.blood_request_id,
-            status=session.status,
-            total_estimated_questions=total_est,
-            first_question=first_q
-        )
-    except Exception as ex:
-        logger.error(f"Error starting screening for acceptance {acceptanceId}: {ex}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+        session, _ = await screening_service.get_or_start(db, acceptanceId)
+        profile = await screening_service.profile(session)
+        return {"session_id": session.session_id, "acceptance_id": acceptanceId, "status": session.status,
+                "screening": screening_service.progress(session, profile)}
+    except ScreeningClosedError as ex:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(ex))
+    except BackendUnavailableError as ex:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(ex))
 
-@router.get("/screening/session/{acceptanceId}", response_model=SessionProgressResponse)
-async def get_session_progress(
-    acceptanceId: str,
-    db: Session = Depends(get_database_session)
-):
-    """Returns current progress and state of the donor's screening session."""
-    session = await screening_service.get_session(db, acceptanceId)
-    if not session:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Screening session for acceptance {acceptanceId} not found.")
 
-    return SessionProgressResponse(
-        session_id=session.session_id,
-        acceptance_id=session.acceptance_id,
-        status=session.status,
-        current_step=session.current_step,
-        total_answered=len(session.answers),
-        started_at=session.started_at,
-        completed_at=session.completed_at
-    )
-
-@router.get("/screening/questions/{acceptanceId}", response_model=NextQuestionsResponse)
-async def get_next_question(
-    acceptanceId: str,
-    db: Session = Depends(get_database_session)
-):
-    """
-    Dynamically computes the next question in sequence based on conditional
-    branch answers and donor demographics.
-    """
+@router.get("/screening/session/{acceptanceId}", response_model=TurnResponse, dependencies=protected)
+async def resume_session(acceptanceId: str, db: Session = Depends(get_database_session)):
+    """Current question, progress and transcript (confidential answers are left out of the transcript)."""
     try:
-        session = await screening_service.get_session(db, acceptanceId)
-        if not session:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Session for acceptance {acceptanceId} not found.")
+        session, _ = await screening_service.get_or_start(db, acceptanceId)
+        profile = await screening_service.profile(session)
+    except ScreeningClosedError as ex:
+        return _closed(str(ex))
+    except BackendUnavailableError as ex:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(ex))
 
-        next_q, is_complete, remaining = await screening_service.get_next_question(db, acceptanceId)
-        return NextQuestionsResponse(
-            session_id=session.session_id,
-            status=session.status,
-            next_question=next_q,
-            is_complete=is_complete,
-            remaining_count=remaining
-        )
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
-    except Exception as ex:
-        logger.error(f"Error retrieving questions for acceptance {acceptanceId}: {ex}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+    progress = screening_service.progress(session, profile, include_transcript=True)
+    question, previous = screening_service.current_question(session, profile)
+    if session.status == "Submitted":
+        reply = "Your screening report has been submitted to the doctor. You can follow the decision in My Acceptances."
+    elif question is None:
+        reply = "All your answers are saved, but the report has not reached the doctor yet. Send any message to submit it."
+    else:
+        intro = ("Hello! I'll ask you the blood donor screening questions one at a time. Ask me what any question or term "
+                 "means whenever you like. " if progress["answered"] == 0 else "Welcome back. ")
+        reply = intro + (f"Section {question.section_index} of 12: {question.section}. "
+                         f"{render_question(question, profile, previous)['text']}")
+    return TurnResponse(kind="resume", reply=reply, screening=progress)
 
-@router.post("/screening/answer/{acceptanceId}", response_model=SubmitAnswerResponse)
-async def submit_answer(
-    acceptanceId: str,
-    request: SubmitAnswerRequest,
-    db: Session = Depends(get_database_session)
-):
-    """
-    Submits a donor's answer to a health screening question and advances session.
-    """
+
+@router.post("/screening/turn/{acceptanceId}", response_model=TurnResponse, dependencies=protected)
+async def screening_turn(acceptanceId: str, request: TurnRequest, db: Session = Depends(get_database_session)):
+    """One interview turn: records an answer, explains a question, or asks the donor to clarify."""
     try:
-        session, is_complete, next_q = await screening_service.submit_answer(
-            db, acceptanceId, request.question_id, request.answer
-        )
-        return SubmitAnswerResponse(
-            session_id=session.session_id,
-            question_id=request.question_id,
-            status=session.status,
-            is_complete=is_complete,
-            next_question=next_q
-        )
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
-    except Exception as ex:
-        logger.error(f"Error submitting answer for acceptance {acceptanceId}: {ex}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+        state = await screening_turn_graph.ainvoke({"db": db, "acceptance_id": acceptanceId, "message": request.message})
+    except ScreeningClosedError as ex:
+        return _closed(str(ex))
+    except BackendUnavailableError as ex:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(ex))
 
-@router.post("/screening/complete/{acceptanceId}", response_model=CompleteScreeningResponse)
-async def complete_screening(
-    acceptanceId: str,
-    db: Session = Depends(get_database_session)
-):
-    """
-    Finalizes donor screening, executes Gemini analysis / clinical risk evaluation,
-    generates full report, exports JSON report to disk, and enqueues for doctor review.
-    """
-    try:
-        report = await screening_service.complete_screening(db, acceptanceId)
-        json_path = settings.REPORTS_DIR / f"report_{acceptanceId}.json"
-        
-        import json
-        analysis_data = json.loads(report.ai_analysis) if report.ai_analysis else {}
-        flags = analysis_data.get("flags", [])
+    return TurnResponse(kind=state.get("kind", "clarify"), reply=state.get("reply", ""), query=state.get("query"),
+                        screening=screening_service.progress(state["session"], state["profile"]))
 
-        return CompleteScreeningResponse(
-            session_id=report.session_id,
-            report_id=report.report_id,
-            acceptance_id=report.acceptance_id,
-            status="UnderDoctorReview",
-            risk_level=report.risk_level,
-            recommendation=report.recommendation,
-            summary=report.ai_summary,
-            flags=flags,
-            report_json_path=str(json_path)
-        )
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
-    except Exception as ex:
-        logger.error(f"Error completing screening for acceptance {acceptanceId}: {ex}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
-# -------------------------------------------------------------
-# REPORT RETRIEVAL ENDPOINTS
-# -------------------------------------------------------------
-@router.get("/report/{acceptanceId}", response_model=FullDoctorScreeningReport)
-async def get_report_by_acceptance(
-    acceptanceId: str,
-    db: Session = Depends(get_database_session)
-):
-    """
-    Doctor views the full screening report (Sections A to J).
-    Displays every question asked, every donor answer, AI summary, AI flags, and recommendations.
-    """
-    report = await report_service.get_full_report_by_acceptance_id(db, acceptanceId)
-    if not report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Screening report for acceptance {acceptanceId} was not found."
-        )
-    return report
-
-@router.get("/report/session/{sessionId}", response_model=FullDoctorScreeningReport)
-async def get_report_by_session(
-    sessionId: str,
-    db: Session = Depends(get_database_session)
-):
-    """Doctor retrieves full report by session ID."""
-    report = await report_service.get_full_report_by_session_id(db, sessionId)
-    if not report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Screening report for session {sessionId} was not found."
-        )
-    return report
-
-# -------------------------------------------------------------
-# DOCTOR PHYSICAL REVIEW & FINAL DECISION ENDPOINTS
-# -------------------------------------------------------------
-@router.post("/review/{reportId}", response_model=DoctorReviewResponse)
-async def submit_doctor_review(
-    reportId: str,
-    review_data: DoctorReviewSubmission,
-    db: Session = Depends(get_database_session)
-):
-    """
-    Doctor enters physical examination vitals (weight, BP, pulse, temp, hemoglobin)
-    and records final decision: Approved, Rejected, or FurtherScreeningRequired.
-    """
-    try:
-        return await doctor_review_service.submit_doctor_review(db, reportId, review_data)
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
-    except Exception as ex:
-        logger.error(f"Error submitting doctor review for report {reportId}: {ex}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
-
-@router.get("/review/{reportId}", response_model=DoctorReviewResponse)
-async def get_doctor_review(
-    reportId: str,
-    db: Session = Depends(get_database_session)
-):
-    """Retrieves existing doctor review and vitals for a given report."""
-    review = await doctor_review_service.get_doctor_review(db, reportId)
-    if not review:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Doctor review for report {reportId} not found."
-        )
-    return review
+@router.get("/report/{acceptanceId}", dependencies=protected)
+async def latest_report(acceptanceId: str, db: Session = Depends(get_database_session)):
+    """Latest submitted report version (the backend holds the official, immutable copy of every version)."""
+    report = (db.query(DonorScreeningReport).filter(DonorScreeningReport.acceptance_id == acceptanceId)
+              .order_by(DonorScreeningReport.report_version.desc()).first())
+    if not report or not report.report_json:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No submitted report for this acceptance.")
+    return json.loads(report.report_json)

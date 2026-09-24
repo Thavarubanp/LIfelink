@@ -13,6 +13,10 @@ namespace LifeLink.DTOs.Transfer
         public int UnitsRequested { get; set; }
         public string Status { get; set; } = string.Empty;
         public string Notes { get; set; } = string.Empty;
+        public string TransferType { get; set; } = string.Empty;
+        public Guid CreatedByHospitalId { get; set; }
+        public string? RejectionReason { get; set; }
+        public List<Guid> PacketIds { get; set; } = new(); // packets moved when the transfer completed
         public DateTime RequestedAt { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public DateTime? RejectedAt { get; set; }

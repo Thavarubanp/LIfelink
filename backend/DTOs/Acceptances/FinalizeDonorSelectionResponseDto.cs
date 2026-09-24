@@ -6,6 +6,7 @@ namespace LifeLink.DTOs.Acceptances
         public int RejectedDonors { get; set; }
         public int TotalFulfilledUnits { get; set; }
         public int RemainingUnits { get; set; }
+        public int ReservedUnits { get; set; }
         public string Message { get; set; } = string.Empty;
     }
 }

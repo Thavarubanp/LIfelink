@@ -1,197 +1,87 @@
-# LifeLink - Student 2 Donor Discovery & Notification Agent
+# LifeLink Notification Agent
 
-Agentic AI microservice built with **LangGraph**, **FastAPI**, and **Google Gemini** for the LifeLink Blood Donation Management Platform.
+This agent composes alerts for donors and hospitals. It runs on port 8000 and is called by the Supervisor (and
+the backend) with the `X-Internal-Key` header. It never writes to the database. It returns notifications, and the
+backend saves only those whose recipients the backend itself selected.
 
----
+## What it does
 
-## 🏗️ Architecture & Purpose
-
-The **Notification Agent** is a dedicated Python microservice that orchestrates the following workflow upon blood request approval:
+**Donor alerts** (`POST /process-request`, used for `BloodRequestApproved`):
 
 ```
-[Blood Request Approved by Hospital in ASP.NET Core]
-                      ↓
-  [POST /process-request (FastAPI Agent Microservice)]
-                      ↓
-            1. CheckPriorityNode (Urgency Evaluation)
-                      ↓
-            2. FindEligibleDonorsNode (Business Rules Filtering)
-                      ↓
-            3. RankDonorsNode (Gemini AI Candidate Ranking)
-                      ↓
-            4. GenerateNotificationsNode (Gemini AI Multichannel Copywriting)
-                      ↓
-  [Structured Notifications & Ranked Donors Returned to ASP.NET Core Backend]
-                      ↓
-[Notifications Persisted in PostgreSQL Database & Dispatched]
+check priority -> find eligible donors (rules) -> rank (Gemini or deterministic) -> compose alerts
 ```
 
-### Key Responsibilities:
-- **Eligibility Filtering**: Uses strict medical/business logic (blood group compatibility matrix & active account status). Gemini does **not** decide eligibility.
-- **Donor Ranking**: Uses Google Gemini (`gemini-2.5-flash`) to rank eligible donors based on exact blood match, geographic proximity, and donation interval.
-- **Notification Generation**: Uses Gemini to craft personalized, compassionate notifications for eligible donors, and clinical/administrative alerts for verified hospitals and admins.
+- **Eligibility uses fixed rules, never Gemini.** The backend sends only donors it already filtered. The agent
+  re-checks every rule before alerting anyone:
+  - active account, not suspended, not permanently blocked;
+  - compatible blood group;
+  - at least 120 days since the last donation;
+  - age 18-60 when the date of birth is known.
+- **Ranking** sends Gemini only the user ID, blood group and last donation date. Names, locations and contact
+  details are never sent. Without a key, or if the call fails, a deterministic ranking is used.
+- **Alert text** is written once per role (donor, hospital) from request facts only, with templates as the
+  fallback. Hospital alerts are added only for High and Critical priority.
 
----
+**Hospital alerts** (`POST /hospital-alerts`, used for `EmergencyShortage` and `InventoryCheck`):
 
-## 🚀 Setup & Installation Guide
+- The facts come from the Inventory agent: which hospital, which blood group, how many units, and which hospitals
+  are related.
+- The agent turns them into alerts of these types:
 
-### Prerequisites
-- Python 3.10+ installed
-- Google Gemini API Key ([Get one here](https://aistudio.google.com/))
+  | Alert type | Meaning |
+  |---|---|
+  | `EmergencyStockAlert` | Emergency support needed |
+  | `InventoryShortage` | Stock below threshold |
+  | `PacketsExpiringSoon` | Packets close to expiry |
+  | `TransferSuggestion` | A transfer could balance stock |
 
-### 1. Create and Activate Virtual Environment
+- Gemini may only reword the title and message. Templates are used otherwise.
 
-**Windows (PowerShell):**
-```powershell
-cd backend/Agents/Notification
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
+## Endpoints
 
-**Linux / macOS:**
-```bash
-cd backend/Agents/Notification
-python3 -m venv .venv
-source .venv/bin/activate
-```
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Health, model name, whether a key is configured (no internal key needed) |
+| POST | `/process-request` | Donor (and High/Critical hospital) alerts for an approved request |
+| POST | `/hospital-alerts` | Hospital alerts from Inventory agent facts: `{"alerts": [...], "context": {...}}` |
+| POST | `/rank-donors`, `/generate-notifications` | The individual steps, for testing |
 
-### 2. Install Dependencies
+Example `/process-request` body (the backend builds this in `DonorCandidate.ToAgentPayload`):
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure Environment Variables
-
-Create a `.env` file from `.env.example`:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and provide your Google Gemini API key:
-```env
-GOOGLE_API_KEY=your_gemini_api_key_here
-MODEL_NAME=gemini-2.5-flash
-PORT=8000
-HOST=0.0.0.0
-```
-
----
-
-## 🏃 Running the Agent Service
-
-Start the FastAPI server:
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-```
-or
-```bash
-python app:app
-```
-
-The service will be live at:
-- **API Base URL**: `http://localhost:8000`
-- **Interactive Swagger Docs**: `http://localhost:8000/docs`
-
----
-
-## 📡 API Endpoints
-
-### 1. Health Check
-`GET /health`
 ```json
 {
-  "status": "Healthy",
-  "agent": "LifeLink Donor Discovery & Notification Agent",
-  "framework": "LangGraph + FastAPI",
-  "model": "gemini-2.5-flash",
-  "is_api_key_configured": true
-}
-```
-
-### 2. Full LangGraph Process Workflow
-`POST /process-request`
-
-**Request Payload:**
-```json
-{
-  "request_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "blood_group": "O-",
-  "units_required": 2,
-  "priority": "Critical",
-  "hospital_id": "e4b60000-0000-0000-0000-000000000001",
-  "hospital_name": "City General Trauma Center",
-  "patient_reason": "Emergency accident trauma surgery",
+  "request_id": "3fa85f64-...", "blood_group": "O-", "units_required": 2, "priority": "Critical",
+  "hospital_id": "e4b6...", "hospital_name": "City General",
   "available_donors": [
-    {
-      "user_id": "a1b2c3d4-0000-0000-0000-000000000001",
-      "full_name": "John Doe",
-      "blood_group": "O-",
-      "location": "North District (2km away)",
-      "last_donation_date": "2025-10-15",
-      "account_status": "Active"
-    },
-    {
-      "user_id": "a1b2c3d4-0000-0000-0000-000000000002",
-      "full_name": "Jane Smith",
-      "blood_group": "A+",
-      "location": "Central District",
-      "account_status": "Active"
-    }
+    {"user_id": "a1b2...", "full_name": "...", "blood_group": "O-", "location": "...",
+     "last_donation_date": "2026-01-15", "date_of_birth": "1995-04-10",
+     "account_status": "Active", "is_suspended": false, "is_blocked": false}
   ],
-  "verified_hospital_ids": ["e4b60000-0000-0000-0000-000000000002"]
+  "verified_hospital_ids": ["e4b6..."]
 }
 ```
 
-**Response Payload:**
-```json
-{
-  "request_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "priority": "Critical",
-  "is_urgent": true,
-  "eligible_donors_count": 1,
-  "ranked_donors": [
-    {
-      "user_id": "a1b2c3d4-0000-0000-0000-000000000001",
-      "rank": 1,
-      "suitability_score": 98,
-      "reason": "Exact O- match and closest proximity to trauma center."
-    }
-  ],
-  "notifications": [
-    {
-      "recipient_type": "Donor",
-      "recipient_id": "a1b2c3d4-0000-0000-0000-000000000001",
-      "title": "CRITICAL: Urgent O- Blood Needed at City General Trauma Center",
-      "message": "A critical patient urgently requires O- blood for trauma surgery.",
-      "email_subject": "Urgent LifeLink Alert: O- Blood Needed Immediately",
-      "email_body": "Dear John,\n\nCity General Trauma Center has logged a critical request for O- blood...",
-      "sms_body": "LifeLink Critical: O- blood needed immediately at City General Trauma Center. Open app to respond."
-    },
-    {
-      "recipient_type": "Hospital",
-      "recipient_id": "e4b60000-0000-0000-0000-000000000002",
-      "title": "[CRITICAL] Urgent Blood Shortage Notice (O-)",
-      "message": "City General Trauma Center requires 2 units of O- blood. Please check stock reserves."
-    }
-  ]
-}
-```
+## Configuration (`.env`)
 
-### 3. Standalone Donor Ranking
-`POST /rank-donors`
+| Variable | Default | Purpose |
+|---|---|---|
+| `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | empty | Optional; enables Gemini ranking and wording |
+| `MODEL_NAME` | `gemini-2.5-flash` | |
+| `INTERNAL_SERVICE_API_KEY` | `LifeLink-Internal-Agent-Key-2026` | Must match the backend and the other agents. Local-development default only; shared and production environments must override it (see the root README) |
+| `HOST` / `PORT` | `127.0.0.1` / `8000` | Loopback only |
 
-### 4. Standalone Notification Generation
-`POST /generate-notifications`
+## Run
 
----
-
-## 🧪 Testing
-
-To test the agent using `pytest`:
 ```bash
-pytest
+cd Agents/Notification
+pip install -r requirements.txt
+cp .env.example .env
+python app.py             # or: uvicorn app:app --host 127.0.0.1 --port 8000
 ```
-Or execute manual API requests via the Swagger UI at `http://localhost:8000/docs`.
+
+## Tests
+
+```bash
+pytest -q
+```

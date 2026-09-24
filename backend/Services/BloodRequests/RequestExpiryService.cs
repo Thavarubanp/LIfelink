@@ -27,7 +27,8 @@ namespace LifeLink.Services.BloodRequests
                 .Where(r => r.ExpiryDate <= now &&
                             r.Status != BloodRequestStatus.Completed &&
                             r.Status != BloodRequestStatus.Cancelled &&
-                            r.Status != BloodRequestStatus.Rejected)
+                            r.Status != BloodRequestStatus.Rejected &&
+                            r.Status != BloodRequestStatus.Deleted)
                 .ToListAsync();
 
             if (!expiredRequests.Any())
@@ -37,9 +38,8 @@ namespace LifeLink.Services.BloodRequests
 
             foreach (var req in expiredRequests)
             {
-                req.Status = BloodRequestStatus.Rejected;
-                req.RejectionReason = BloodRequestService.ExpiryRejectionReason;
-                req.UpdatedAt = now;
+                // Also releases donors still in progress (reserved slots and their one-active-donation lock)
+                await BloodRequestService.ExpireAsync(_context, req, now);
             }
 
             await _context.SaveChangesAsync();

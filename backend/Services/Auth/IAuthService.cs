@@ -15,6 +15,6 @@ namespace LifeLink.Services.Auth
         Task ResendOtpAsync(ResendOtpRequestDto request);
         Task ResetPasswordAsync(ResetPasswordRequestDto request);
         Task ChangePasswordAsync(Guid userId, ChangePasswordRequestDto request);
-        Task<UserScreeningProfileDto?> GetUserScreeningProfileAsync(Guid userId);
+        Task<UserScreeningProfileDto?> GetUserScreeningProfileAsync(Guid userId, bool includeScreeningPrefill = false);
     }
 }

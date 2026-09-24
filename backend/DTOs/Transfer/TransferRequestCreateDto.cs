@@ -3,13 +3,16 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LifeLink.DTOs.Transfer
 {
+    /// <summary>
+    /// Created by the signed-in hospital. "Request": ask the counterpart for blood. "Offer": send blood to the counterpart.
+    /// </summary>
     public class TransferRequestCreateDto
     {
         [Required]
-        public Guid SenderHospitalId { get; set; }
+        public string TransferType { get; set; } = "Request";
 
         [Required]
-        public Guid ReceiverHospitalId { get; set; }
+        public Guid CounterpartHospitalId { get; set; }
 
         [Required]
         public string BloodGroup { get; set; } = string.Empty;
@@ -18,5 +21,10 @@ namespace LifeLink.DTOs.Transfer
         public int UnitsRequested { get; set; }
 
         public string Notes { get; set; } = string.Empty;
+    }
+
+    public class RejectTransferDto
+    {
+        public string Reason { get; set; } = string.Empty;
     }
 }

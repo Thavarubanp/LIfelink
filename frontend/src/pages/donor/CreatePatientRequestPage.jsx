@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { bloodRequestApi, hospitalApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -24,7 +25,12 @@ export const CreatePatientRequestPage = () => {
   const { user } = useAuth();
   const isHospitalStaff = getUserRoles(user).includes('HospitalStaff');
 
-  const [formData, setFormData] = useState(INITIAL_FORM);
+  const [searchParams] = useSearchParams();
+  const [formData, setFormData] = useState(() => ({
+    ...INITIAL_FORM,
+    priority: ['Normal', 'High', 'Critical'].includes(searchParams.get('priority')) ? searchParams.get('priority') : INITIAL_FORM.priority,
+    bloodGroup: searchParams.get('bloodGroup') || INITIAL_FORM.bloodGroup
+  }));
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Hospital Autocomplete State

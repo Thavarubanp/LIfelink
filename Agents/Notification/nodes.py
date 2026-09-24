@@ -1,7 +1,8 @@
 import os
 import json
 import logging
-from typing import Dict, Any, List
+from datetime import date
+from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
@@ -42,28 +43,53 @@ def check_priority_node(state: NotificationAgentState) -> Dict[str, Any]:
     logger.info(f"CheckPriorityNode: Request {state.get('request_id')} Priority={priority}, IsUrgent={is_urgent}")
     return {"is_urgent": is_urgent}
 
+DONATION_INTERVAL_DAYS = 120
+
+
+def _parse_day(value: Any) -> Optional[date]:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(str(value)[:10])
+    except ValueError:
+        return None
+
+
+def is_eligible_donor(donor: Dict[str, Any], compatible_groups: List[str], today: Optional[date] = None) -> bool:
+    """
+    The Notification agent re-checks every rule the backend applied before an alert is sent:
+    active account, not suspended, not permanently blocked, compatible blood group,
+    at least 120 days since the last donation, and age 18-60 when the date of birth is known.
+    """
+    today = today or date.today()
+    if (donor.get("account_status") or "").strip().lower() != "active":
+        return False
+    if donor.get("is_suspended") or donor.get("is_blocked"):
+        return False
+    if (donor.get("blood_group") or "").strip().upper() not in compatible_groups:
+        return False
+    last = _parse_day(donor.get("last_donation_date"))
+    if last and (today - last).days < DONATION_INTERVAL_DAYS:
+        return False
+    born = _parse_day(donor.get("date_of_birth"))
+    if born:
+        age = today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+        if not 18 <= age <= 60:
+            return False
+    return True
+
+
 def find_eligible_donors_node(state: NotificationAgentState) -> Dict[str, Any]:
     """
-    Node 2: Filters candidate donors using strict business rules:
-    - Compatible blood group
-    - Active account status
-    - Eligibility checks
-    (NO Gemini used here - pure business logic)
+    Node 2: Filters candidate donors with strict business rules (no Gemini): compatible blood group,
+    active and not suspended or blocked, 120-day donation interval, age 18-60.
     """
     target_blood_group = (state.get("blood_group") or "O+").strip().upper()
     candidates = state.get("candidate_donors") or []
-    
+
     compatible_groups = COMPATIBILITY_MATRIX.get(target_blood_group, [target_blood_group])
-    
-    eligible = []
-    for donor in candidates:
-        donor_group = (donor.get("blood_group") or "").strip().upper()
-        status = (donor.get("account_status") or "Active").strip().lower()
-        
-        # Check active status & blood compatibility
-        if status == "active" and donor_group in compatible_groups:
-            eligible.append(donor)
-            
+    eligible = [donor for donor in candidates if is_eligible_donor(donor, compatible_groups)]
+
     logger.info(f"FindEligibleDonorsNode: Filtered {len(eligible)} eligible donors from {len(candidates)} candidates.")
     return {"eligible_donors": eligible}
 
@@ -83,10 +109,8 @@ def rank_donors_node(state: NotificationAgentState) -> Dict[str, Any]:
             donors_summary = [
                 {
                     "user_id": d.get("user_id"),
-                    "full_name": d.get("full_name"),
                     "blood_group": d.get("blood_group"),
-                    "location": d.get("location", "Nearby"),
-                    "last_donation_date": d.get("last_donation_date", "Never")
+                    "last_donation_date": d.get("last_donation_date") or "Never"
                 }
                 for d in eligible_donors
             ]

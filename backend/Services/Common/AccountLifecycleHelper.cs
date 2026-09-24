@@ -76,6 +76,8 @@ namespace LifeLink.Services.Common
             user.IsSuspended = false;
             user.SuspendedUntil = null;
             user.SuspensionReason = null;
+            user.BloodGroup = null;
+            user.LastDonationDate = null;
             user.UpdatedAt = DateTime.UtcNow;
         }
     }

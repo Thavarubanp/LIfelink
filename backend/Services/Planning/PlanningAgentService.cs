@@ -30,6 +30,16 @@ namespace LifeLink.Services.Planning
             };
         }
 
+        // The Supervisor only accepts calls that carry the shared internal service key
+        private void AddInternalKey(HttpRequestMessage message)
+        {
+            var key = _configuration["InternalService:ApiKey"];
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                message.Headers.Add("X-Internal-Key", key);
+            }
+        }
+
         public async Task<PlanResponseDto?> DispatchPlanAsync(PlanRequestDto request)
         {
             var baseUrl = _configuration["PlanningAgent:BaseUrl"] ?? "http://localhost:8004";
@@ -42,7 +52,9 @@ namespace LifeLink.Services.Planning
                 var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
                 var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
-                var response = await _httpClient.PostAsync(targetUrl, content);
+                using var message = new HttpRequestMessage(HttpMethod.Post, targetUrl) { Content = content };
+                AddInternalKey(message);
+                var response = await _httpClient.SendAsync(message);
 
                 if (!response.IsSuccessStatusCode)
                 {

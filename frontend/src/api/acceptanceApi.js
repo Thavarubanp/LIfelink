@@ -21,8 +21,15 @@ export const acceptanceApi = {
     return response.data;
   },
 
-  updateScreeningStatus: async (id, status) => {
-    const response = await client.put(`/Acceptances/${id}/status?status=${status}`);
+  // Donor: "Update my answers" while the report still waits for the doctor (a new report version follows)
+  reopenScreening: async (id) => {
+    const response = await client.put(`/Acceptances/${id}/status?status=ScreeningPending`);
+    return response.data;
+  },
+
+  // Doctor or hospital staff: release an acceptance that cannot proceed (reason shown to the donor)
+  releaseReservation: async (id, reason) => {
+    const response = await client.put(`/Acceptances/${id}/release`, { reason });
     return response.data;
   }
 };

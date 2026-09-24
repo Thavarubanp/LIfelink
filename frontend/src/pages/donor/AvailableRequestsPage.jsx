@@ -45,9 +45,15 @@ export const AvailableRequestsPage = () => {
       )
     },
     {
-      header: 'Units Needed',
+      header: 'Units',
       accessor: 'unitsRequired',
-      cell: (row) => <span className="font-semibold text-slate-900 dark:text-slate-100">{row.unitsRequired} Units</span>
+      cell: (row) => (
+        <div>
+          <span className="font-semibold text-slate-900 dark:text-slate-100">{row.remainingUnits ?? row.unitsRequired} of {row.unitsRequired} still needed</span>
+          <div className="text-[10px] text-slate-400">{row.fulfilledUnits || 0} donated, {row.reservedUnits || 0} reserved</div>
+          {!row.isAcceptingDonors && <Badge variant="info" size="sm">All slots reserved</Badge>}
+        </div>
+      )
     },
     {
       header: 'Priority',

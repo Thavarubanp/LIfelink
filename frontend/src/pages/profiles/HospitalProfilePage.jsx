@@ -28,7 +28,9 @@ const HOSPITAL_EDIT_FIELDS = [
   { name: 'contactNumber', label: 'Contact Number', type: 'tel', placeholder: '10 digits' },
   { name: 'contactPersonName', label: 'Contact Person Name' },
   { name: 'contactPersonPhone', label: 'Contact Person Phone', type: 'tel', placeholder: '10 digits' },
-  { name: 'contactPersonEmail', label: 'Contact Person Email', type: 'email', fullWidth: true }
+  { name: 'contactPersonEmail', label: 'Contact Person Email', type: 'email', fullWidth: true },
+  { name: 'packetShelfLifeDays', label: 'Blood packet shelf life (21-35 days)', type: 'number' },
+  { name: 'expiryAlertDays', label: 'Expiry alert window (days)', type: 'number' }
 ];
 
 export const HospitalProfilePage = () => {
@@ -42,7 +44,11 @@ export const HospitalProfilePage = () => {
   const [editing, setEditing] = useState(false);
 
   const handleSave = async (values) => {
-    const updated = await profileApi.updateHospitalProfile(profile.hospitalId, values);
+    const updated = await profileApi.updateHospitalProfile(profile.hospitalId, {
+      ...values,
+      packetShelfLifeDays: values.packetShelfLifeDays === '' ? null : Number(values.packetShelfLifeDays),
+      expiryAlertDays: values.expiryAlertDays === '' ? null : Number(values.expiryAlertDays)
+    });
     setProfile(updated);
     setEditing(false);
     addToast({ title: 'Profile Updated', message: 'Your hospital profile changes were saved.', type: 'success' });

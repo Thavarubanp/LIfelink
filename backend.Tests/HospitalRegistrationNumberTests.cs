@@ -93,7 +93,7 @@ namespace LifeLink.Tests
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateInventoryAsync(new CreateInventoryDto
             {
-                HospitalId = Guid.Empty, BloodGroup = "A+", UnitsAvailable = 5, MinimumThreshold = 1, MaximumCapacity = 10
+                HospitalId = Guid.Empty, BloodGroup = "A+", MinimumThreshold = 1, MaximumCapacity = 10
             }));
             Assert.Equal(0, await context.Hospitals.CountAsync());
         }

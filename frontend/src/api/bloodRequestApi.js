@@ -23,7 +23,7 @@ export const bloodRequestApi = {
     return response.data;
   },
 
-  // Creator: permanently delete own rejected request
+  // Creator: delete own request (removed from active lists, history kept)
   deleteRequest: async (id) => {
     const response = await client.delete(`/BloodRequests/${id}`);
     return response.data;
@@ -76,8 +76,9 @@ export const bloodRequestApi = {
     return response.data;
   },
 
-  finalizeDonorSelection: async (id, selectedAcceptanceIds) => {
-    const response = await client.put(`/BloodRequests/${id}/finalize-selection`, { selectedAcceptanceIds });
+  // Record donations of approved donors; testedBloodGroups: { [acceptanceId]: 'O+' }
+  finalizeDonorSelection: async (id, selectedAcceptanceIds, testedBloodGroups = null) => {
+    const response = await client.put(`/BloodRequests/${id}/finalize-selection`, { selectedAcceptanceIds, testedBloodGroups });
     return response.data;
   },
 

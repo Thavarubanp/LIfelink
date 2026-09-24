@@ -12,7 +12,8 @@ import {
   Loader2,
   Sparkles,
   Pencil,
-  Trash2
+  Trash2,
+  Droplet
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -25,7 +26,9 @@ const USER_EDIT_FIELDS = [
   { name: 'lastName', label: 'Last Name' },
   { name: 'phoneNumber', label: 'Phone Number', type: 'tel', placeholder: '10 digits' },
   { name: 'gender', label: 'Gender', options: ['Male', 'Female', 'Other'] },
-  { name: 'address', label: 'Address', fullWidth: true }
+  { name: 'address', label: 'Address', fullWidth: true },
+  { name: 'bloodGroup', label: 'Blood Group', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
+  { name: 'lastDonationDate', label: 'Last Donation (if outside LifeLink)', type: 'date' }
 ];
 
 export const UserProfilePage = () => {
@@ -39,7 +42,11 @@ export const UserProfilePage = () => {
   const [editing, setEditing] = useState(false);
 
   const handleSave = async (values) => {
-    const updated = await profileApi.updateUserProfile(profile.userId, values);
+    const updated = await profileApi.updateUserProfile(profile.userId, {
+      ...values,
+      bloodGroup: values.bloodGroup || null,
+      lastDonationDate: values.lastDonationDate || null
+    });
     setProfile(updated);
     setEditing(false);
     addToast({ title: 'Profile Updated', message: 'Your profile changes were saved.', type: 'success' });
@@ -203,6 +210,23 @@ export const UserProfilePage = () => {
             </div>
           </div>
 
+          {(profile.bloodGroup || profile.nextEligibleDonationDate || profile.canEdit) && profile.roles?.includes('User') && (
+            <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
+              <Droplet className="w-5 h-5 text-red-600" />
+              <div>
+                <span className="text-slate-400 text-[10px] uppercase font-semibold">Blood Group & Eligibility</span>
+                <div className="font-bold text-slate-900 dark:text-slate-100">
+                  {profile.bloodGroup || 'Not set'}{profile.bloodGroupConfirmed ? ' (confirmed at donation)' : ''}
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {profile.nextEligibleDonationDate && new Date(profile.nextEligibleDonationDate) > new Date()
+                    ? `Can donate again from ${new Date(profile.nextEligibleDonationDate).toLocaleDateString()}`
+                    : 'Eligible to donate (120-day interval met)'}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
             <Calendar className="w-5 h-5 text-amber-500" />
             <div>
@@ -219,7 +243,7 @@ export const UserProfilePage = () => {
         <EditProfileModal
           title="Edit My Profile"
           fields={USER_EDIT_FIELDS}
-          initialValues={profile}
+          initialValues={{ ...profile, lastDonationDate: profile.lastDonationDate ? String(profile.lastDonationDate).slice(0, 10) : '' }}
           onSave={handleSave}
           onClose={() => setEditing(false)}
         />

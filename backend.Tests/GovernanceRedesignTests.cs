@@ -278,7 +278,7 @@ namespace LifeLink.Tests
             await Assert.ThrowsAsync<InvalidOperationException>(() => new BloodRequestService(s.Db).CreateRequestAsync(s.Other,
                 new CreateBloodRequestDto { HospitalId = s.HospitalId, BloodGroup = "B+", UnitsRequired = 1, Reason = "Surgery", Priority = "High" }));
             await Assert.ThrowsAsync<InvalidOperationException>(() => new TransferRequestService(s.Db).CreateTransferRequestAsync(
-                new TransferRequestCreateDto { SenderHospitalId = otherHospital.HospitalId, ReceiverHospitalId = s.HospitalId, BloodGroup = "A+", UnitsRequested = 1 }));
+                new TransferRequestCreateDto { TransferType = "Request", CounterpartHospitalId = s.HospitalId, BloodGroup = "A+", UnitsRequested = 1 }, otherHospital.HospitalId));
         }
 
         [Fact]

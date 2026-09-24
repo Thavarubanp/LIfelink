@@ -761,13 +761,13 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Matched_Request_Cannot_Be_Accepted()
+        public async Task Fully_Reserved_Request_Stays_Visible_But_Pauses_New_Acceptances()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, donor1, _) = await SeedBaseDataAsync(context);
-            var compatibility = new BloodCompatibilityService();
-            var acceptanceService = new AcceptanceService(context, compatibility);
+            var acceptanceService = new AcceptanceService(context, new BloodCompatibilityService());
 
+            // One unit required, one approved donor holds the reserved slot, nothing donated yet
             var request = new BloodRequest
             {
                 BloodRequestId = Guid.NewGuid(),
@@ -775,22 +775,16 @@ namespace LifeLink.Tests
                 HospitalId = hospital.HospitalId,
                 BloodGroup = "A+",
                 UnitsRequired = 1,
+                ReservedUnits = 1,
                 Status = BloodRequestStatus.Approved,
                 ExpiryDate = DateTime.UtcNow.AddDays(5)
             };
             await context.BloodRequests.AddAsync(request);
-
-            // Simulate Student 2 DonorPatientMatch
-            var match = new DonorPatientMatch
-            {
-                MatchId = Guid.NewGuid(),
-                BloodRequestId = request.BloodRequestId,
-                DonorUserId = Guid.NewGuid(),
-                DoctorId = Guid.NewGuid(),
-                Status = MatchStatus.Matched
-            };
-            await context.DonorPatientMatches.AddAsync(match);
             await context.SaveChangesAsync();
+
+            var publicRequests = await new BloodRequestService(context).GetPublicRequestsAsync();
+            var listed = Assert.Single(publicRequests);
+            Assert.False(listed.IsAcceptingDonors);
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 acceptanceService.AcceptRequestAsync(donor1.UserId, new CreateAcceptanceDto
@@ -799,25 +793,20 @@ namespace LifeLink.Tests
                     DonorBloodGroup = "A+"
                 }));
 
-            Assert.Contains("fulfilled", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("reserved", ex.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
-        public async Task Verified_Donor_Validation_Enforced()
+        public async Task Suspended_Blocked_Or_Recent_Donors_Cannot_Accept()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, _, _) = await SeedBaseDataAsync(context);
-            var compatibility = new BloodCompatibilityService();
-            var acceptanceService = new AcceptanceService(context, compatibility);
+            var acceptanceService = new AcceptanceService(context, new BloodCompatibilityService());
 
-            var unverifiedDonor = new User
-            {
-                UserId = Guid.NewGuid(),
-                FirstName = "Unverified",
-                LastName = "Donor",
-                Email = "unverified@lifelink.org"
-            };
-            await context.Users.AddAsync(unverifiedDonor);
+            var suspended = new User { UserId = Guid.NewGuid(), FirstName = "S", LastName = "D", Email = "s@lifelink.org", AccountStatus = AccountStatus.Suspended, IsSuspended = true };
+            var blocked = new User { UserId = Guid.NewGuid(), FirstName = "B", LastName = "D", Email = "b@lifelink.org", AccountStatus = AccountStatus.Blocked, IsPermanentlyBlocked = true };
+            var recent = new User { UserId = Guid.NewGuid(), FirstName = "R", LastName = "D", Email = "r@lifelink.org", LastDonationDate = DateTime.UtcNow.AddDays(-60) };
+            await context.Users.AddRangeAsync(suspended, blocked, recent);
 
             var request = new BloodRequest
             {
@@ -832,14 +821,10 @@ namespace LifeLink.Tests
             await context.BloodRequests.AddAsync(request);
             await context.SaveChangesAsync();
 
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                acceptanceService.AcceptRequestAsync(unverifiedDonor.UserId, new CreateAcceptanceDto
-                {
-                    BloodRequestId = request.BloodRequestId,
-                    DonorBloodGroup = "A+"
-                }));
-
-            Assert.Contains("verified", ex.Message, StringComparison.OrdinalIgnoreCase);
+            var dto = new CreateAcceptanceDto { BloodRequestId = request.BloodRequestId, DonorBloodGroup = "A+" };
+            Assert.Contains("not active", (await Assert.ThrowsAsync<InvalidOperationException>(() => acceptanceService.AcceptRequestAsync(suspended.UserId, dto))).Message);
+            Assert.Contains("not active", (await Assert.ThrowsAsync<InvalidOperationException>(() => acceptanceService.AcceptRequestAsync(blocked.UserId, dto))).Message);
+            Assert.Contains("120 days", (await Assert.ThrowsAsync<InvalidOperationException>(() => acceptanceService.AcceptRequestAsync(recent.UserId, dto))).Message);
         }
 
         [Fact]
@@ -988,8 +973,9 @@ namespace LifeLink.Tests
             });
 
             var doctor = await context.Doctors.FirstAsync();
+            await TestReservations.ReserveAsync(context, acc1.AcceptanceId);
 
-            // Doctor selects donor 1 (1 unit required -> fully fulfills)
+            // Donation recorded for donor 1 (1 unit required -> fully fulfills)
             var response = await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
                 new List<Guid> { acc1.AcceptanceId },
@@ -1042,6 +1028,7 @@ namespace LifeLink.Tests
             });
 
             var doctor = await context.Doctors.FirstAsync();
+            await TestReservations.ReserveAsync(context, acc1.AcceptanceId);
 
             var response = await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
@@ -1093,6 +1080,7 @@ namespace LifeLink.Tests
             });
 
             var doctor = await context.Doctors.FirstAsync();
+            await TestReservations.ReserveAsync(context, acc1.AcceptanceId, acc2.AcceptanceId);
 
             var response = await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
@@ -1136,12 +1124,11 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Selection_Count_Cannot_Exceed_Remaining_Units()
+        public async Task Only_Doctor_Approved_Donors_Can_Have_A_Donation_Recorded()
         {
             var context = GetInMemoryDbContext();
-            var (hospital, _, patient, donor1, donor2) = await SeedBaseDataAsync(context);
-            var compatibility = new BloodCompatibilityService();
-            var acceptanceService = new AcceptanceService(context, compatibility);
+            var (hospital, _, patient, donor1, _) = await SeedBaseDataAsync(context);
+            var acceptanceService = new AcceptanceService(context, new BloodCompatibilityService());
 
             var request = new BloodRequest
             {
@@ -1150,7 +1137,6 @@ namespace LifeLink.Tests
                 HospitalId = hospital.HospitalId,
                 BloodGroup = "A+",
                 UnitsRequired = 1,
-                FulfilledUnits = 0,
                 Status = BloodRequestStatus.Approved,
                 ExpiryDate = DateTime.UtcNow.AddDays(5)
             };
@@ -1163,22 +1149,16 @@ namespace LifeLink.Tests
                 DonorBloodGroup = "A+"
             });
 
-            var acc2 = await acceptanceService.AcceptRequestAsync(donor2.UserId, new CreateAcceptanceDto
-            {
-                BloodRequestId = request.BloodRequestId,
-                DonorBloodGroup = "O-"
-            });
-
             var doctor = await context.Doctors.FirstAsync();
 
-            // Trying to select 2 donors when only 1 unit required
+            // Accepted but not yet screened and approved by a doctor
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 acceptanceService.FinalizeDonorSelectionAsync(
                     request.BloodRequestId,
-                    new List<Guid> { acc1.AcceptanceId, acc2.AcceptanceId },
+                    new List<Guid> { acc1.AcceptanceId },
                     doctor.DoctorId));
 
-            Assert.Contains("cannot exceed remaining", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("approved by a doctor", ex.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]
@@ -1245,12 +1225,11 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Already_Matched_Donor_Cannot_Be_Selected_Again()
+        public async Task Already_Donated_Donor_Cannot_Be_Recorded_Again()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, donor1, _) = await SeedBaseDataAsync(context);
-            var compatibility = new BloodCompatibilityService();
-            var acceptanceService = new AcceptanceService(context, compatibility);
+            var acceptanceService = new AcceptanceService(context, new BloodCompatibilityService());
 
             var request = new BloodRequest
             {
@@ -1259,6 +1238,7 @@ namespace LifeLink.Tests
                 HospitalId = hospital.HospitalId,
                 BloodGroup = "A+",
                 UnitsRequired = 2,
+                FulfilledUnits = 1,
                 Status = BloodRequestStatus.Approved,
                 ExpiryDate = DateTime.UtcNow.AddDays(5)
             };
@@ -1269,20 +1249,9 @@ namespace LifeLink.Tests
                 AcceptanceId = Guid.NewGuid(),
                 BloodRequestId = request.BloodRequestId,
                 DonorUserId = donor1.UserId,
-                Status = AcceptanceStatus.Accepted
+                Status = AcceptanceStatus.Matched
             };
             await context.Acceptances.AddAsync(acc);
-
-            // Existing match for donor1 in Student 2
-            var match = new DonorPatientMatch
-            {
-                MatchId = Guid.NewGuid(),
-                BloodRequestId = request.BloodRequestId,
-                DonorUserId = donor1.UserId,
-                DoctorId = Guid.NewGuid(),
-                Status = MatchStatus.Matched
-            };
-            await context.DonorPatientMatches.AddAsync(match);
             await context.SaveChangesAsync();
 
             var doctor = await context.Doctors.FirstAsync();
@@ -1293,7 +1262,8 @@ namespace LifeLink.Tests
                     new List<Guid> { acc.AcceptanceId },
                     doctor.DoctorId));
 
-            Assert.Contains("already been matched", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("approved by a doctor", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(1, request.FulfilledUnits);
         }
 
         // =========================================================================
@@ -1429,6 +1399,10 @@ namespace LifeLink.Tests
             var compatibility = new BloodCompatibilityService();
             var acceptanceService = new AcceptanceService(context, compatibility);
 
+            var doctor = await context.Doctors.FirstAsync();
+            doctor.UserId = Guid.NewGuid();
+            doctor.IsActive = true;
+
             var request = new BloodRequest
             {
                 BloodRequestId = Guid.NewGuid(),
@@ -1440,6 +1414,7 @@ namespace LifeLink.Tests
                 ExpiryDate = DateTime.UtcNow.AddDays(5)
             };
             await context.BloodRequests.AddAsync(request);
+            await context.BloodRequestVerifications.AddAsync(new BloodRequestVerification { BloodRequestId = request.BloodRequestId, DoctorId = doctor.DoctorId, Status = VerificationStatus.Approved });
             await context.SaveChangesAsync();
 
             var acc = await acceptanceService.AcceptRequestAsync(donor1.UserId, new CreateAcceptanceDto
@@ -1449,22 +1424,41 @@ namespace LifeLink.Tests
             });
             Assert.Equal("Accepted", acc.Status);
 
+            // The screening agent may only open the interview
             var step1 = await acceptanceService.UpdateScreeningStatusAsync(acc.AcceptanceId, AcceptanceStatus.ScreeningPending);
             Assert.Equal("ScreeningPending", step1.Status);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => acceptanceService.UpdateScreeningStatusAsync(acc.AcceptanceId, AcceptanceStatus.Verified));
 
-            var step2 = await acceptanceService.UpdateScreeningStatusAsync(acc.AcceptanceId, AcceptanceStatus.ScreeningCompleted);
-            Assert.Equal("ScreeningCompleted", step2.Status);
+            // Report submitted -> ScreeningCompleted, routed to the assigned doctor
+            var report = await acceptanceService.SubmitScreeningReportAsync(new ScreeningReportNotificationDto
+            {
+                AcceptanceId = acc.AcceptanceId.ToString(),
+                Summary = "No risk factors.",
+                ReportJson = "{\"risk_level\":\"LOW\",\"recommendation\":\"Eligible\"}"
+            });
+            Assert.Equal(1, report.ReportVersion);
+            Assert.Equal(doctor.DoctorId, report.DoctorId);
+            Assert.Equal(AcceptanceStatus.ScreeningCompleted, (await context.Acceptances.FindAsync(acc.AcceptanceId))!.Status);
 
-            var step3 = await acceptanceService.UpdateScreeningStatusAsync(acc.AcceptanceId, AcceptanceStatus.Verified);
-            Assert.Equal("Verified", step3.Status);
+            // Doctor approves -> Verified with a reserved slot
+            var verification = new LifeLink.Services.Verification.VerificationService(context,
+                new LifeLink.Services.Notification.NotificationAgentService(context, new System.Net.Http.HttpClient(),
+                    new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(),
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<LifeLink.Services.Notification.NotificationAgentService>.Instance));
+            await verification.ApproveDonorVerificationAsync(report.DonorVerificationId, doctor.UserId!.Value, null);
+            Assert.Equal(AcceptanceStatus.Verified, (await context.Acceptances.FindAsync(acc.AcceptanceId))!.Status);
+            Assert.Equal(1, request.ReservedUnits);
 
-            var doctor = await context.Doctors.FirstAsync();
+            // Donation recorded -> Matched, reservation becomes fulfilment
             var final = await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
                 new List<Guid> { acc.AcceptanceId },
                 doctor.DoctorId);
 
             Assert.Equal(1, final.MatchedDonors);
+            Assert.Equal(0, final.ReservedUnits);
+            Assert.Equal(1, request.FulfilledUnits);
+            Assert.Equal(BloodRequestStatus.Completed, request.Status);
         }
 
         [Fact]
@@ -1496,6 +1490,7 @@ namespace LifeLink.Tests
             });
 
             var doctor = await context.Doctors.FirstAsync();
+            await TestReservations.ReserveAsync(context, acc.AcceptanceId);
             await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
                 new List<Guid> { acc.AcceptanceId },
@@ -1542,6 +1537,7 @@ namespace LifeLink.Tests
             });
 
             var doctor = await context.Doctors.FirstAsync();
+            await TestReservations.ReserveAsync(context, acc1.AcceptanceId);
             await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
                 new List<Guid> { acc1.AcceptanceId },

@@ -7,12 +7,12 @@ namespace LifeLink.Services.Transfer
 {
     public interface ITransferRequestService
     {
-        Task<TransferRequestResponseDto> CreateTransferRequestAsync(TransferRequestCreateDto dto);
+        Task<TransferRequestResponseDto> CreateTransferRequestAsync(TransferRequestCreateDto dto, Guid actingHospitalId);
         Task<TransferRequestResponseDto?> GetTransferRequestAsync(Guid id);
-        Task<IEnumerable<TransferRequestResponseDto>> GetAllTransferRequestsAsync();
-        Task<TransferRequestResponseDto> ApproveTransferRequestAsync(Guid id);
-        Task<TransferRequestResponseDto> RejectTransferRequestAsync(Guid id);
-        Task<TransferRequestResponseDto> CompleteTransferRequestAsync(Guid id);
-        Task<IEnumerable<TransferRequestResponseDto>> GetPendingTransferRequestsAsync();
+        Task<IEnumerable<TransferRequestResponseDto>> GetAllTransferRequestsAsync(Guid? hospitalId = null);
+        Task<IEnumerable<TransferRequestResponseDto>> GetPendingTransferRequestsAsync(Guid? hospitalId = null);
+        Task<TransferRequestResponseDto> ApproveTransferRequestAsync(Guid id, Guid actingHospitalId, Guid? performedByUserId = null);
+        Task<TransferRequestResponseDto> RejectTransferRequestAsync(Guid id, Guid actingHospitalId, string? reason);
+        Task<TransferRequestResponseDto> DeleteTransferRequestAsync(Guid id, Guid actingHospitalId);
     }
 }

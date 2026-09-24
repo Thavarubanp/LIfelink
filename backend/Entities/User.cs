@@ -16,6 +16,11 @@ namespace LifeLink.Entities
         public string Gender { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
 
+        // Donor eligibility: self-declared until a recorded donation confirms the tested group
+        public string? BloodGroup { get; set; }
+        // Latest donation (self-reported or recorded by LifeLink); drives the 120-day interval
+        public DateTime? LastDonationDate { get; set; }
+
         public AccountStatus AccountStatus { get; set; } = AccountStatus.Active;
 
         // Student 4 Additions: Suspension Policy

@@ -41,6 +41,12 @@ export const inventoryApi = {
     return response.data;
   },
 
+  // Packets of the signed-in hospital; pass packetId to get one packet with its full history
+  getPackets: async (params = {}) => {
+    const response = await client.get('/Inventory/packets', { params });
+    return response.data;
+  },
+
   getHospitalInventory: async (hospitalId) => {
     const response = await client.get(`/Inventory/hospital/${hospitalId}`);
     return response.data;

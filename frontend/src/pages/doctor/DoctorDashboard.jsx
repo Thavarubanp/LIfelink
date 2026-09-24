@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { acceptanceApi, bloodRequestApi } from '../../api';
+import { bloodRequestApi, screeningApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { Badge, RequestStatusBadge } from '../../components/common/Badge';
@@ -23,8 +23,13 @@ export const DoctorDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const list = await acceptanceApi.getMyAcceptances().catch(() => []);
-        setAcceptances(Array.isArray(list) ? list : []);
+        // Screening report versions for this hospital (latest version per donor is what matters here)
+        const list = await screeningApi.getReports().catch(() => []);
+        const latest = {};
+        (Array.isArray(list) ? list : []).forEach((r) => {
+          if (!latest[r.acceptanceId] || latest[r.acceptanceId].reportVersion < r.reportVersion) latest[r.acceptanceId] = r;
+        });
+        setAcceptances(Object.values(latest));
       } catch (err) {
         console.error('Failed to load doctor dashboard data:', err);
       } finally {
@@ -150,8 +155,8 @@ export const DoctorDashboard = () => {
     }
   ];
 
-  const pendingCount = acceptances.filter((a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW').length;
-  const approvedCount = acceptances.filter((a) => a.status === 'ACCEPTED' || a.status === 'APPROVED').length;
+  const pendingCount = acceptances.filter((r) => r.status === 'Pending' && r.acceptanceStatus === 'ScreeningCompleted').length;
+  const approvedCount = acceptances.filter((r) => r.acceptanceStatus === 'Verified').length;
 
   return (
     <div className="space-y-6">
@@ -174,11 +179,11 @@ export const DoctorDashboard = () => {
       {/* KPI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <span className="text-xs font-semibold text-slate-500">Total Acceptances</span>
+          <span className="text-xs font-semibold text-slate-500">Screened Donors</span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : acceptances.length}
           </div>
-          <p className="text-[11px] text-blue-500 mt-1">Real-time database queue</p>
+          <p className="text-[11px] text-blue-500 mt-1">Donors with a screening report at your hospital</p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
           <span className="text-xs font-semibold text-slate-500">Pending Reviews</span>
@@ -188,11 +193,11 @@ export const DoctorDashboard = () => {
           <p className="text-[11px] text-amber-500 mt-1">Awaiting clinical sign-off</p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <span className="text-xs font-semibold text-slate-500">Approved Screenings</span>
+          <span className="text-xs font-semibold text-slate-500">Approved, Awaiting Donation</span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : approvedCount}
           </div>
-          <p className="text-[11px] text-emerald-500 mt-1">Cleared for donation</p>
+          <p className="text-[11px] text-emerald-500 mt-1">Slots reserved; record the donation when done</p>
         </div>
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
           <span className="text-xs font-semibold text-slate-500">Doctor Queue Status</span>
@@ -227,9 +232,9 @@ export const DoctorDashboard = () => {
       <AgentStatusCard
         type="screening"
         title="Intelligent Screening Assessment Engine"
-        description="AI Agent evaluating donor vitals, blood pressure, hemoglobin, and systemic medical history contraindications."
+        description="The Request Management agent interviews donors and prepares screening reports. It never approves or rejects; you decide."
         metrics={[
-          { label: 'Screening Reports', value: `${acceptances.length} Active` },
+          { label: 'Waiting for Review', value: `${pendingCount}` },
           { label: 'Evaluation Engine', value: 'ONLINE' },
           { label: 'Agent Status', value: 'ACTIVE' }
         ]}

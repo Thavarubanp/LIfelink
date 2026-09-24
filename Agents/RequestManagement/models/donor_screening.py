@@ -1,299 +1,224 @@
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field
+"""
+LifeLink donor screening questionnaire (12 sections).
+
+Question types:
+  confirm   - Section 1 details pre-filled from the donor's profile; "yes" keeps the value, anything else replaces it
+  yes_no    - yes / no
+  text      - free text
+  date      - a date (YYYY-MM-DD or YYYY-MM)
+  number    - a whole number
+  select    - one of `options`
+  checklist - any of `options` (or "None"); a follow-up question asks for details of the ticked items
+
+Section 10 is confidential: its answers are parsed by fixed rules only and never sent to an LLM.
+Pregnancy-related questions are asked once (Section 4) and only to female donors; the report repeats them in Section 12.
+"""
+from typing import Dict, List, Optional
+from pydantic import BaseModel
+
+YES_NO = ["Yes", "No"]
+
 
 class QuestionDefinition(BaseModel):
     question_id: str
     section: str
+    section_index: int
     question_text: str
-    question_type: str = "yes_no"  # yes_no, text, select
+    question_type: str = "yes_no"
     options: Optional[List[str]] = None
-    is_parent: bool = False
+    help: Optional[str] = None
     parent_id: Optional[str] = None
-    trigger_answer: Optional[str] = None  # e.g., "yes"
+    trigger_answer: Optional[str] = None  # "yes", or "any" for checklist parents with at least one item ticked
     female_only: bool = False
+    prefill_key: Optional[str] = None
+    confidential: bool = False
 
-# The 12 Health Questionnaire Sections with dynamic conditional branching
+
+SECTIONS: Dict[int, str] = {
+    1: "Personal Information",
+    2: "Previous Donation History",
+    3: "Current Health Status",
+    4: "Basic Eligibility",
+    5: "Medical History",
+    6: "Recent Medical Events (past 12 months)",
+    7: "Recent Diseases (past 12 months)",
+    8: "Dental & Medication History",
+    9: "Travel History",
+    10: "Infectious Disease Risk Assessment (confidential)",
+    11: "Recent Symptoms (past 6 months)",
+    12: "Female Donors",
+}
+
+MEDICAL_CONDITIONS = [
+    "Heart disease", "Heart surgery", "Stroke", "High blood pressure", "Low blood pressure", "Asthma",
+    "Chronic lung disease", "Tuberculosis", "Diabetes", "Thyroid disease", "Kidney disease", "Liver disease",
+    "Cancer", "Epilepsy", "Seizures", "Mental illness", "Blood disorders", "Bleeding disorders",
+    "G6PD deficiency", "Polycythemia", "Leprosy", "Syphilis", "Gonorrhea", "Severe allergies",
+]
+RECENT_EVENTS = [
+    "Blood transfusion", "Surgery", "Hospitalization", "Serious accident", "Vaccination", "Rabies treatment",
+    "Acupuncture", "Tattoo", "Piercing", "Imprisonment",
+]
+RECENT_DISEASES = [
+    "Jaundice", "Hepatitis B", "Hepatitis C", "Typhoid", "Tuberculosis", "Malaria", "Dengue", "Chickenpox",
+    "Measles", "COVID-19", "Other infectious disease",
+]
+DENTAL_MEDICATION = [
+    "Dental procedure", "Antibiotics", "Prescription medication", "Blood thinners", "Steroids", "Medication for an infection",
+]
+INFECTION_RISKS = [
+    "HIV/AIDS", "Hepatitis B", "Hepatitis C", "Syphilis", "Concern about possible HIV exposure", "Injected recreational drugs",
+    "Shared needles", "High-risk sexual behaviour", "Diagnosed with a sexually transmitted infection",
+    "Partner with a sexually transmitted infection or concern",
+]
+RECENT_SYMPTOMS = ["Persistent fever", "Night sweats", "Unexplained weight loss", "Diarrhea", "Swollen lymph nodes", "Unusual fatigue"]
+CURRENT_SYMPTOMS = ["Fever", "Cough", "Cold", "Sore throat", "Flu symptoms"]
+COMPLICATIONS = ["Fainting", "Dizziness", "Excessive bleeding", "Allergic reaction", "Other"]
+
+
+def _q(qid: str, section: int, text: str, qtype: str = "yes_no", **kwargs) -> QuestionDefinition:
+    options = kwargs.pop("options", YES_NO if qtype == "yes_no" else None)
+    return QuestionDefinition(question_id=qid, section=SECTIONS[section], section_index=section, question_text=text,
+                              question_type=qtype, options=options, **kwargs)
+
+
 QUESTION_BANK: List[QuestionDefinition] = [
-    # SECTION 1: General Health
-    QuestionDefinition(
-        question_id="GH_1",
-        section="SECTION 1: General Health",
-        question_text="Are you feeling well and in good health today?",
-        question_type="yes_no"
-    ),
-    QuestionDefinition(
-        question_id="GH_2",
-        section="SECTION 1: General Health",
-        question_text="Have you had any fever, chills, or night sweats in the past 4 weeks?",
-        question_type="yes_no"
-    ),
-    QuestionDefinition(
-        question_id="GH_3",
-        section="SECTION 1: General Health",
-        question_text="Are you currently experiencing any cold, flu, persistent cough, or active sore throat?",
-        question_type="yes_no"
-    ),
-    QuestionDefinition(
-        question_id="GH_4",
-        section="SECTION 1: General Health",
-        question_text="Have you had significant unexplained weight loss over the past 6 months?",
-        question_type="yes_no"
-    ),
-    QuestionDefinition(
-        question_id="GH_5",
-        section="SECTION 1: General Health",
-        question_text="Have you been hospitalized or under intensive medical treatment within the past 12 months?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="GH_5_DETAIL",
-        section="SECTION 1: General Health",
-        question_text="Please describe the reason and approximate date of your recent hospitalization or medical treatment:",
-        question_type="text",
-        parent_id="GH_5",
-        trigger_answer="yes"
-    ),
+    # Section 1 - Personal Information (pre-filled from the profile where LifeLink has it)
+    _q("P_NAME", 1, "Is your full name {value}?", "confirm", prefill_key="fullName"),
+    _q("P_NIC", 1, "What is your NIC or passport number?", "text", help="Your National Identity Card (or passport) number, used by the blood bank to identify you."),
+    _q("P_DOB", 1, "What is your date of birth?", "date", prefill_key="dateOfBirth", help="Use the format YYYY-MM-DD. Your age is worked out from it."),
+    _q("P_GENDER", 1, "What is your gender?", "select", options=["Male", "Female", "Other"], prefill_key="gender",
+       help="Some questions (such as pregnancy) are only asked to female donors."),
+    _q("P_ADDRESS", 1, "Is your address {value}?", "confirm", prefill_key="address"),
+    _q("P_MOBILE", 1, "Is your mobile number {value}?", "confirm", prefill_key="phoneNumber"),
+    _q("P_EMAIL", 1, "Is your email address {value}?", "confirm", prefill_key="email"),
+    _q("P_BLOOD_GROUP", 1, "What is your blood group, if you know it?", "select",
+       options=["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Don't know"], prefill_key="bloodGroup",
+       help="If you are not sure, choose \"Don't know\"; the blood bank tests it when you donate."),
+    _q("P_OCCUPATION", 1, "What is your occupation?", "text",
+       help="Some jobs (for example pilots, drivers of public transport or people working at heights) need a rest period after donating."),
+    _q("P_EMERGENCY_NAME", 1, "Who should we contact in an emergency? (name)", "text"),
+    _q("P_EMERGENCY_PHONE", 1, "What is your emergency contact's phone number?", "text"),
 
-    # SECTION 2: Donation History
-    QuestionDefinition(
-        question_id="DH_1",
-        section="SECTION 2: Donation History",
-        question_text="Have you previously donated blood or blood products?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="DH_LAST_DATE",
-        section="SECTION 2: Donation History",
-        question_text="When was your last blood donation date (approximate month/year)?",
-        question_type="text",
-        parent_id="DH_1",
-        trigger_answer="yes"
-    ),
-    QuestionDefinition(
-        question_id="DH_COMPLICATIONS",
-        section="SECTION 2: Donation History",
-        question_text="Did you experience any fainting, dizziness, severe hematoma, or complications during previous donations?",
-        question_type="yes_no",
-        parent_id="DH_1",
-        trigger_answer="yes"
-    ),
+    # Section 2 - Previous Donation History
+    _q("DH_BEFORE", 2, "Have you donated blood before?"),
+    _q("DH_LAST_DATE", 2, "When was your last donation? (YYYY-MM-DD, or YYYY-MM if you only know the month)", "date", parent_id="DH_BEFORE", trigger_answer="yes"),
+    _q("DH_COUNT", 2, "About how many times have you donated blood?", "number", parent_id="DH_BEFORE", trigger_answer="yes"),
+    _q("DH_COMPLICATIONS", 2, "Did you have any of these problems after a donation? Choose any that apply, or None.", "checklist",
+       options=COMPLICATIONS, parent_id="DH_BEFORE", trigger_answer="yes",
+       help="Problems during or after a previous donation help the staff take extra care this time."),
+    _q("DH_COMPLICATIONS_DETAILS", 2, "Please describe the problem you had after donating.", "text", parent_id="DH_COMPLICATIONS", trigger_answer="any"),
+    _q("DH_ADVISED_NOT", 2, "Has a doctor or blood bank ever advised you not to donate blood?"),
+    _q("DH_120_DAYS", 2, "Have at least 120 days (about 4 months) passed since your last donation?", parent_id="DH_BEFORE", trigger_answer="yes",
+       help="Whole blood donors must wait at least 120 days so the body can rebuild its red cells and iron."),
 
-    # SECTION 3: Medications (Conditional Branching)
-    QuestionDefinition(
-        question_id="MED_1",
-        section="SECTION 3: Medications",
-        question_text="Are you currently taking any prescription medications or over-the-counter remedies?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="MED_NAMES",
-        section="SECTION 3: Medications",
-        question_text="Please list your current medications and dosages:",
-        question_type="text",
-        parent_id="MED_1",
-        trigger_answer="yes"
-    ),
-    QuestionDefinition(
-        question_id="MED_ANTIBIOTICS",
-        section="SECTION 3: Medications",
-        question_text="Have you taken any antibiotics within the past 14 days?",
-        question_type="yes_no",
-        parent_id="MED_1",
-        trigger_answer="yes"
-    ),
-    QuestionDefinition(
-        question_id="MED_THINNERS",
-        section="SECTION 3: Medications",
-        question_text="Are you taking blood thinners, anticoagulants, or antiplatelet drugs (e.g. Warfarin, Aspirin, Plavix)?",
-        question_type="yes_no",
-        parent_id="MED_1",
-        trigger_answer="yes"
-    ),
-    QuestionDefinition(
-        question_id="MED_STEROIDS",
-        section="SECTION 3: Medications",
-        question_text="Have you taken oral or injectable steroids in the past 3 months?",
-        question_type="yes_no",
-        parent_id="MED_1",
-        trigger_answer="yes"
-    ),
+    # Section 3 - Current Health Status
+    _q("CH_WELL", 3, "Are you feeling well today?"),
+    _q("CH_ATE_4H", 3, "Have you eaten a meal in the last 4 hours?", help="Donating on an empty stomach makes fainting more likely."),
+    _q("CH_SLEPT_6H", 3, "Did you sleep at least 6 hours last night?"),
+    _q("CH_SYMPTOMS", 3, "Do you have any of these right now? Choose any that apply, or None.", "checklist", options=CURRENT_SYMPTOMS),
+    _q("CH_TREATMENT", 3, "Are you currently under medical treatment?"),
+    _q("CH_TREATMENT_DETAILS", 3, "What treatment are you receiving, and for what?", "text", parent_id="CH_TREATMENT", trigger_answer="yes"),
+    _q("CH_ALCOHOL_24H", 3, "Have you had alcohol in the last 24 hours?"),
 
-    # SECTION 4: Medical Conditions (Conditional Branching)
-    QuestionDefinition(
-        question_id="MC_HAS_CHRONIC",
-        section="SECTION 4: Medical Conditions",
-        question_text="Have you ever been diagnosed with or treated for any major chronic medical conditions (e.g., heart disease, high blood pressure, diabetes, asthma, epilepsy, cancer, kidney/liver disease, or bleeding disorders)?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="MC_DETAILS",
-        section="SECTION 4: Medical Conditions",
-        question_text="Which conditions have you been diagnosed with, and are they currently well-controlled under medication?",
-        question_type="text",
-        parent_id="MC_HAS_CHRONIC",
-        trigger_answer="yes"
-    ),
+    # Section 4 - Basic Eligibility
+    _q("BE_AGE_18_60", 4, "Are you between 18 and 60 years old?"),
+    _q("BE_WEIGHT_50", 4, "Do you weigh more than 50 kg?"),
+    _q("BE_PREGNANT", 4, "Are you pregnant?", female_only=True),
+    _q("BE_BREASTFEEDING", 4, "Are you breastfeeding?", female_only=True),
+    _q("BE_ABORTION_6M", 4, "Have you had an abortion in the last 6 months?", female_only=True),
 
-    # SECTION 5: Infectious Diseases (Conditional Branching)
-    QuestionDefinition(
-        question_id="INF_HISTORY",
-        section="SECTION 5: Infectious Diseases",
-        question_text="Have you ever tested positive for or had contact with Hepatitis B, Hepatitis C, HIV/AIDS, Syphilis, Tuberculosis, Malaria, Dengue, or other sexually transmitted infections?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="INF_DETAILS",
-        section="SECTION 5: Infectious Diseases",
-        question_text="Please specify which infectious disease, the diagnosis year, and treatment outcome:",
-        question_type="text",
-        parent_id="INF_HISTORY",
-        trigger_answer="yes"
-    ),
+    # Section 5 - Medical History
+    _q("MH_CONDITIONS", 5, "Have you ever had any of these conditions? Choose any that apply, or None.", "checklist", options=MEDICAL_CONDITIONS,
+       help="These conditions can affect your safety when donating or the safety of the patient. Ask about any term you don't know."),
+    _q("MH_DETAILS", 5, "Please give details for each condition you selected (when it was diagnosed and any treatment).", "text",
+       parent_id="MH_CONDITIONS", trigger_answer="any"),
 
-    # SECTION 6: Medical Procedures (Conditional Branching)
-    QuestionDefinition(
-        question_id="PROC_RECENT",
-        section="SECTION 6: Medical Procedures",
-        question_text="Have you had any surgery, dental procedure, blood transfusion, organ transplant, or endoscopy in the past 12 months?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="PROC_DETAILS",
-        section="SECTION 6: Medical Procedures",
-        question_text="Please state what procedure was performed and the approximate date/recovery status:",
-        question_type="text",
-        parent_id="PROC_RECENT",
-        trigger_answer="yes"
-    ),
+    # Section 6 - Recent Medical Events (past 12 months)
+    _q("RE_EVENTS", 6, "In the past 12 months, have you had any of these? Choose any that apply, or None.", "checklist", options=RECENT_EVENTS),
+    _q("RE_DETAILS", 6, "Please give details and approximate dates for the items you selected.", "text", parent_id="RE_EVENTS", trigger_answer="any"),
 
-    # SECTION 7: Vaccinations (Conditional Branching)
-    QuestionDefinition(
-        question_id="VAC_RECENT",
-        section="SECTION 7: Vaccinations",
-        question_text="Have you received any vaccinations within the last 4 weeks?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="VAC_DETAILS",
-        section="SECTION 7: Vaccinations",
-        question_text="Which vaccine did you receive and on what date?",
-        question_type="text",
-        parent_id="VAC_RECENT",
-        trigger_answer="yes"
-    ),
+    # Section 7 - Recent Diseases (past 12 months)
+    _q("RD_DISEASES", 7, "In the past 12 months, have you had any of these illnesses? Choose any that apply, or None.", "checklist", options=RECENT_DISEASES),
+    _q("RD_DETAILS", 7, "Please give details and approximate dates for the illnesses you selected.", "text", parent_id="RD_DISEASES", trigger_answer="any"),
+    _q("RD_HEPATITIS_CONTACT", 7, "Have you been in close contact with someone who had hepatitis or jaundice in the past 12 months?"),
+    _q("RD_ANTIMALARIAL_3Y", 7, "Have you taken anti-malarial medication in the last 3 years?"),
 
-    # SECTION 8: Travel History (Conditional Branching)
-    QuestionDefinition(
-        question_id="TRAV_RECENT",
-        section="SECTION 8: Travel History",
-        question_text="Have you traveled outside the country or visited any malaria-endemic areas in the past 6 months?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="TRAV_DETAILS",
-        section="SECTION 8: Travel History",
-        question_text="Which countries or regions did you visit, and when did you return?",
-        question_type="text",
-        parent_id="TRAV_RECENT",
-        trigger_answer="yes"
-    ),
+    # Section 8 - Dental & Medication History
+    _q("DM_ITEMS", 8, "Recently, have you had or taken any of these? Choose any that apply, or None.", "checklist", options=DENTAL_MEDICATION,
+       help="Dental treatment and some medicines (for example antibiotics or blood thinners) can mean waiting before donating."),
+    _q("DM_MEDICATIONS", 8, "Please list any medicines you currently take (or type None).", "text"),
 
-    # SECTION 9: Lifestyle Risks (Conditional Branching)
-    QuestionDefinition(
-        question_id="RISK_LIFESTYLE",
-        section="SECTION 9: Lifestyle Risks",
-        question_text="In the past 12 months, have you used recreational drugs, injected non-prescribed substances, received a tattoo, body piercing, acupuncture, or suffered an accidental needle-stick injury?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="RISK_DETAILS",
-        section="SECTION 9: Lifestyle Risks",
-        question_text="Please describe the risk event and date:",
-        question_type="text",
-        parent_id="RISK_LIFESTYLE",
-        trigger_answer="yes"
-    ),
+    # Section 9 - Travel History
+    _q("TR_ABROAD", 9, "Have you travelled outside Sri Lanka in the past 3 years?"),
+    _q("TR_MALARIA", 9, "Did you travel to a country where malaria is common?", parent_id="TR_ABROAD", trigger_answer="yes"),
+    _q("TR_COUNTRIES", 9, "Which countries did you visit?", "text", parent_id="TR_ABROAD", trigger_answer="yes"),
+    _q("TR_DATES", 9, "When did you travel? (approximate dates)", "text", parent_id="TR_ABROAD", trigger_answer="yes"),
 
-    # SECTION 10: Pregnancy (Female donors only)
-    QuestionDefinition(
-        question_id="PREG_STATUS",
-        section="SECTION 10: Pregnancy & Women's Health",
-        question_text="Are you currently pregnant, have you given birth within the past 6 months, or are you currently breastfeeding?",
-        question_type="yes_no",
-        female_only=True
-    ),
+    # Section 10 - Infectious Disease Risk Assessment (confidential)
+    _q("IR_ITEMS", 10, "This section is confidential and seen only by the doctor. Does any of the following apply to you? Choose any that apply, or None.",
+       "checklist", options=INFECTION_RISKS, confidential=True,
+       help="These questions are asked of every donor because some infections cannot be detected straight after exposure. Your answer is private and does not judge you."),
 
-    # SECTION 11: Allergies (Conditional Branching)
-    QuestionDefinition(
-        question_id="ALL_KNOWN",
-        section="SECTION 11: Allergies",
-        question_text="Do you have any severe allergies (e.g., to medications, latex, or antiseptic agents)?",
-        question_type="yes_no",
-        is_parent=True
-    ),
-    QuestionDefinition(
-        question_id="ALL_DETAILS",
-        section="SECTION 11: Allergies",
-        question_text="Please list the substances or medications you are allergic to and the severity of reaction:",
-        question_type="text",
-        parent_id="ALL_KNOWN",
-        trigger_answer="yes"
-    ),
+    # Section 11 - Recent Symptoms (past 6 months)
+    _q("RS_SYMPTOMS", 11, "In the past 6 months, have you had any of these? Choose any that apply, or None.", "checklist", options=RECENT_SYMPTOMS),
 
-    # SECTION 12: Consent
-    QuestionDefinition(
-        question_id="CONS_TRUTH",
-        section="SECTION 12: Consent",
-        question_text="Do you confirm that all information provided in this screening is truthful and accurate to the best of your knowledge?",
-        question_type="yes_no"
-    ),
-    QuestionDefinition(
-        question_id="CONS_TEST",
-        section="SECTION 12: Consent",
-        question_text="Do you consent to infectious disease testing on your blood sample (including HIV, Hepatitis B/C, Syphilis, and Malaria)?",
-        question_type="yes_no"
-    ),
-    QuestionDefinition(
-        question_id="CONS_VOLUNTARY",
-        section="SECTION 12: Consent",
-        question_text="Do you voluntarily agree to donate blood for the designated patient/request without coercion?",
-        question_type="yes_no"
-    )
+    # Section 12 - Female Donors (pregnancy, breastfeeding and abortion were asked in Section 4)
+    _q("FD_DELIVERED_1Y", 12, "Have you given birth in the past 12 months?", female_only=True),
+    _q("FD_MISCARRIAGE", 12, "Have you had a miscarriage in the past 6 months?", female_only=True),
+
+    # Consent
+    _q("CONSENT", 12, "Do you confirm your answers are true and agree to share this report with the reviewing doctor?"),
 ]
 
-def get_applicable_questions(donor_gender: Optional[str] = None, current_answers: Optional[Dict[str, str]] = None) -> List[QuestionDefinition]:
-    """
-    Returns the list of active questions dynamically based on:
-    1. Donor gender (skips female-only questions if donor is male).
-    2. Dynamic conditional branching: skips child follow-up questions if parent answer doesn't match trigger_answer.
-    """
-    answers = current_answers or {}
-    is_female = (donor_gender or "").strip().lower() == "female"
-    
+QUESTIONS_BY_ID = {q.question_id: q for q in QUESTION_BANK}
+
+
+def _is_female(profile: Dict, answers: Dict[str, str]) -> bool:
+    gender = answers.get("P_GENDER") or profile.get("gender") or ""
+    return gender.strip().lower() == "female"
+
+
+def get_applicable_questions(profile: Optional[Dict] = None, answers: Optional[Dict[str, str]] = None) -> List[QuestionDefinition]:
+    """Questions that apply to this donor right now (gender and follow-up rules applied to the answers so far)."""
+    profile = profile or {}
+    answers = answers or {}
+    female = _is_female(profile, answers)
     applicable: List[QuestionDefinition] = []
-    
     for q in QUESTION_BANK:
-        # Check gender filter
-        if q.female_only and not is_female:
+        if q.female_only and not female:
             continue
-            
-        # Check parent trigger condition
         if q.parent_id:
             parent_answer = (answers.get(q.parent_id) or "").strip().lower()
-            trigger = (q.trigger_answer or "yes").strip().lower()
-            # If parent hasn't been answered yet or answer doesn't match trigger, skip
-            if parent_answer != trigger:
+            if q.trigger_answer == "any":
+                if parent_answer in ("", "none", "[]"):
+                    continue
+            elif parent_answer != (q.trigger_answer or "yes"):
                 continue
-                
         applicable.append(q)
-        
     return applicable
+
+
+def render_question(q: QuestionDefinition, profile: Dict, previous: Optional[str] = None) -> Dict:
+    """The question as shown to the donor, with pre-filled values and the previous answer when updating."""
+    text = q.question_text
+    prefill = profile.get(q.prefill_key) if q.prefill_key else None
+    if q.question_type == "confirm":
+        if prefill:
+            text = text.replace("{value}", str(prefill)) + " Reply yes to confirm, or type the correct value."
+        else:
+            text = text.replace("Is your", "What is your").replace(" {value}", "").rstrip("?") + "?"
+    elif prefill and q.question_type in ("date", "select"):
+        text += f" (Your profile says: {prefill}. Reply yes to keep it.)"
+    if previous:
+        text += f" (Your previous answer: {previous}. Reply \"same\" to keep it.)"
+    return {
+        "question_id": q.question_id,
+        "section": q.section,
+        "section_index": q.section_index,
+        "text": text,
+        "type": q.question_type,
+        "options": q.options,
+        "confidential": q.confidential,
+        "help": q.help,
+    }

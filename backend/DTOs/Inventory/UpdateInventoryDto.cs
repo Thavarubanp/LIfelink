@@ -2,10 +2,14 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LifeLink.DTOs.Inventory
 {
+    /// <summary>
+    /// Updates thresholds. A lower UnitsAvailable issues that many packets (earliest expiry first) with AuditNotes
+    /// as the reason; stock can never be raised here.
+    /// </summary>
     public class UpdateInventoryDto
     {
         [Range(0, int.MaxValue, ErrorMessage = "UnitsAvailable cannot be negative.")]
-        public int UnitsAvailable { get; set; }
+        public int? UnitsAvailable { get; set; }
 
         [Range(0, int.MaxValue, ErrorMessage = "MinimumThreshold cannot be negative.")]
         public int MinimumThreshold { get; set; }

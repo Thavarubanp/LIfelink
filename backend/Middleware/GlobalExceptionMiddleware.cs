@@ -41,6 +41,10 @@ namespace LifeLink.Middleware
 
             switch (exception)
             {
+                case Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException:
+                    statusCode = (int)HttpStatusCode.Conflict;
+                    message = "This record was changed by someone else at the same time. Please refresh and try again.";
+                    break;
                 case UnauthorizedAccessException uae:
                     statusCode = (int)HttpStatusCode.Unauthorized;
                     message = uae.Message;

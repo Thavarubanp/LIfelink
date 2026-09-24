@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { inventoryApi, emergencyApi } from '../../api';
+import { inventoryApi, emergencyApi, profileApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { InventoryAnalysisStatus } from '../../components/workflow/InventoryAnalysisStatus';
 import { Building2, Droplet, Zap, ArrowLeftRight, AlertCircle, Loader2 } from 'lucide-react';
@@ -13,8 +13,9 @@ export const HospitalDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const me = await profileApi.getMyProfile();
         const [invRes, emRes] = await Promise.all([
-          inventoryApi.getAllInventory().catch(() => []),
+          inventoryApi.getHospitalInventory(me.id).catch(() => []),
           emergencyApi.getCriticalEmergencyRequests().catch(() => [])
         ]);
         const invList = invRes.data || (Array.isArray(invRes) ? invRes : []);

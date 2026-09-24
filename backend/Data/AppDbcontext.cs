@@ -1,3 +1,6 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,6 +24,7 @@ namespace LifeLink.Data
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; } = null!;
         public DbSet<EmergencyRequest> EmergencyRequests { get; set; } = null!;
         public DbSet<HospitalTransferRequest> HospitalTransferRequests { get; set; } = null!;
+        public DbSet<BloodPacket> BloodPackets { get; set; } = null!;
 
         // Student 2 DbSets
         public DbSet<Doctor> Doctors { get; set; } = null!;
@@ -41,6 +45,85 @@ namespace LifeLink.Data
         public DbSet<Appeal> Appeals { get; set; } = null!;
         public DbSet<AppealMessage> AppealMessages { get; set; } = null!;
         public DbSet<HospitalApprovalHistory> HospitalApprovalHistories { get; set; } = null!;
+
+        public override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            EnforceScreeningReportImmutability();
+            AdvanceBloodRequestConcurrencyTokens();
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+
+        public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            EnforceScreeningReportImmutability();
+            AdvanceBloodRequestConcurrencyTokens();
+            return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        /// <summary>
+        /// Every change to a blood request moves its concurrency token on, so two people changing the same request at once
+        /// (approving donors, recording donations, releasing, cancelling, expiry) never silently overwrite each other:
+        /// the later save fails with DbUpdateConcurrencyException (HTTP 409) and is retried on fresh data.
+        /// </summary>
+        private void AdvanceBloodRequestConcurrencyTokens()
+        {
+            foreach (var entry in ChangeTracker.Entries<BloodRequest>())
+            {
+                if (entry.State == EntityState.Modified)
+                {
+                    entry.Entity.ConcurrencyToken++;
+                }
+            }
+        }
+
+        private static readonly string[] ImmutableReportFields =
+        {
+            nameof(DonorVerification.AcceptanceId),
+            nameof(DonorVerification.ReportVersion),
+            nameof(DonorVerification.ReportJson),
+            nameof(DonorVerification.MedicalReportSummary),
+            nameof(DonorVerification.CreatedAt)
+        };
+
+        /// <summary>
+        /// Submitted screening reports and doctor decisions are permanent records: report fields never change,
+        /// a decided row never changes (except doctor links nulled when a doctor is deleted), and rows are never deleted.
+        /// A donor who updates answers gets a new report version instead.
+        /// </summary>
+        private void EnforceScreeningReportImmutability()
+        {
+            ChangeTracker.DetectChanges();
+            foreach (var entry in ChangeTracker.Entries<DonorVerification>())
+            {
+                if (entry.State == EntityState.Deleted)
+                {
+                    throw new InvalidOperationException("Screening reports and doctor decisions cannot be deleted.");
+                }
+                if (entry.State != EntityState.Modified) continue;
+
+                foreach (var name in ImmutableReportFields)
+                {
+                    var property = entry.Property(name);
+                    if (property.IsModified && !Equals(property.OriginalValue, property.CurrentValue))
+                    {
+                        throw new InvalidOperationException("A submitted screening report cannot be modified. Submit a new version instead.");
+                    }
+                }
+
+                var originalStatus = (VerificationStatus)entry.Property(nameof(DonorVerification.Status)).OriginalValue!;
+                if (originalStatus == VerificationStatus.Pending) continue;
+
+                foreach (var property in entry.Properties)
+                {
+                    var name = property.Metadata.Name;
+                    if (name == nameof(DonorVerification.DoctorId) || name == nameof(DonorVerification.DecidedByDoctorId)) continue;
+                    if (property.IsModified && !Equals(property.OriginalValue, property.CurrentValue))
+                    {
+                        throw new InvalidOperationException("A doctor decision on a screening report cannot be changed.");
+                    }
+                }
+            }
+        }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -63,6 +146,7 @@ namespace LifeLink.Data
                       .IsRequired();
                 entity.Property(u => u.IsSuspended).IsRequired().HasDefaultValue(false);
                 entity.Property(u => u.SuspensionReason).HasMaxLength(500);
+                entity.Property(u => u.BloodGroup).HasMaxLength(10);
             });
 
             // Role configuration
@@ -124,6 +208,13 @@ namespace LifeLink.Data
                 entity.Property(h => h.RejectionReason).HasMaxLength(500);
                 entity.Property(h => h.IsSuspended).IsRequired().HasDefaultValue(false);
                 entity.Property(h => h.SuspensionReason).HasMaxLength(500);
+                entity.Property(h => h.PacketShelfLifeDays).IsRequired().HasDefaultValue(35);
+                entity.Property(h => h.ExpiryAlertDays).IsRequired().HasDefaultValue(5);
+                entity.ToTable(t =>
+                {
+                    t.HasCheckConstraint("CK_Hospitals_PacketShelfLifeDays", "\"PacketShelfLifeDays\" >= 21 AND \"PacketShelfLifeDays\" <= 35");
+                    t.HasCheckConstraint("CK_Hospitals_ExpiryAlertDays", "\"ExpiryAlertDays\" >= 1 AND \"ExpiryAlertDays\" <= 20");
+                });
 
                 entity.HasOne(h => h.ApprovedByAdmin)
                       .WithMany()
@@ -157,6 +248,7 @@ namespace LifeLink.Data
                 entity.HasIndex(i => new { i.HospitalId, i.BloodGroup }).IsUnique();
 
                 entity.Property(i => i.BloodGroup).IsRequired().HasMaxLength(10);
+                entity.Property(i => i.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
 
                 entity.HasOne(i => i.Hospital)
                       .WithMany(h => h.BloodInventories)
@@ -169,12 +261,35 @@ namespace LifeLink.Data
             {
                 entity.HasKey(t => t.TransactionId);
                 entity.HasIndex(t => t.InventoryId);
+                entity.HasIndex(t => t.PacketId);
+                entity.HasIndex(t => t.ReferenceId);
                 entity.Property(t => t.TransactionType).IsRequired().HasMaxLength(50);
 
                 entity.HasOne(t => t.Inventory)
                       .WithMany(i => i.Transactions)
                       .HasForeignKey(t => t.InventoryId)
                       .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // BloodPacket configuration: packet-level stock, owner = current hospital
+            modelBuilder.Entity<BloodPacket>(entity =>
+            {
+                entity.HasKey(p => p.PacketId);
+                entity.HasIndex(p => new { p.HospitalId, p.BloodGroup, p.Status });
+                entity.HasIndex(p => p.ExpiryDate);
+                entity.HasIndex(p => p.SourceReferenceId);
+
+                entity.Property(p => p.BloodGroup).IsRequired().HasMaxLength(10);
+                entity.Property(p => p.Status).IsRequired().HasMaxLength(20);
+                entity.Property(p => p.Source).IsRequired().HasMaxLength(20);
+                entity.Property(p => p.VolumeMl).IsRequired().HasDefaultValue(BloodPacket.StandardVolumeMl);
+                entity.Property(p => p.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
+
+                // Restrict: packets are audit records and must never disappear with a hospital row
+                entity.HasOne(p => p.Hospital)
+                      .WithMany()
+                      .HasForeignKey(p => p.HospitalId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
 
             // EmergencyRequest configuration
@@ -207,6 +322,8 @@ namespace LifeLink.Data
 
                 entity.Property(t => t.BloodGroup).IsRequired().HasMaxLength(10);
                 entity.Property(t => t.Status).IsRequired().HasMaxLength(20);
+                entity.Property(t => t.TransferType).IsRequired().HasMaxLength(20).HasDefaultValue(TransferTypes.Request);
+                entity.Property(t => t.RejectionReason).HasMaxLength(500);
 
                 entity.HasOne(t => t.SenderHospital)
                       .WithMany(h => h.SentTransferRequests)
@@ -271,15 +388,22 @@ namespace LifeLink.Data
                 entity.HasKey(v => v.DonorVerificationId);
                 entity.HasIndex(v => v.AcceptanceId);
                 entity.HasIndex(v => v.DoctorId);
+                entity.HasIndex(v => new { v.AcceptanceId, v.ReportVersion }).IsUnique();
 
                 entity.Property(v => v.Status)
                       .HasConversion<string>()
                       .IsRequired();
+                entity.Property(v => v.ReportVersion).IsRequired().HasDefaultValue(1);
 
                 // SetNull: deleting a doctor must not delete donor screening history
                 entity.HasOne(v => v.Doctor)
                       .WithMany()
                       .HasForeignKey(v => v.DoctorId)
+                      .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasOne(v => v.DecidedByDoctor)
+                      .WithMany()
+                      .HasForeignKey(v => v.DecidedByDoctorId)
                       .OnDelete(DeleteBehavior.SetNull);
             });
 
@@ -341,6 +465,7 @@ namespace LifeLink.Data
                 entity.Property(b => b.BloodGroup).IsRequired().HasMaxLength(10);
                 entity.Property(b => b.UnitsRequired).IsRequired();
                 entity.Property(b => b.FulfilledUnits).IsRequired().HasDefaultValue(0);
+                entity.Property(b => b.ReservedUnits).IsRequired().HasDefaultValue(0);
                 entity.Property(b => b.Reason).IsRequired().HasMaxLength(500);
                 entity.Property(b => b.Priority).IsRequired().HasMaxLength(20);
                 entity.Property(b => b.RejectionReason).HasMaxLength(500);
@@ -353,6 +478,7 @@ namespace LifeLink.Data
                 {
                     t.HasCheckConstraint("CK_BloodRequests_UnitsRequired", "\"UnitsRequired\" >= 1 AND \"UnitsRequired\" <= 10");
                     t.HasCheckConstraint("CK_BloodRequests_FulfilledUnits", "\"FulfilledUnits\" >= 0 AND \"FulfilledUnits\" <= \"UnitsRequired\"");
+                    t.HasCheckConstraint("CK_BloodRequests_ReservedUnits", "\"ReservedUnits\" >= 0 AND \"FulfilledUnits\" + \"ReservedUnits\" <= \"UnitsRequired\"");
                 });
             });
 

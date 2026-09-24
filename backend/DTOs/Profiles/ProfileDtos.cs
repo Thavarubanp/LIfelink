@@ -20,6 +20,8 @@ namespace LifeLink.DTOs.Profiles
         public string? RegistrationNumber { get; set; }
         public DateTime CreatedAt { get; set; }
         public int DoctorCount { get; set; }
+        public int PacketShelfLifeDays { get; set; }
+        public int ExpiryAlertDays { get; set; }
         public bool CanViewInventory { get; set; }
         public bool CanEdit { get; set; }
         public List<HospitalInventoryItemDto>? Inventory { get; set; }
@@ -47,6 +49,11 @@ namespace LifeLink.DTOs.Profiles
         public List<string> Roles { get; set; } = new();
         public string AccountStatus { get; set; } = string.Empty;
         public string DisplayStatus { get; set; } = "Active"; // "Active", "Suspended" or "Permanently Blocked"
+        // Donor eligibility details: only returned to the owner and the Admin
+        public string? BloodGroup { get; set; }
+        public bool BloodGroupConfirmed { get; set; }
+        public DateTime? LastDonationDate { get; set; }
+        public DateTime? NextEligibleDonationDate { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool CanEdit { get; set; }
     }
@@ -89,6 +96,10 @@ namespace LifeLink.DTOs.Profiles
 
         [StringLength(500, ErrorMessage = "Address cannot exceed 500 characters.")]
         public string? Address { get; set; }
+
+        // Optional; blood group can change only until a recorded donation confirms it
+        public string? BloodGroup { get; set; }
+        public DateTime? LastDonationDate { get; set; }
     }
 
     public class UpdateDoctorProfileDto
@@ -139,6 +150,13 @@ namespace LifeLink.DTOs.Profiles
         [EmailAddress(ErrorMessage = "Invalid contact person email address.")]
         [StringLength(200, ErrorMessage = "Contact person email cannot exceed 200 characters.")]
         public string? ContactPersonEmail { get; set; }
+
+        // Blood packet settings (optional): shelf life of newly collected packets and the expiry alert window
+        [Range(21, 35, ErrorMessage = "Packet shelf life must be between 21 and 35 days.")]
+        public int? PacketShelfLifeDays { get; set; }
+
+        [Range(1, 20, ErrorMessage = "Expiry alert window must be between 1 and 20 days.")]
+        public int? ExpiryAlertDays { get; set; }
     }
 
     /// <summary>Which profile page belongs to the caller: Type is "user", "doctor" or "hospital".</summary>

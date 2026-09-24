@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     REQUEST_TIMEOUT: int = DEFAULT_REQUEST_TIMEOUT
     SCHEDULE_INTERVAL_MINUTES: int = DEFAULT_SCHEDULE_INTERVAL_MINUTES
     INTERNAL_SERVICE_API_KEY: str = "LifeLink-Internal-Agent-Key-2026"
+    # The backend runs inventory checks through the Supervisor; the agent's own scheduler is opt-in
+    SCHEDULER_ENABLED: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

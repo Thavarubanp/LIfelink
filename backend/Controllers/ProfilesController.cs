@@ -75,6 +75,8 @@ namespace LifeLink.Controllers
                 RegistrationNumber = hospital.RegistrationNumber,
                 CreatedAt = hospital.CreatedAt,
                 DoctorCount = hospital.Doctors.Count(d => d.IsActive),
+                PacketShelfLifeDays = hospital.PacketShelfLifeDays,
+                ExpiryAlertDays = hospital.ExpiryAlertDays,
                 CanViewInventory = canViewInventory,
                 CanEdit = await IsOwnHospitalAsync(id)
             };
@@ -143,6 +145,15 @@ namespace LifeLink.Controllers
                 CreatedAt = user.CreatedAt,
                 CanEdit = IsOwnUserProfile(id)
             };
+
+            // Blood group and donation dates are personal health details: owner and Admin only
+            if (dto.CanEdit || isCallerAdmin)
+            {
+                dto.BloodGroup = user.BloodGroup;
+                dto.BloodGroupConfirmed = await DonorEligibility.IsBloodGroupConfirmedAsync(_context, user.UserId);
+                dto.LastDonationDate = user.LastDonationDate;
+                dto.NextEligibleDonationDate = DonorEligibility.NextEligibleDate(user);
+            }
 
             return Ok(dto);
         }
@@ -238,6 +249,30 @@ namespace LifeLink.Controllers
             user.PhoneNumber = dto.PhoneNumber.Trim();
             user.Gender = dto.Gender?.Trim() ?? string.Empty;
             user.Address = dto.Address?.Trim() ?? string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(dto.BloodGroup))
+            {
+                if (!BloodValidationHelper.IsValidBloodGroup(dto.BloodGroup))
+                    return BadRequest(ApiResponse<object>.Fail("Invalid blood group."));
+                var bloodGroup = BloodValidationHelper.NormalizeBloodGroup(dto.BloodGroup);
+                if (bloodGroup != user.BloodGroup && await DonorEligibility.IsBloodGroupConfirmedAsync(_context, user.UserId))
+                    return BadRequest(ApiResponse<object>.Fail($"Your blood group was confirmed as {user.BloodGroup} at a recorded donation and cannot be changed."));
+                user.BloodGroup = bloodGroup;
+            }
+
+            if (dto.LastDonationDate.HasValue && dto.LastDonationDate != user.LastDonationDate)
+            {
+                var lastDonation = DateTime.SpecifyKind(dto.LastDonationDate.Value.Date, DateTimeKind.Utc);
+                if (lastDonation > DateTime.UtcNow)
+                    return BadRequest(ApiResponse<object>.Fail("The last donation date cannot be in the future."));
+                var latestRecorded = await _context.RequestFulfillmentHistories
+                    .Where(h => h.DonorUserId == user.UserId)
+                    .MaxAsync(h => (DateTime?)h.FulfilledAt);
+                if (latestRecorded.HasValue && lastDonation < latestRecorded.Value.Date)
+                    return BadRequest(ApiResponse<object>.Fail($"LifeLink recorded a donation on {latestRecorded.Value:yyyy-MM-dd}; the last donation date cannot be earlier."));
+                user.LastDonationDate = lastDonation;
+            }
+
             user.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
@@ -314,6 +349,14 @@ namespace LifeLink.Controllers
             hospital.ContactPersonName = dto.ContactPersonName?.Trim();
             hospital.ContactPersonPhone = string.IsNullOrWhiteSpace(dto.ContactPersonPhone) ? null : dto.ContactPersonPhone.Trim();
             hospital.ContactPersonEmail = string.IsNullOrWhiteSpace(dto.ContactPersonEmail) ? null : dto.ContactPersonEmail.Trim();
+
+            // Packet settings apply to packets collected from now on; existing packets keep their expiry date
+            var shelfLife = dto.PacketShelfLifeDays ?? hospital.PacketShelfLifeDays;
+            var alertDays = dto.ExpiryAlertDays ?? hospital.ExpiryAlertDays;
+            if (alertDays >= shelfLife)
+                return BadRequest(ApiResponse<object>.Fail("The expiry alert window must be shorter than the packet shelf life."));
+            hospital.PacketShelfLifeDays = shelfLife;
+            hospital.ExpiryAlertDays = alertDays;
             hospital.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();

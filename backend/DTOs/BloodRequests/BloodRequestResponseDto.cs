@@ -10,6 +10,10 @@ namespace LifeLink.DTOs.BloodRequests
         public string BloodGroup { get; set; } = string.Empty;
         public int UnitsRequired { get; set; }
         public int FulfilledUnits { get; set; }
+        public int ReservedUnits { get; set; }
+        public int RemainingUnits => Math.Max(0, UnitsRequired - FulfilledUnits);
+        // False while every remaining slot is reserved by an approved donor (request stays visible)
+        public bool IsAcceptingDonors { get; set; }
         public string Reason { get; set; } = string.Empty;
         public string Priority { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;

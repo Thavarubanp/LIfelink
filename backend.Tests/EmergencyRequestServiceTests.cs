@@ -147,14 +147,12 @@ namespace LifeLink.Tests
             var inventoryService = new BloodInventoryService(context);
             var hospitalId = Guid.NewGuid();
 
-            await inventoryService.CreateInventoryAsync(new CreateInventoryDto
-            {
-                HospitalId = hospitalId,
-                BloodGroup = "A+",
-                UnitsAvailable = 30,
-                MinimumThreshold = 5,
-                MaximumCapacity = 100
-            });
+            // 30 packets of stock (packets only come from donations/transfers; the ledger's seed path stands in here)
+            await context.Hospitals.AddAsync(new Hospital { HospitalId = hospitalId, Name = "Emergency Hospital", Email = "er@h.org", IsVerified = true });
+            await context.SaveChangesAsync();
+            await InventoryLedger.AddCollectedPacketsAsync(context, hospitalId, "A+", 30, DateTime.UtcNow,
+                BloodPacketSource.Seed, null, TransactionType.Seeded, "test stock", null);
+            await context.SaveChangesAsync();
 
             var created = await emergencyService.CreateEmergencyRequestAsync(new EmergencyRequestCreateDto
             {
@@ -174,6 +172,8 @@ namespace LifeLink.Tests
             Assert.Equal("Completed", completed.Status);
             var hospitalInventory = (await inventoryService.GetHospitalInventoryAsync(hospitalId)).First(i => i.BloodGroup == "A+");
             Assert.Equal(20, hospitalInventory.UnitsAvailable);
+            Assert.Equal(10, await context.BloodPackets.CountAsync(p => p.Status == BloodPacketStatus.Issued));
+            Assert.Equal(10, await context.InventoryTransactions.CountAsync(t => t.TransactionType == TransactionType.Issued && t.ReferenceId == created.EmergencyRequestId));
         }
 
         [Fact]

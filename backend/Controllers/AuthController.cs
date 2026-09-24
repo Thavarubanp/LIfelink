@@ -119,7 +119,7 @@ namespace LifeLink.Controllers
         [ProducesResponseType(StatusCodes.Status401Unauthorized)]
         public async Task<IActionResult> GetUserById(Guid id)
         {
-            var profile = await _authService.GetUserScreeningProfileAsync(id);
+            var profile = await _authService.GetUserScreeningProfileAsync(id, _currentUserService.Roles.Contains("InternalAgent"));
             if (profile == null)
             {
                 return NotFound(new { message = $"User with ID '{id}' was not found." });

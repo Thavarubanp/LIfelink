@@ -1,18 +1,18 @@
-from typing import TypedDict, List, Dict, Any, Optional
+from typing import Any, Dict, Optional
+from typing_extensions import TypedDict
 
-class ScreeningAgentState(TypedDict):
+
+class ScreeningTurnState(TypedDict, total=False):
+    """State of one interview turn: the donor's message in, the agent's reply and progress out."""
+    db: Any
     acceptance_id: str
-    session_id: Optional[str]
-    donor_user_id: Optional[str]
-    blood_request_id: Optional[str]
-    donor_profile: Dict[str, Any]
-    blood_request: Dict[str, Any]
-    answers: List[Dict[str, Any]]
-    current_question_index: int
-    validation_passed: bool
-    analysis_result: Dict[str, Any]
-    risk_level: str
-    recommendation: str
-    report_id: Optional[str]
-    report_payload: Dict[str, Any]
-    status: str
+    message: str
+    session: Any
+    acceptance: Dict[str, Any]
+    profile: Dict[str, Any]
+    question: Any
+    previous: Optional[str]
+    parsed: Any
+    kind: str        # answer | question | clarify | withdraw | complete | closed
+    reply: str
+    query: Optional[str]

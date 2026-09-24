@@ -20,6 +20,9 @@ using LifeLink.Services.Complaints;
 using LifeLink.Services.HospitalActivity;
 using LifeLink.Services.Appeals;
 using LifeLink.Services.Planning;
+using LifeLink.Services.Assistant;
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
@@ -55,6 +58,7 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddScoped<IBloodInventoryService, BloodInventoryService>();
 builder.Services.AddScoped<IEmergencyRequestService, EmergencyRequestService>();
 builder.Services.AddScoped<ITransferRequestService, TransferRequestService>();
+builder.Services.AddScoped<InventoryMonitor>();
 
 // Student 2 Services Injection
 builder.Services.AddHttpClient<INotificationAgentService, NotificationAgentService>();
@@ -78,6 +82,16 @@ builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IHospitalActivityService, HospitalActivityService>();
 builder.Services.AddScoped<IAppealService, AppealService>();
+
+// Universal assistant (Supervisor agent): relays chat with a role-scoped snapshot; limited per user
+builder.Services.AddHttpClient<IAssistantService, AssistantService>(client => client.Timeout = TimeSpan.FromSeconds(60));
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("assistant", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+});
 
 // 3. Configure JWT Authentication & Authorization
 var jwtSettings = builder.Configuration.GetSection("Jwt");
@@ -192,6 +206,18 @@ using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
+
+    // Development-only demo stock: dotnet run -- --seed-demo-data
+    if (args.Contains("--seed-demo-data"))
+    {
+        if (!app.Environment.IsDevelopment())
+        {
+            throw new InvalidOperationException("--seed-demo-data is only allowed in the Development environment.");
+        }
+        var seeded = await DevelopmentDataSeeder.SeedDemoStockAsync(dbContext);
+        Console.WriteLine($"Seeded {seeded} demo blood packets.");
+        return;
+    }
 }
 
 // 6. Request Pipeline Configuration
@@ -214,6 +240,7 @@ app.UseMiddleware<InternalServiceAuthMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseMiddleware<RestrictedGovernanceModeMiddleware>();
+app.UseRateLimiter();
 
 app.MapControllers();
 

@@ -26,6 +26,9 @@ __pycache__/
 # Generated reports
 Agents/RequestManagement/reports/generated/
 
+# Supervisor knowledge-base vectors (rebuilt with `python -m knowledge.ingest`)
+Agents/Supervisor/.chroma/
+
 # Node / Frontend
 node_modules/
 .next/

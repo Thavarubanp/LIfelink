@@ -8,7 +8,10 @@ class DonorCandidate(BaseModel):
     blood_group: str
     location: Optional[str] = "Nearby"
     last_donation_date: Optional[str] = None
+    date_of_birth: Optional[str] = None
     account_status: Optional[str] = "Active"
+    is_suspended: bool = False
+    is_blocked: bool = False
     contact_number: Optional[str] = None
 
 class RankedDonor(BaseModel):
@@ -60,6 +63,29 @@ class AgentProcessResponse(BaseModel):
     eligible_donors_count: int
     ranked_donors: List[RankedDonor]
     notifications: List[NotificationItem]
+
+class HospitalAlertItem(BaseModel):
+    """An alert the Supervisor wants sent to one hospital (emergency stock, shortage, expiring packets, transfer)."""
+    hospital_id: str
+    hospital_name: Optional[str] = None
+    kind: str  # EmergencyStock, InventoryShortage, PacketsExpiringSoon, TransferSuggestion
+    blood_group: Optional[str] = None
+    units: Optional[int] = None
+    message: Optional[str] = None  # facts prepared by the Inventory agent
+    related: List[str] = []        # hospital names or request descriptions the alert refers to
+
+class HospitalAlertsInput(BaseModel):
+    alerts: List[HospitalAlertItem]
+    context: Dict[str, Any] = {}
+
+class HospitalNotification(BaseModel):
+    recipient_id: str
+    notification_type: str
+    title: str
+    message: str
+
+class HospitalAlertsResponse(BaseModel):
+    notifications: List[HospitalNotification]
 
 # LangGraph Agent State
 class NotificationAgentState(TypedDict):

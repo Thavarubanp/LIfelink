@@ -130,8 +130,9 @@ namespace LifeLink.Tests
             }
             Assert.Equal(10, acceptanceIds.Count);
 
-            // 4. Doctor selects 2 donors
+            // 4. Doctor approves 2 screened donors (reserved slots), then their donations are recorded
             var selectedTwo = acceptanceIds.Take(2).ToList();
+            await TestReservations.ReserveAsync(context, selectedTwo.ToArray());
             var selectionResult = await acceptanceService.FinalizeDonorSelectionAsync(
                 createdReq.BloodRequestId,
                 selectedTwo,
@@ -191,8 +192,9 @@ namespace LifeLink.Tests
                 acceptanceIds.Add(acc.AcceptanceId);
             }
 
-            // Doctor selects required count (2 donors)
+            // Doctor approves and records the required count (2 donors)
             var selectedTwo = acceptanceIds.Take(2).ToList();
+            await TestReservations.ReserveAsync(context, selectedTwo.ToArray());
             var selectionResult = await acceptanceService.FinalizeDonorSelectionAsync(
                 createdReq.BloodRequestId,
                 selectedTwo,
@@ -291,7 +293,8 @@ namespace LifeLink.Tests
                 accList.Add(acc.AcceptanceId);
             }
 
-            // Doctor 1 finalizes 2 units (full fulfillment)
+            // Doctor 1 records 2 approved donations (full fulfillment)
+            await TestReservations.ReserveAsync(context, accList[0], accList[1]);
             await acceptanceService.FinalizeDonorSelectionAsync(
                 request.BloodRequestId,
                 new List<Guid> { accList[0], accList[1] },

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using LifeLink.Data;
+using LifeLink.Services.Common;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Emergency;
 using LifeLink.Services.Emergency;
@@ -16,14 +18,20 @@ namespace LifeLink.Controllers
     public class EmergencyRequestsController : ControllerBase
     {
         private readonly IEmergencyRequestService _emergencyRequestService;
+        private readonly ICurrentUserService _currentUserService;
+        private readonly AppDbContext _context;
 
-        public EmergencyRequestsController(IEmergencyRequestService emergencyRequestService)
+        public EmergencyRequestsController(IEmergencyRequestService emergencyRequestService, ICurrentUserService currentUserService, AppDbContext context)
         {
             _emergencyRequestService = emergencyRequestService;
+            _currentUserService = currentUserService;
+            _context = context;
         }
 
+        private Task<Guid?> CallerHospitalIdAsync() => CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
+
         /// <summary>
-        /// Creates a new emergency blood request.
+        /// The signed-in hospital raises an emergency; hospitals holding compatible stock are alerted.
         /// </summary>
         [HttpPost]
         [Authorize(Roles = "HospitalStaff")]
@@ -35,6 +43,13 @@ namespace LifeLink.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+            request.HospitalId = hospitalId.Value; // a hospital raises emergencies only for itself
 
             try
             {
@@ -98,12 +113,16 @@ namespace LifeLink.Controllers
         {
             try
             {
-                var result = await _emergencyRequestService.ApproveEmergencyRequestAsync(id);
+                var result = await _emergencyRequestService.ApproveEmergencyRequestAsync(id, await CallerHospitalIdAsync() ?? Guid.Empty);
                 return Ok(ApiResponse<EmergencyRequestResponseDto>.Ok(result, "Emergency request approved successfully."));
             }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
             catch (InvalidOperationException ex)
             {
@@ -123,12 +142,16 @@ namespace LifeLink.Controllers
         {
             try
             {
-                var result = await _emergencyRequestService.RejectEmergencyRequestAsync(id);
+                var result = await _emergencyRequestService.RejectEmergencyRequestAsync(id, await CallerHospitalIdAsync() ?? Guid.Empty);
                 return Ok(ApiResponse<EmergencyRequestResponseDto>.Ok(result, "Emergency request rejected."));
             }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
             catch (InvalidOperationException ex)
             {
@@ -148,12 +171,16 @@ namespace LifeLink.Controllers
         {
             try
             {
-                var result = await _emergencyRequestService.CompleteEmergencyRequestAsync(id);
+                var result = await _emergencyRequestService.CompleteEmergencyRequestAsync(id, await CallerHospitalIdAsync() ?? Guid.Empty, _currentUserService.UserId);
                 return Ok(ApiResponse<EmergencyRequestResponseDto>.Ok(result, "Emergency request marked as completed."));
             }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
             catch (InvalidOperationException ex)
             {

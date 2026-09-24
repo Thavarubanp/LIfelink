@@ -3,16 +3,16 @@ using System.ComponentModel.DataAnnotations;
 
 namespace LifeLink.DTOs.Inventory
 {
+    /// <summary>
+    /// Creates a blood group category with its thresholds. Stock itself only arrives as packets from recorded
+    /// donations or completed transfers.
+    /// </summary>
     public class CreateInventoryDto
     {
-        [Required]
-        public Guid HospitalId { get; set; }
+        public Guid HospitalId { get; set; } // taken from the signed-in hospital
 
         [Required]
         public string BloodGroup { get; set; } = string.Empty;
-
-        [Range(0, int.MaxValue, ErrorMessage = "UnitsAvailable cannot be negative.")]
-        public int UnitsAvailable { get; set; }
 
         [Range(0, int.MaxValue, ErrorMessage = "MinimumThreshold cannot be negative.")]
         public int MinimumThreshold { get; set; }

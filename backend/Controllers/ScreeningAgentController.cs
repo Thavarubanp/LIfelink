@@ -12,7 +12,7 @@ namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/agent/screening")]
-    [Authorize(Roles = "InternalAgent,Admin")]
+    [Authorize(Roles = "InternalAgent")]
     public class ScreeningAgentController : ControllerBase
     {
         private readonly IAcceptanceService _acceptanceService;
@@ -27,7 +27,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Callback endpoint for Agent 1 to notify the backend of completed screening report metadata.
+        /// The Request Management agent submits a completed screening report. Each submission is stored as a new
+        /// immutable version and routed to the assigned doctor; the agent never approves or rejects donors.
         /// </summary>
         [HttpPost("report-notify")]
         [ProducesResponseType(StatusCodes.Status200OK)]
@@ -39,34 +40,33 @@ namespace LifeLink.Controllers
                 return BadRequest(new { message = "Invalid screening report notification payload." });
             }
 
-            _logger.LogInformation(
-                "Received AI screening report callback: ReportId={ReportId}, AcceptanceId={AcceptanceId}, RiskLevel={RiskLevel}, Recommendation={Recommendation}",
-                dto.ReportId,
-                dto.AcceptanceId,
-                dto.RiskLevel,
-                dto.Recommendation
-            );
-
-            if (Guid.TryParse(dto.AcceptanceId, out var acceptanceGuid))
+            try
             {
-                try
+                var report = await _acceptanceService.SubmitScreeningReportAsync(dto);
+                _logger.LogInformation("Screening report version {Version} stored for acceptance {AcceptanceId}", report.ReportVersion, dto.AcceptanceId);
+
+                return Ok(new
                 {
-                    // Ensure acceptance status moves to ScreeningCompleted
-                    await _acceptanceService.UpdateScreeningStatusAsync(acceptanceGuid, AcceptanceStatus.ScreeningCompleted);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Could not auto-transition acceptance {AcceptanceId} status: {Message}", dto.AcceptanceId, ex.Message);
-                }
+                    success = true,
+                    message = "Screening report submitted to the doctor.",
+                    reportId = dto.ReportId,
+                    donorVerificationId = report.DonorVerificationId,
+                    reportVersion = report.ReportVersion,
+                    acceptanceId = dto.AcceptanceId
+                });
             }
-
-            return Ok(new
+            catch (KeyNotFoundException ex)
             {
-                success = true,
-                message = "Screening report notification recorded successfully.",
-                reportId = dto.ReportId,
-                acceptanceId = dto.AcceptanceId
-            });
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
         }
     }
 }

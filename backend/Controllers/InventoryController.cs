@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Linq;
+using LifeLink.Data;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Inventory;
+using LifeLink.Services.Common;
 using LifeLink.Services.Inventory;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Controllers
 {
@@ -16,14 +20,26 @@ namespace LifeLink.Controllers
     public class InventoryController : ControllerBase
     {
         private readonly IBloodInventoryService _inventoryService;
+        private readonly ICurrentUserService _currentUserService;
+        private readonly AppDbContext _context;
 
-        public InventoryController(IBloodInventoryService inventoryService)
+        public InventoryController(IBloodInventoryService inventoryService, ICurrentUserService currentUserService, AppDbContext context)
         {
             _inventoryService = inventoryService;
+            _currentUserService = currentUserService;
+            _context = context;
+        }
+
+        private Task<Guid?> CallerHospitalIdAsync() => CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
+
+        private async Task<bool> OwnsInventoryAsync(Guid inventoryId)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            return hospitalId.HasValue && await _context.BloodInventories.AnyAsync(i => i.InventoryId == inventoryId && i.HospitalId == hospitalId);
         }
 
         /// <summary>
-        /// Creates a new blood inventory record for a hospital.
+        /// Creates a blood group category (thresholds only) for the signed-in hospital. Stock arrives as packets.
         /// </summary>
         [HttpPost]
         [Authorize(Roles = "HospitalStaff")]
@@ -36,6 +52,13 @@ namespace LifeLink.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+            request.HospitalId = hospitalId.Value; // a hospital manages only its own stock
 
             try
             {
@@ -114,7 +137,7 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Updates a blood inventory record.
+        /// Updates thresholds of the hospital's own category. A lower unit count issues packets (earliest expiry first).
         /// </summary>
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "HospitalStaff")]
@@ -128,9 +151,14 @@ namespace LifeLink.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (!await OwnsInventoryAsync(id))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("You can only manage your own hospital's inventory."));
+            }
+
             try
             {
-                var result = await _inventoryService.UpdateInventoryAsync(id, request);
+                var result = await _inventoryService.UpdateInventoryAsync(id, request, _currentUserService.UserId);
                 return Ok(ApiResponse<InventoryResponseDto>.Ok(result, "Inventory updated successfully."));
             }
             catch (KeyNotFoundException ex)
@@ -152,13 +180,47 @@ namespace LifeLink.Controllers
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteInventory(Guid id)
         {
-            var success = await _inventoryService.DeleteInventoryAsync(id);
+            if (!await OwnsInventoryAsync(id))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("You can only manage your own hospital's inventory."));
+            }
+
+            bool success;
+            try
+            {
+                success = await _inventoryService.DeleteInventoryAsync(id);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
             if (!success)
             {
                 return NotFound(ApiResponse<object>.Fail($"Inventory record with ID '{id}' was not found."));
             }
 
             return Ok(ApiResponse<string>.Ok("Inventory deleted successfully.", "Inventory record removed."));
+        }
+
+        /// <summary>
+        /// Blood packets with expiry and source. Hospital staff see their own hospital's packets; with packetId a
+        /// single packet is returned with its full audit history (collection, transfers, issue, expiry).
+        /// </summary>
+        [HttpGet("packets")]
+        [ProducesResponseType(typeof(ApiResponse<IEnumerable<BloodPacketResponseDto>>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPackets([FromQuery] Guid? hospitalId, [FromQuery] string? bloodGroup, [FromQuery] string? status, [FromQuery] Guid? packetId)
+        {
+            if (_currentUserService.Roles.Contains("HospitalStaff"))
+            {
+                hospitalId = await CallerHospitalIdAsync();
+                if (hospitalId == null)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+                }
+            }
+
+            var result = await _inventoryService.GetPacketsAsync(hospitalId, bloodGroup, status, packetId);
+            return Ok(ApiResponse<IEnumerable<BloodPacketResponseDto>>.Ok(result, "Blood packets retrieved successfully."));
         }
 
         /// <summary>

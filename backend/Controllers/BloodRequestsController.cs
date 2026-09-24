@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using LifeLink.Data;
 using LifeLink.DTOs.Acceptances;
 using LifeLink.DTOs.BloodRequests;
 using LifeLink.Services.Acceptances;
@@ -10,6 +11,7 @@ using LifeLink.Services.Hospitals;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Controllers
 {
@@ -21,17 +23,20 @@ namespace LifeLink.Controllers
         private readonly IAcceptanceService _acceptanceService;
         private readonly ICurrentUserService _currentUserService;
         private readonly IHospitalService _hospitalService;
+        private readonly AppDbContext _context;
 
         public BloodRequestsController(
             IBloodRequestService bloodRequestService,
             IAcceptanceService acceptanceService,
             ICurrentUserService currentUserService,
-            IHospitalService hospitalService)
+            IHospitalService hospitalService,
+            AppDbContext context)
         {
             _bloodRequestService = bloodRequestService;
             _acceptanceService = acceptanceService;
             _currentUserService = currentUserService;
             _hospitalService = hospitalService;
+            _context = context;
         }
 
         /// <summary>
@@ -141,8 +146,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Creator permanently deletes their own request (any status except Completed) and all related records.
-        /// The assigned doctor, the hospital and donors with active acceptances are notified.
+        /// Creator deletes their own request (any status except Completed). It leaves every active list but all history
+        /// (acceptances, screening reports, doctor decisions, donations) is kept. Affected parties are notified.
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize]
@@ -265,31 +270,53 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Returns all acceptances and donor ranking details for a request.
+        /// Returns the donors (with contact details) who accepted a request: only for the doctors and staff of the
+        /// hospital handling it, and the Admin.
         /// </summary>
         [HttpGet("{id:guid}/acceptances")]
-        [Authorize]
+        [Authorize(Roles = "Doctor,HospitalStaff,Admin")]
         [ProducesResponseType(typeof(List<RequestAcceptanceDetailDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> GetRequestAcceptances(Guid id)
         {
+            if (!_currentUserService.Roles.Contains("Admin"))
+            {
+                var callerHospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
+                var belongsToCaller = callerHospitalId.HasValue &&
+                    await _context.BloodRequests.AnyAsync(r => r.BloodRequestId == id && r.HospitalId == callerHospitalId);
+                if (!belongsToCaller)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "This request is not handled by your hospital." });
+                }
+            }
+
             var list = await _acceptanceService.GetRequestAcceptancesAsync(id);
             return Ok(list);
         }
 
         /// <summary>
-        /// Doctor/Hospital staff finalizes donor selection for a blood request.
+        /// Record donations: an active doctor of the hospital or the hospital's staff confirms that approved donors
+        /// donated (with the tested blood group). Fulfilled units increase only here.
         /// </summary>
         [HttpPut("{id:guid}/finalize-selection")]
-        [Authorize]
+        [Authorize(Roles = "Doctor,HospitalStaff")]
         [ProducesResponseType(typeof(FinalizeDonorSelectionResponseDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> FinalizeDonorSelection(Guid id, [FromBody] FinalizeDonorSelectionDto dto)
         {
-            var doctorUserId = _currentUserService.UserId ?? Guid.Empty;
+            var actorUserId = _currentUserService.UserId ?? Guid.Empty;
 
             try
             {
-                var result = await _acceptanceService.FinalizeDonorSelectionAsync(id, dto.SelectedAcceptanceIds, doctorUserId);
+                Guid? actingHospitalId = null;
+                if (_currentUserService.Roles.Contains("HospitalStaff"))
+                {
+                    actingHospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService)
+                                       ?? throw new UnauthorizedAccessException("Your account is not linked to a hospital.");
+                }
+
+                var result = await _acceptanceService.FinalizeDonorSelectionAsync(
+                    id, dto.SelectedAcceptanceIds, actorUserId, actingHospitalId, dto.TestedBloodGroups);
                 return Ok(result);
             }
             catch (UnauthorizedAccessException ex)

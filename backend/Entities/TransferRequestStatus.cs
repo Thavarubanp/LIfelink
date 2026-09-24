@@ -5,6 +5,7 @@ namespace LifeLink.Entities
         Pending,
         Approved,
         Rejected,
-        Completed
+        Completed,
+        Cancelled // deleted by its creator while pending
     }
 }

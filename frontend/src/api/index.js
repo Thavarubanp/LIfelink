@@ -14,3 +14,5 @@ export { default as hospitalApi } from './hospitalApi';
 export { default as doctorApi } from './doctorApi';
 export { default as searchApi } from './searchApi';
 export { default as profileApi } from './profileApi';
+export { default as assistantApi } from './assistantApi';
+export { default as screeningApi } from './screeningApi';

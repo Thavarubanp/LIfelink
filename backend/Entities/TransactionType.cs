@@ -9,5 +9,10 @@ namespace LifeLink.Entities
         public const string TransferOut = "TRANSFER_OUT";
         public const string EmergencyDispatch = "EMERGENCY_DISPATCH";
         public const string Adjustment = "ADJUSTMENT";
+        public const string DonationCollected = "DONATION_COLLECTED";
+        public const string Issued = "ISSUED";
+        public const string Expired = "EXPIRED";
+        public const string LegacyMigrated = "LEGACY_MIGRATED";
+        public const string Seeded = "SEEDED";
     }
 }

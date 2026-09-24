@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { emergencyApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { EmergencyResponseTimeline } from '../../components/workflow/EmergencyResponseTimeline';
 import { Zap, AlertTriangle, Loader2 } from 'lucide-react';
 
 export const EmergencyHubPage = () => {
+  // The hospital is taken from the signed-in account on the server
   const [formData, setFormData] = useState({
-    hospitalId: '00000000-0000-0000-0000-000000000000',
     bloodGroup: 'O-',
     unitsRequired: 5,
     priority: 'CRITICAL',
@@ -23,8 +24,8 @@ export const EmergencyHubPage = () => {
     try {
       await emergencyApi.createEmergencyRequest(formData);
       addToast({
-        title: '🔴 Critical Emergency Broadcasted!',
-        message: 'Regional hospitals and registered donors notified immediately.',
+        title: 'Emergency raised',
+        message: 'Approved hospitals holding compatible blood have been alerted and can send you a transfer offer.',
         type: 'danger'
       });
     } catch (err) {
@@ -45,8 +46,20 @@ export const EmergencyHubPage = () => {
           <Zap className="w-5 h-5 text-red-600 animate-pulse" /> Emergency Blood Dispatch Center
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Broadcast high-priority emergency blood requirements across regional hospital networks.
+          Hospital-to-hospital emergency support: other approved hospitals holding compatible blood are alerted and can offer a transfer.
         </p>
+      </div>
+
+      <div className="p-4 rounded-xl border border-red-200 dark:border-red-900 bg-red-50/60 dark:bg-red-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        <span className="text-slate-700 dark:text-slate-300">
+          Need donors? Create a <strong>Critical</strong> blood request. It follows the normal doctor approval, then alerts eligible donors.
+        </span>
+        <Link
+          to={`/donor/requests/create?priority=Critical&bloodGroup=${encodeURIComponent(formData.bloodGroup)}`}
+          className="shrink-0 px-3 py-1.5 rounded-lg font-semibold bg-red-600 text-white hover:bg-red-700"
+        >
+          Create Critical donor request
+        </Link>
       </div>
 
       <EmergencyResponseTimeline status="CRITICAL" />
@@ -114,7 +127,7 @@ export const EmergencyHubPage = () => {
             disabled={loading}
             className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Trigger Emergency Regional Broadcast 🔴</>}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Alert hospitals with compatible stock</>}
           </button>
         </form>
       </div>

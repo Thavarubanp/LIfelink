@@ -9,6 +9,7 @@ import Sidebar from './components/common/Sidebar';
 import Toast from './components/common/Toast';
 import NotificationCenterDrawer from './components/notifications/NotificationCenterDrawer';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import AssistantWidget from './components/assistant/AssistantWidget';
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
@@ -23,6 +24,7 @@ import AvailableRequestsPage from './pages/donor/AvailableRequestsPage';
 import RequestDetailPage from './pages/donor/RequestDetailPage';
 import CreatePatientRequestPage from './pages/donor/CreatePatientRequestPage';
 import MyAcceptancesPage from './pages/donor/MyAcceptancesPage';
+import ScreeningInterviewPage from './pages/donor/ScreeningInterviewPage';
 import MyProfilePage from './pages/profiles/MyProfilePage';
 import DonorComplaintsPage from './pages/donor/DonorComplaintsPage';
 
@@ -37,6 +39,7 @@ import InventoryManagementPage from './pages/hospital/InventoryManagementPage';
 import EmergencyHubPage from './pages/hospital/EmergencyHubPage';
 import DoctorManagementPage from './pages/hospital/DoctorManagementPage';
 import VerifyBloodRequestsPage from './pages/hospital/VerifyBloodRequestsPage';
+import TransfersPage from './pages/hospital/TransfersPage';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -63,6 +66,8 @@ const DashboardLayout = ({ onOpenNotifications }) => {
           <Outlet />
         </main>
       </div>
+      {/* Universal LifeLink assistant on every signed-in page */}
+      <AssistantWidget />
     </div>
   );
 };
@@ -143,6 +148,14 @@ export function App() {
               <Route path="/donor/requests/:id" element={<RequestDetailPage />} />
               <Route path="/donor/my-requests" element={<Navigate to="/donor/requests/create" replace />} />
               <Route path="/donor/acceptances" element={<MyAcceptancesPage />} />
+              <Route
+                path="/donor/acceptances/:id/screening"
+                element={
+                  <ProtectedRoute allowedRoles={['User']}>
+                    <ScreeningInterviewPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/donor/profile" element={<Navigate to="/my-profile" replace />} />
               {/* Complaints: Users and Hospital Staff only (no doctors, no admins) */}
               <Route
@@ -203,6 +216,14 @@ export function App() {
                 element={
                   <ProtectedRoute allowedRoles={['HospitalStaff']}>
                     <VerifyBloodRequestsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/hospital/transfers"
+                element={
+                  <ProtectedRoute allowedRoles={['HospitalStaff']}>
+                    <TransfersPage />
                   </ProtectedRoute>
                 }
               />

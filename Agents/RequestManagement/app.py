@@ -1,47 +1,33 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from config.settings import settings
 from database.db import init_db
 from api.routes import router as screening_router
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("ScreeningAgentApp")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing LifeLink Student 1 Screening Agent database...")
+    logger.info("Initializing Request Management agent database...")
     init_db()
-    logger.info(f"Screening Agent ready on {settings.HOST}:{settings.PORT}")
+    logger.info("Request Management agent ready on %s:%s", settings.HOST, settings.PORT)
     yield
-    logger.info("Shutting down LifeLink Student 1 Screening Agent.")
 
+
+# No CORS: browsers never call this agent; the Supervisor relays screening turns with the internal key.
 app = FastAPI(
-    title="LifeLink Student 1 - AI Donor Screening Agent",
+    title="LifeLink Request Management Agent (Donor Screening)",
     version=settings.VERSION,
-    description="FastAPI + LangGraph + Gemini Agent for Medical Screening, Clinical Risk Evaluation, and Doctor Reporting.",
-    lifespan=lifespan
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+    description="Conducts the 12-section donor screening interview, explains questions, stores answers and submits "
+                "versioned screening reports to the assigned doctor. It never approves or rejects donors.",
+    lifespan=lifespan)
 app.include_router(screening_router)
+
 
 @app.get("/")
 def root():
-    return {
-        "service": "LifeLink Student 1 AI Donor Screening Agent",
-        "docs": "/docs",
-        "health": "/api/agent/health"
-    }
+    return {"service": "LifeLink Request Management Agent", "health": "/api/agent/health"}

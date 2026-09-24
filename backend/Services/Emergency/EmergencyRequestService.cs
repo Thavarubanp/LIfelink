@@ -4,22 +4,31 @@ using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.Emergency;
-using LifeLink.Entities;
 using LifeLink.DTOs.Planning;
+using LifeLink.Entities;
+using LifeLink.Services.Inventory;
+using LifeLink.Services.Notification;
 using LifeLink.Services.Planning;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Emergency
 {
+    /// <summary>
+    /// Emergency Hub: hospital-to-hospital inventory support. Other approved hospitals that hold compatible,
+    /// unexpired packets are alerted and can respond with a transfer offer. Donor emergencies use the normal
+    /// Critical blood request workflow instead.
+    /// </summary>
     public class EmergencyRequestService : IEmergencyRequestService
     {
         private readonly AppDbContext _context;
         private readonly IPlanningAgentService? _planningAgent;
+        private readonly INotificationAgentService? _notificationAgent;
 
-        public EmergencyRequestService(AppDbContext context, IPlanningAgentService? planningAgent = null)
+        public EmergencyRequestService(AppDbContext context, IPlanningAgentService? planningAgent = null, INotificationAgentService? notificationAgent = null)
         {
             _context = context;
             _planningAgent = planningAgent;
+            _notificationAgent = notificationAgent;
         }
 
         public async Task<EmergencyRequestResponseDto> CreateEmergencyRequestAsync(EmergencyRequestCreateDto dto)
@@ -58,10 +67,24 @@ namespace LifeLink.Services.Emergency
             _context.EmergencyRequests.Add(request);
             await _context.SaveChangesAsync();
 
-            // Trigger Planning Agent for Workflow C: EmergencyShortage (orchestrating Agent 3 inventory and Agent 2 emergency matching)
+            await DispatchStockAlertsAsync(request);
+
+            return await MapToResponseDtoAsync(request.EmergencyRequestId);
+        }
+
+        /// <summary>
+        /// Workflow C (EmergencyShortage): the Supervisor runs the Inventory and Notification agents over the
+        /// hospitals the backend found with compatible stock; alerts are saved only for those hospitals.
+        /// Without the Supervisor, the same hospitals get a standard alert.
+        /// </summary>
+        private async Task DispatchStockAlertsAsync(EmergencyRequest request)
+        {
+            var stockHolders = await FindHospitalsWithCompatibleStockAsync(request);
+            var requester = await _context.Hospitals.Where(h => h.HospitalId == request.HospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "A partner hospital";
+
             if (_planningAgent != null)
             {
-                var planRequest = new PlanRequestDto
+                var plan = await _planningAgent.DispatchPlanAsync(new PlanRequestDto
                 {
                     EventType = "EmergencyShortage",
                     RequestId = request.EmergencyRequestId.ToString(),
@@ -73,16 +96,68 @@ namespace LifeLink.Services.Emergency
                     {
                         ["requestId"] = request.EmergencyRequestId.ToString(),
                         ["hospitalId"] = request.HospitalId.ToString(),
+                        ["hospitalName"] = requester,
                         ["bloodGroup"] = request.BloodGroup,
                         ["unitsRequired"] = request.UnitsRequired,
-                        ["priority"] = request.Priority
+                        ["priority"] = request.Priority,
+                        ["stockHospitals"] = stockHolders.Select(h => new Dictionary<string, object>
+                        {
+                            ["hospital_id"] = h.HospitalId.ToString(),
+                            ["hospital_name"] = h.Name,
+                            ["available_units"] = h.Units
+                        }).ToList()
                     }
-                };
+                });
 
-                await _planningAgent.DispatchPlanAsync(planRequest);
+                if (plan != null && plan.Success && _notificationAgent != null)
+                {
+                    await _notificationAgent.PersistAgentNotificationsAsync(plan.Notifications, new HashSet<Guid>(),
+                        stockHolders.Select(h => h.HospitalId).ToHashSet());
+                    return;
+                }
             }
 
-            return await MapToResponseDtoAsync(request.EmergencyRequestId);
+            foreach (var holder in stockHolders)
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForHospital(holder.HospitalId, "EmergencyStockAlert",
+                    $"[{request.Priority.ToUpper()}] Emergency Blood Support Needed ({request.BloodGroup})",
+                    $"{requester} urgently needs {request.UnitsRequired} unit(s) of {request.BloodGroup}. You hold {holder.Units} compatible unit(s); consider sending a transfer offer."));
+            }
+            if (stockHolders.Count > 0)
+            {
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        public record StockHolder(Guid HospitalId, string Name, int Units);
+
+        // Red cell compatible donor groups for each recipient group
+        private static readonly Dictionary<string, string[]> CompatibleDonorGroups = new()
+        {
+            ["O-"] = new[] { "O-" },
+            ["O+"] = new[] { "O+", "O-" },
+            ["A-"] = new[] { "A-", "O-" },
+            ["A+"] = new[] { "A+", "A-", "O+", "O-" },
+            ["B-"] = new[] { "B-", "O-" },
+            ["B+"] = new[] { "B+", "B-", "O+", "O-" },
+            ["AB-"] = new[] { "AB-", "A-", "B-", "O-" },
+            ["AB+"] = new[] { "AB+", "AB-", "A+", "A-", "B+", "B-", "O+", "O-" }
+        };
+
+        /// <summary>Approved, non-suspended hospitals (not the requester) holding unexpired compatible packets.</summary>
+        public async Task<List<StockHolder>> FindHospitalsWithCompatibleStockAsync(EmergencyRequest request)
+        {
+            var now = DateTime.UtcNow;
+            var groups = CompatibleDonorGroups.GetValueOrDefault(request.BloodGroup) ?? new[] { request.BloodGroup };
+            var stock = await _context.BloodPackets
+                .Where(p => p.Status == BloodPacketStatus.Available && p.ExpiryDate > now &&
+                            groups.Contains(p.BloodGroup) && p.HospitalId != request.HospitalId &&
+                            p.Hospital.IsVerified && !p.Hospital.IsSuspended)
+                .GroupBy(p => new { p.HospitalId, p.Hospital.Name })
+                .Select(g => new { g.Key.HospitalId, g.Key.Name, Units = g.Count() })
+                .ToListAsync();
+
+            return stock.OrderByDescending(s => s.Units).Select(s => new StockHolder(s.HospitalId, s.Name, s.Units)).ToList();
         }
 
         public async Task<EmergencyRequestResponseDto?> GetEmergencyRequestAsync(Guid id)
@@ -105,13 +180,9 @@ namespace LifeLink.Services.Emergency
             return list.Select(MapToResponseDto);
         }
 
-        public async Task<EmergencyRequestResponseDto> ApproveEmergencyRequestAsync(Guid id)
+        public async Task<EmergencyRequestResponseDto> ApproveEmergencyRequestAsync(Guid id, Guid? actingHospitalId = null)
         {
-            var request = await _context.EmergencyRequests.FindAsync(id);
-            if (request == null)
-            {
-                throw new KeyNotFoundException($"Emergency request with ID '{id}' was not found.");
-            }
+            var request = await RequireOwnedAsync(id, actingHospitalId);
 
             if (request.Status == EmergencyRequestStatus.Completed.ToString() || request.Status == EmergencyRequestStatus.Rejected.ToString())
             {
@@ -126,13 +197,9 @@ namespace LifeLink.Services.Emergency
             return await MapToResponseDtoAsync(request.EmergencyRequestId);
         }
 
-        public async Task<EmergencyRequestResponseDto> RejectEmergencyRequestAsync(Guid id)
+        public async Task<EmergencyRequestResponseDto> RejectEmergencyRequestAsync(Guid id, Guid? actingHospitalId = null)
         {
-            var request = await _context.EmergencyRequests.FindAsync(id);
-            if (request == null)
-            {
-                throw new KeyNotFoundException($"Emergency request with ID '{id}' was not found.");
-            }
+            var request = await RequireOwnedAsync(id, actingHospitalId);
 
             if (request.Status == EmergencyRequestStatus.Completed.ToString())
             {
@@ -147,13 +214,9 @@ namespace LifeLink.Services.Emergency
             return await MapToResponseDtoAsync(request.EmergencyRequestId);
         }
 
-        public async Task<EmergencyRequestResponseDto> CompleteEmergencyRequestAsync(Guid id)
+        public async Task<EmergencyRequestResponseDto> CompleteEmergencyRequestAsync(Guid id, Guid? actingHospitalId = null, Guid? performedByUserId = null)
         {
-            var request = await _context.EmergencyRequests.FindAsync(id);
-            if (request == null)
-            {
-                throw new KeyNotFoundException($"Emergency request with ID '{id}' was not found.");
-            }
+            var request = await RequireOwnedAsync(id, actingHospitalId);
 
             if (request.Status == EmergencyRequestStatus.Rejected.ToString())
             {
@@ -169,25 +232,12 @@ namespace LifeLink.Services.Emergency
             request.Status = EmergencyRequestStatus.Completed.ToString();
             request.UpdatedAt = now;
 
-            // Optional audit deduction: if inventory exists for this hospital & blood group, deduct stock if available
-            var inventory = await _context.BloodInventories
-                .FirstOrDefaultAsync(i => i.HospitalId == request.HospitalId && i.BloodGroup == request.BloodGroup);
-
-            if (inventory != null && inventory.UnitsAvailable >= request.UnitsRequired)
+            // Dispatch from own stock when it covers the need (earliest-expiring packets first, each one audited)
+            var available = await InventoryLedger.CountAvailableAsync(_context, request.HospitalId, request.BloodGroup);
+            if (available >= request.UnitsRequired)
             {
-                inventory.UnitsAvailable -= request.UnitsRequired;
-                inventory.LastUpdated = now;
-                inventory.UpdatedAt = now;
-
-                _context.InventoryTransactions.Add(new InventoryTransaction
-                {
-                    TransactionId = Guid.NewGuid(),
-                    InventoryId = inventory.InventoryId,
-                    TransactionType = TransactionType.EmergencyDispatch,
-                    Units = request.UnitsRequired,
-                    Notes = $"Emergency request '{id}' completed and dispatched.",
-                    CreatedAt = now
-                });
+                await InventoryLedger.IssuePacketsAsync(_context, request.HospitalId, request.BloodGroup, request.UnitsRequired,
+                    request.EmergencyRequestId, $"Emergency request '{id}' completed and dispatched.", performedByUserId);
             }
 
             await _context.SaveChangesAsync();
@@ -203,6 +253,22 @@ namespace LifeLink.Services.Emergency
                 .ToListAsync();
 
             return list.Select(MapToResponseDto);
+        }
+
+        private async Task<EmergencyRequest> RequireOwnedAsync(Guid id, Guid? actingHospitalId)
+        {
+            var request = await _context.EmergencyRequests.FindAsync(id);
+            if (request == null)
+            {
+                throw new KeyNotFoundException($"Emergency request with ID '{id}' was not found.");
+            }
+
+            if (actingHospitalId.HasValue && request.HospitalId != actingHospitalId.Value)
+            {
+                throw new UnauthorizedAccessException("Only the hospital that raised this emergency can update it.");
+            }
+
+            return request;
         }
 
         private async Task EnsureHospitalExistsAsync(Guid hospitalId)

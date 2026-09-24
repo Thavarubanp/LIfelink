@@ -24,14 +24,15 @@ export const Badge = ({ children, variant = 'default', size = 'md', className = 
   );
 };
 
-// Blood request lifecycle status: Pending → Verified (doctor assigned) → Approved → Completed, or Rejected/Cancelled
+// Blood request lifecycle status: Pending → Verified (doctor assigned) → Approved → Completed, or Rejected/Cancelled/Deleted
 const REQUEST_STATUS_VARIANTS = {
   Pending: 'warning',
   Verified: 'info',
   Approved: 'success',
   Completed: 'success',
   Rejected: 'primary',
-  Cancelled: 'default'
+  Cancelled: 'default',
+  Deleted: 'default'
 };
 
 export const RequestStatusBadge = ({ status, size = 'sm' }) => (

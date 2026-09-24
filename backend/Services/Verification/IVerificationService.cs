@@ -15,9 +15,10 @@ namespace LifeLink.Services.Verification
         Task<BloodRequestVerificationResponseDto> ApproveBloodRequestAsync(Guid requestId, Guid doctorUserId, string? notes);
         Task<BloodRequestVerificationResponseDto> RejectBloodRequestAsync(Guid requestId, Guid doctorUserId, string? reason);
 
-        Task<DonorVerificationResponseDto> ApproveDonorVerificationAsync(Guid id, ApproveRejectRequestDto dto);
-        Task<DonorVerificationResponseDto> RejectDonorVerificationAsync(Guid id, ApproveRejectRequestDto dto);
+        // Donor screening decisions (doctor resolved from the signed-in user; AI agents never decide)
+        Task<DonorVerificationResponseDto> ApproveDonorVerificationAsync(Guid id, Guid doctorUserId, string? notes);
+        Task<DonorVerificationResponseDto> RejectDonorVerificationAsync(Guid id, Guid doctorUserId, string? reason);
         Task<List<BloodRequestVerificationResponseDto>> GetBloodRequestVerificationsAsync();
-        Task<List<DonorVerificationResponseDto>> GetDonorVerificationsAsync();
+        Task<List<DonorVerificationResponseDto>> GetDonorVerificationsAsync(Guid? doctorUserId);
     }
 }

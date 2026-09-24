@@ -19,7 +19,9 @@ namespace LifeLink.Controllers
             _matchingService = matchingService;
         }
 
+        // Matching is a human decision: AI agents may read matches but never create them
         [HttpPost("create")]
+        [Authorize(Roles = "Doctor,Admin")]
         public async Task<IActionResult> CreateMatch([FromBody] CreateMatchDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);

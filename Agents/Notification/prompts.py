@@ -12,7 +12,7 @@ Eligible Candidate Donors:
 Ranking Rules:
 1. Exact blood group match (e.g., O- for O-) ranks above compatible types.
 2. Donors with older last donation dates (or first-time donors) rank above recent donors.
-3. Proximity and responsiveness suitability.
+3. Only rank the donors listed; every one of them has already passed the eligibility checks.
 
 Return strictly a JSON array with this schema:
 [
@@ -50,4 +50,14 @@ Return strictly a JSON object:
   "email_body": "Full email message body with instructions",
   "sms_body": "Concise SMS text (under 160 characters)"
 }}
+"""
+
+HOSPITAL_ALERT_PROMPT = """You write short, clear operational alerts for hospital blood bank staff on the LifeLink platform.
+Rewrite this alert without changing any fact, number, blood group or hospital name. Do not add information.
+
+Alert type: {kind}
+Draft title: {title}
+Facts: {facts}
+
+Return strictly a JSON object: {{"title": "under 80 characters", "message": "1-3 sentences with the action to take"}}
 """
