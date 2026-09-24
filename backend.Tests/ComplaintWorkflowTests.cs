@@ -25,15 +25,15 @@ namespace LifeLink.Tests
         {
             public AppDbContext Context = null!;
             public ComplaintService Service = null!;
-            public Guid Creator, Staff, Admin1, Admin2;
+            public Guid Creator, Staff, Admin1; // exactly one Admin (single-admin rule)
         }
 
         private static async Task<Seed> SeedAsync()
         {
             var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
             context.Database.EnsureCreated();
-            var s = new Seed { Context = context, Creator = Guid.NewGuid(), Staff = Guid.NewGuid(), Admin1 = Guid.NewGuid(), Admin2 = Guid.NewGuid() };
-            foreach (var (id, role) in new[] { (s.Creator, UserRoleId), (s.Staff, HospitalStaffRoleId), (s.Admin1, AdminRoleId), (s.Admin2, AdminRoleId) })
+            var s = new Seed { Context = context, Creator = Guid.NewGuid(), Staff = Guid.NewGuid(), Admin1 = Guid.NewGuid() };
+            foreach (var (id, role) in new[] { (s.Creator, UserRoleId), (s.Staff, HospitalStaffRoleId), (s.Admin1, AdminRoleId) })
             {
                 await context.Users.AddAsync(new User { UserId = id, FirstName = "T", LastName = "U", Email = $"{id}@t.org" });
                 await context.UserRoles.AddAsync(new UserRole { UserId = id, RoleId = role });
@@ -88,7 +88,7 @@ namespace LifeLink.Tests
             Assert.Equal(1, await NotificationsFor(s, s.Creator));
 
             // Admin cannot reply twice in a row
-            await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.AdminReplyAsync(c.ComplaintId, s.Admin2, Reply("Second")));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.AdminReplyAsync(c.ComplaintId, s.Admin1, Reply("Second")));
 
             // Only the creator may reply; creator reply notifies only the assigned admin
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => s.Service.CreatorReplyAsync(c.ComplaintId, s.Staff, Reply("Not mine")));
@@ -96,7 +96,6 @@ namespace LifeLink.Tests
             Assert.Null(afterCreator.AuditLogs.Last().AdminId);
             Assert.True(afterCreator.AwaitingAdminReply);
             Assert.Equal(1, await NotificationsFor(s, s.Admin1));
-            Assert.Equal(0, await NotificationsFor(s, s.Admin2));
             Assert.Equal("OPEN", afterCreator.Status);
         }
 
@@ -111,9 +110,8 @@ namespace LifeLink.Tests
             Assert.Equal("RESOLVED", solved.Status);
             Assert.False(solved.CanCreatorReply);
             Assert.False(solved.AwaitingAdminReply);
-            // No admin assigned yet -> every admin notified
+            // No admin assigned yet -> the Admin is notified
             Assert.Equal(1, await NotificationsFor(s, s.Admin1));
-            Assert.Equal(1, await NotificationsFor(s, s.Admin2));
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.AdminReplyAsync(c.ComplaintId, s.Admin1, Reply("Late reply")));
             await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.SolveComplaintAsync(c.ComplaintId, s.Creator));

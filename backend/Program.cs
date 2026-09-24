@@ -104,6 +104,32 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
+    options.Events = new JwtBearerEvents
+    {
+        // End sessions that no longer match the account: a former Admin after an ownership transfer,
+        // or a permanently blocked / deleted account. (The frontend signs out on 401.)
+        OnTokenValidated = async ctx =>
+        {
+            var sub = ctx.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                ?? ctx.Principal?.FindFirst("sub")?.Value;
+            if (!Guid.TryParse(sub, out var userId)) return;
+
+            var db = ctx.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+            var account = await db.Users.AsNoTracking()
+                .Where(u => u.UserId == userId)
+                .Select(u => new { u.AccountStatus, IsAdmin = u.UserRoles.Any(ur => ur.Role.Name == "Admin") })
+                .FirstOrDefaultAsync();
+
+            if (account != null && (account.AccountStatus == LifeLink.Entities.AccountStatus.Blocked || account.AccountStatus == LifeLink.Entities.AccountStatus.Deleted))
+            {
+                ctx.Fail("This account is no longer active.");
+            }
+            else if (ctx.Principal!.IsInRole("Admin") && account?.IsAdmin != true)
+            {
+                ctx.Fail("Admin ownership has changed. Please sign in again.");
+            }
+        }
+    };
 });
 
 builder.Services.AddAuthorization();

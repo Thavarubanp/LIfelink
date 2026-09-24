@@ -11,6 +11,7 @@ namespace LifeLink.DTOs.Hospitals
         public string ContactNumber { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public bool IsVerified { get; set; }
+        public bool IsSuspended { get; set; } // suspended hospitals are hidden from operational hospital pickers
         public string ApprovalStatus { get; set; } = "Pending";
         public string? RejectionReason { get; set; }
         public string? RejectionReportUrl { get; set; }

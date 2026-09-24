@@ -13,8 +13,10 @@ namespace LifeLink.Services.Admin
         Task<List<AdminHospitalResponseDto>> GetPendingHospitalsAsync();
         Task<AdminHospitalResponseDto> ApproveHospitalAsync(Guid hospitalId, Guid adminId);
         Task<AdminHospitalResponseDto> RejectHospitalAsync(Guid hospitalId, Guid adminId, RejectHospitalDto dto);
-        Task<AdminUserResponseDto> SuspendUserAsync(Guid userId, SuspendUserDto dto);
-        Task<AdminUserResponseDto> ReinstateUserAsync(Guid userId);
+        Task<AdminUserResponseDto> SuspendUserAsync(Guid userId, SuspendUserDto dto, Guid? actingAdminId = null);
+        Task<AdminUserResponseDto> ReinstateUserAsync(Guid userId, Guid? actingAdminId = null);
+        Task<AdminUserResponseDto> BlockUserAsync(Guid userId, Guid actingAdminId);
+        Task PromoteToAdminAsync(Guid userId, Guid actingAdminId);
         Task<AdminHospitalResponseDto> SuspendHospitalAsync(Guid hospitalId, SuspendHospitalDto dto);
         Task<AdminHospitalResponseDto> ReinstateHospitalAsync(Guid hospitalId);
     }

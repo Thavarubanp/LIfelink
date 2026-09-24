@@ -27,6 +27,10 @@ namespace LifeLink.Services.Matching
             }
 
             var donorUser = await _context.Users.FindAsync(dto.DonorUserId);
+            if (donorUser != null && (donorUser.AccountStatus == AccountStatus.Blocked || donorUser.AccountStatus == AccountStatus.Deleted))
+            {
+                throw new InvalidOperationException("This donor account can no longer take part in matching.");
+            }
 
             // Check if emergency request exists (Student 3 table integration if applicable)
             var emergencyReq = await _context.EmergencyRequests

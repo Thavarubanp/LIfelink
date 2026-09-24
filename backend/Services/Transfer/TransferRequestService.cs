@@ -38,6 +38,11 @@ namespace LifeLink.Services.Transfer
             await EnsureHospitalExistsAsync(dto.SenderHospitalId);
             await EnsureHospitalExistsAsync(dto.ReceiverHospitalId);
 
+            if (await _context.Hospitals.AnyAsync(h => (h.HospitalId == dto.SenderHospitalId || h.HospitalId == dto.ReceiverHospitalId) && h.IsSuspended))
+            {
+                throw new InvalidOperationException("Suspended hospitals cannot take part in transfers.");
+            }
+
             var now = DateTime.UtcNow;
             var request = new HospitalTransferRequest
             {

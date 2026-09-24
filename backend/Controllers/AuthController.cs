@@ -90,6 +90,26 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// Donor/patient deletes their own account: personal data and login removed, history kept (shown as "Deleted User").
+        /// The same email can register again. Not available while suspended (blocked by the governance middleware).
+        /// </summary>
+        [HttpDelete("me")]
+        [Authorize(Roles = "User")]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> DeleteMyAccount()
+        {
+            var userId = _currentUserService.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(ApiResponse<object>.Fail("User identity could not be retrieved from token."));
+            }
+
+            await _authService.DeleteMyAccountAsync(userId.Value);
+            return Ok(ApiResponse<object>.Ok(null!, "Your account has been deleted."));
+        }
+
+        /// <summary>
         /// Retrieves minimal user profile for AI donor screening (Least Privilege: ID, Name, Gender, DOB only).
         /// </summary>
         [HttpGet("user/{id:guid}")]

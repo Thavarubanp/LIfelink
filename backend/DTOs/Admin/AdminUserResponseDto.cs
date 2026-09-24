@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace LifeLink.DTOs.Admin
 {
@@ -13,6 +14,8 @@ namespace LifeLink.DTOs.Admin
         public bool IsSuspended { get; set; }
         public DateTime? SuspendedUntil { get; set; }
         public string? SuspensionReason { get; set; }
+        public bool IsPermanentlyBlocked { get; set; }
+        public List<string> Roles { get; set; } = new();
         public DateTime CreatedAt { get; set; }
     }
 }

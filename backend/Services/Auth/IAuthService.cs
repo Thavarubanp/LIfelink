@@ -9,6 +9,7 @@ namespace LifeLink.Services.Auth
         Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto request);
         Task<LoginResponseDto> LoginAsync(LoginRequestDto request);
         Task<CurrentUserDto> GetCurrentUserAsync(Guid userId);
+        Task DeleteMyAccountAsync(Guid userId);
         Task ForgotPasswordAsync(ForgotPasswordRequestDto request);
         Task<VerifyOtpResponseDto> VerifyOtpAsync(VerifyOtpRequestDto request);
         Task ResendOtpAsync(ResendOtpRequestDto request);

@@ -136,7 +136,7 @@ namespace LifeLink.Services.Admin
             return MapToHospitalDto(hospital);
         }
 
-        public async Task<AdminUserResponseDto> SuspendUserAsync(Guid userId, SuspendUserDto dto)
+        public async Task<AdminUserResponseDto> SuspendUserAsync(Guid userId, SuspendUserDto dto, Guid? actingAdminId = null)
         {
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
@@ -150,6 +150,7 @@ namespace LifeLink.Services.Admin
             {
                 throw new InvalidOperationException("Doctor accounts are managed by their hospital and cannot be suspended by an admin.");
             }
+            await EnsureGovernableUserAsync(user, actingAdminId, "suspended");
 
             user.IsSuspended = true;
             user.SuspendedUntil = dto.SuspendedUntil;
@@ -164,12 +165,16 @@ namespace LifeLink.Services.Admin
             return MapToUserDto(user);
         }
 
-        public async Task<AdminUserResponseDto> ReinstateUserAsync(Guid userId)
+        public async Task<AdminUserResponseDto> ReinstateUserAsync(Guid userId, Guid? actingAdminId = null)
         {
             var user = await _context.Users.FindAsync(userId);
             if (user == null)
             {
                 throw new KeyNotFoundException($"User with ID {userId} was not found.");
+            }
+            if (actingAdminId.HasValue && actingAdminId.Value == userId)
+            {
+                throw new InvalidOperationException("You cannot perform governance actions on your own account.");
             }
 
             user.IsSuspended = false;
@@ -197,6 +202,30 @@ namespace LifeLink.Services.Admin
             hospital.SuspendedUntil = dto.SuspendedUntil;
             hospital.SuspensionReason = dto.Reason;
             hospital.UpdatedAt = DateTime.UtcNow;
+
+            // Tell patients with active requests at this hospital to re-create them through another active hospital
+            var hospitalEmail = (hospital.Email ?? string.Empty).ToLower();
+            var patientIds = await _context.BloodRequests
+                .Where(r => r.HospitalId == hospitalId &&
+                            (r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Verified || r.Status == BloodRequestStatus.Approved))
+                .Select(r => r.PatientUserId)
+                .Distinct()
+                .Where(id => !_context.Users.Any(u => u.UserId == id && u.Email.ToLower() == hospitalEmail)) // skip the hospital's own requests
+                .ToListAsync();
+            foreach (var patientId in patientIds)
+            {
+                await _context.Notifications.AddAsync(new LifeLink.Entities.Notification
+                {
+                    NotificationId = Guid.NewGuid(),
+                    UserId = patientId,
+                    Title = "Hospital Suspended",
+                    Message = $"'{hospital.Name}' has been suspended, so your active blood request there cannot proceed. Please delete that request and create a new request through another active hospital.",
+                    NotificationType = "RequestHospitalSuspended",
+                    RecipientRole = "Donor",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
 
             await _context.SaveChangesAsync();
 
@@ -227,11 +256,101 @@ namespace LifeLink.Services.Admin
 
         public async Task<List<AdminUserResponseDto>> GetUsersAsync()
         {
+            // Deleted accounts no longer exist for operations; blocked accounts stay listed with their status
             var users = await _context.Users
+                .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
+                .Where(u => u.AccountStatus != AccountStatus.Deleted)
                 .OrderByDescending(u => u.CreatedAt)
                 .ToListAsync();
 
             return users.Select(MapToUserDto).ToList();
+        }
+
+        /// <summary>Permanently blocks a donor/patient account (never Admin, HospitalStaff or Doctor accounts).</summary>
+        public async Task<AdminUserResponseDto> BlockUserAsync(Guid userId, Guid actingAdminId)
+        {
+            var user = await _context.Users.FindAsync(userId)
+                ?? throw new KeyNotFoundException($"User with ID {userId} was not found.");
+            await EnsureGovernableUserAsync(user, actingAdminId, "permanently blocked");
+            await LifeLink.Services.Common.AccountLifecycleHelper.EnsureDonorPatientAccountAsync(_context, userId, "permanently blocked");
+
+            await LifeLink.Services.Common.AccountLifecycleHelper.PermanentlyBlockAsync(_context, user);
+            await _context.SaveChangesAsync();
+            return MapToUserDto(user);
+        }
+
+        /// <summary>
+        /// Transfers Admin ownership: the selected active donor/patient becomes the Admin and the acting Admin becomes a
+        /// normal User, in one transaction. The unique index on the Admin role guarantees there is never a second Admin.
+        /// The former Admin's session ends on its next request (JWT validation), and the new Admin is notified.
+        /// </summary>
+        public async Task PromoteToAdminAsync(Guid userId, Guid actingAdminId)
+        {
+            if (userId == actingAdminId)
+            {
+                throw new InvalidOperationException("You cannot promote your own account.");
+            }
+
+            var target = await _context.Users.Include(u => u.UserRoles).ThenInclude(ur => ur.Role).FirstOrDefaultAsync(u => u.UserId == userId)
+                ?? throw new KeyNotFoundException($"User with ID {userId} was not found.");
+            var targetRoles = target.UserRoles.Select(ur => ur.Role.Name).ToList();
+            var eligible = target.AccountStatus == AccountStatus.Active && !target.IsSuspended && !target.IsPermanentlyBlocked
+                && targetRoles.All(r => r == "User");
+            if (!eligible)
+            {
+                throw new InvalidOperationException("Only an active donor/patient account can be promoted to Admin.");
+            }
+
+            var adminRole = await _context.Roles.FirstAsync(r => r.Name == "Admin");
+            var userRole = await _context.Roles.FirstAsync(r => r.Name == "User");
+            var currentAdmin = await _context.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == actingAdminId && ur.RoleId == adminRole.RoleId)
+                ?? throw new InvalidOperationException("Only the current Admin can transfer Admin ownership.");
+
+            var useTransaction = _context.Database.IsRelational();
+            await using var transaction = useTransaction ? await _context.Database.BeginTransactionAsync() : null;
+
+            // 1. Current Admin -> User (saved first so the single-admin index never sees two Admins)
+            _context.UserRoles.Remove(currentAdmin);
+            if (!await _context.UserRoles.AnyAsync(ur => ur.UserId == actingAdminId && ur.RoleId == userRole.RoleId))
+            {
+                await _context.UserRoles.AddAsync(new UserRole { UserId = actingAdminId, RoleId = userRole.RoleId });
+            }
+            await _context.SaveChangesAsync();
+
+            // 2. Selected User -> Admin, plus the in-app notification
+            _context.UserRoles.RemoveRange(target.UserRoles.Where(ur => ur.RoleId == userRole.RoleId));
+            await _context.UserRoles.AddAsync(new UserRole { UserId = userId, RoleId = adminRole.RoleId });
+            await _context.Notifications.AddAsync(new LifeLink.Entities.Notification
+            {
+                NotificationId = Guid.NewGuid(),
+                UserId = userId,
+                Title = "You Are Now the System Administrator",
+                Message = "Admin ownership of LifeLink has been transferred to your account. Sign in again to access the Admin portal.",
+                NotificationType = "AdminTransfer",
+                RecipientRole = "Admin",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            if (transaction != null) await transaction.CommitAsync();
+        }
+
+        // Admins never act on themselves or on the Admin account; blocked/deleted accounts are out of governance
+        private async Task EnsureGovernableUserAsync(User user, Guid? actingAdminId, string action)
+        {
+            if (actingAdminId.HasValue && actingAdminId.Value == user.UserId)
+            {
+                throw new InvalidOperationException("You cannot perform governance actions on your own account.");
+            }
+            if (await _context.UserRoles.AnyAsync(ur => ur.UserId == user.UserId && ur.Role.Name == "Admin"))
+            {
+                throw new InvalidOperationException($"The Admin account cannot be {action}.");
+            }
+            if (LifeLink.Services.Common.AccountLifecycleHelper.IsRemoved(user))
+            {
+                throw new InvalidOperationException("This account is no longer active.");
+            }
         }
 
         public async Task<List<AdminHospitalResponseDto>> GetAllHospitalsAsync()
@@ -307,6 +426,8 @@ namespace LifeLink.Services.Admin
                 IsSuspended = user.IsSuspended,
                 SuspendedUntil = user.SuspendedUntil,
                 SuspensionReason = user.SuspensionReason,
+                IsPermanentlyBlocked = user.AccountStatus == AccountStatus.Blocked,
+                Roles = user.UserRoles.Select(ur => ur.Role?.Name ?? string.Empty).Where(r => r.Length > 0).ToList(),
                 CreatedAt = user.CreatedAt
             };
         }

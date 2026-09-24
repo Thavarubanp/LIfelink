@@ -212,6 +212,34 @@ namespace LifeLink.Services.Admin
             await _context.SaveChangesAsync();
         }
 
+        /// <summary>Notifies the Admin (the single active Admin account).</summary>
+        public async Task NotifyAdminAsync(string title, string message)
+        {
+            var adminIds = await _context.UserRoles.Where(ur => ur.Role.Name == "Admin").Select(ur => ur.UserId).Distinct().ToListAsync();
+            foreach (var adminId in adminIds)
+            {
+                await _context.Notifications.AddAsync(new NotificationEntity
+                {
+                    NotificationId = Guid.NewGuid(), UserId = adminId, Title = title, Message = message,
+                    NotificationType = "Governance", RecipientRole = "Admin", IsRead = false, CreatedAt = DateTime.UtcNow
+                });
+            }
+            await _context.SaveChangesAsync();
+        }
+
+        /// <summary>Notifies a user account, or a hospital's staff when only the hospital is known.</summary>
+        public async Task NotifyUserAsync(Guid? userId, Guid? hospitalId, string title, string message)
+        {
+            if (!userId.HasValue && !hospitalId.HasValue) return;
+            await _context.Notifications.AddAsync(new NotificationEntity
+            {
+                NotificationId = Guid.NewGuid(), UserId = userId, HospitalId = userId.HasValue ? null : hospitalId,
+                Title = title, Message = message, NotificationType = "Governance",
+                RecipientRole = userId.HasValue ? "User" : "HospitalStaff", IsRead = false, CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+        }
+
         /// <summary>
         /// Notifies the admin assigned to the complaint (the admin who replied), or every admin when none is assigned yet.
         /// </summary>

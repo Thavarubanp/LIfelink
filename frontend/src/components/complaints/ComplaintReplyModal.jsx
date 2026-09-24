@@ -8,7 +8,7 @@ const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB, enforced by the backend t
  * Shared complaint reply modal (admin and complaint creator): message + optional file attachment.
  * `onSubmit({ notes, attachmentUrl, attachmentName })` performs the API call; errors are shown inline.
  */
-export const ComplaintReplyModal = ({ complaint, onSubmit, onClose }) => {
+export const ComplaintReplyModal = ({ complaint, onSubmit, onClose, title = 'Reply to Complaint' }) => {
   const [notes, setNotes] = useState('');
   const [attachment, setAttachment] = useState(null); // { url, name }
   const [sending, setSending] = useState(false);
@@ -54,16 +54,18 @@ export const ComplaintReplyModal = ({ complaint, onSubmit, onClose }) => {
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-blue-600" />
-            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Reply to Complaint</h3>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{title}</h3>
           </div>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Subject: <span className="font-semibold text-slate-900 dark:text-slate-100">{complaint?.subject}</span>
-        </p>
+        {complaint?.subject && (
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Subject: <span className="font-semibold text-slate-900 dark:text-slate-100">{complaint.subject}</span>
+          </p>
+        )}
 
         {error && (
           <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 rounded-xl flex items-start gap-2 text-xs text-red-700 dark:text-red-300">

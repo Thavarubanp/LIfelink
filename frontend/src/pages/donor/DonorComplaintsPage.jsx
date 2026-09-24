@@ -179,8 +179,11 @@ export const DonorComplaintsPage = () => {
       setSearchingUsers(true);
       try {
         const data = await searchApi.globalSearch(query);
-        // The search already excludes doctor and hospital accounts; also drop admins and yourself
-        const users = (data?.users || []).filter((u) => u.extraInfo !== 'Admin' && u.id !== user?.userId);
+        // The search already excludes doctor, hospital and deleted accounts; also drop admins, permanently
+        // blocked users and yourself (suspended users remain valid targets)
+        const users = (data?.users || []).filter(
+          (u) => u.extraInfo !== 'Admin' && u.status !== 'Permanently Blocked' && u.id !== user?.userId
+        );
         setUserResults(users);
       } catch {
         setUserResults([]);
@@ -238,7 +241,7 @@ export const DonorComplaintsPage = () => {
     // Default: HOSPITAL
     const hospitalResults = hospitalsList.map((h) => ({
       id: h.hospitalId,
-      name: h.name,
+      name: h.isSuspended ? `${h.name} (Suspended)` : h.name, // suspended hospitals remain valid complaint targets
       type: 'Registered Hospital',
       subtitle: `${h.licenseNumber || 'Verified Medical Center'} • ${h.email || h.address || 'Sri Lanka'}`,
       hospitalId: h.hospitalId,

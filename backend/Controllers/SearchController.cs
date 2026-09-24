@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Search;
+using LifeLink.Entities;
 using LifeLink.Services.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,7 +15,6 @@ namespace LifeLink.Controllers
     [ApiController]
     [Route("api/search")]
     [Authorize]
-    [AllowSuspendedAccess]
     public class SearchController : ControllerBase
     {
         private readonly AppDbContext _context;
@@ -56,7 +56,8 @@ namespace LifeLink.Controllers
                     SubText = !string.IsNullOrEmpty(h.City) ? $"{h.City} • {(h.IsVerified ? "Verified" : "Pending")}" : (h.Address ?? "Hospital Facility"),
                     ExtraInfo = h.ContactNumber,
                     AvatarInitial = "H",
-                    Route = $"/profiles/hospital/{h.HospitalId}"
+                    Route = $"/profiles/hospital/{h.HospitalId}",
+                    Status = h.IsSuspended ? "Suspended" : "Active"
                 })
                 .ToListAsync();
 
@@ -109,6 +110,7 @@ namespace LifeLink.Controllers
                 .Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role)
                 .Where(u => !u.UserRoles.Any(ur => ur.Role.Name == "Doctor" || ur.Role.Name == "HospitalStaff"))
+                .Where(u => u.AccountStatus != AccountStatus.Deleted) // deleted accounts no longer exist
                 .AsQueryable();
 
             if (!isCallerAdmin)
@@ -116,11 +118,12 @@ namespace LifeLink.Controllers
                 usersQuery = usersQuery.Where(u => !u.UserRoles.Any(ur => ur.Role.Name == "Admin"));
             }
 
+            // Permanently blocked users stay visible by name with their status; their email is only shown to the Admin
             var users = await usersQuery
                 .Where(u => u.FirstName.ToLower().Contains(term) ||
                             u.LastName.ToLower().Contains(term) ||
                             (u.FirstName + " " + u.LastName).ToLower().Contains(term) ||
-                            (u.Email != null && u.Email.ToLower().Contains(term)))
+                            (u.Email != null && u.Email.ToLower().Contains(term) && (isCallerAdmin || u.AccountStatus != AccountStatus.Blocked)))
                 .OrderBy(u => u.FirstName)
                 .Take(5)
                 .Select(u => new SearchItemDto
@@ -128,10 +131,11 @@ namespace LifeLink.Controllers
                     ResultType = "User",
                     Id = u.UserId,
                     DisplayName = $"{u.FirstName} {u.LastName}".Trim(),
-                    SubText = u.Email,
+                    SubText = u.AccountStatus == AccountStatus.Blocked && !isCallerAdmin ? "Email hidden" : u.Email,
                     ExtraInfo = u.UserRoles.Select(ur => ur.Role.Name).FirstOrDefault() ?? "Donor / Patient",
                     AvatarInitial = !string.IsNullOrEmpty(u.FirstName) ? u.FirstName.Substring(0, 1).ToUpper() : "U",
-                    Route = $"/profiles/user/{u.UserId}"
+                    Route = $"/profiles/user/{u.UserId}",
+                    Status = u.AccountStatus == AccountStatus.Blocked ? "Permanently Blocked" : (u.IsSuspended ? "Suspended" : "Active")
                 })
                 .ToListAsync();
 

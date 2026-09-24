@@ -4,6 +4,7 @@ namespace LifeLink.Entities
     {
         PENDING,
         APPROVED,
-        REJECTED
+        REJECTED,
+        CLOSED // admin closed the thread; read-only
     }
 }

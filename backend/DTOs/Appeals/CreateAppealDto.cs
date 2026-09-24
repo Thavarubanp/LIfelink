@@ -12,5 +12,12 @@ namespace LifeLink.DTOs.Appeals
 
         public Guid? UserId { get; set; }
         public Guid? HospitalId { get; set; }
+
+        /// <summary>Optional attachment as a data URL (max ~2 MB file), like complaint replies.</summary>
+        [MaxLength(2_800_000, ErrorMessage = "Attachment cannot exceed 2 MB.")]
+        public string? AttachmentUrl { get; set; }
+
+        [MaxLength(255, ErrorMessage = "Attachment name cannot exceed 255 characters.")]
+        public string? AttachmentName { get; set; }
     }
 }

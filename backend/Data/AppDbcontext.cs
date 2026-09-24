@@ -39,6 +39,7 @@ namespace LifeLink.Data
         public DbSet<HospitalActivityReport> HospitalActivityReports { get; set; } = null!;
         public DbSet<ComplaintAuditLog> ComplaintAuditLogs { get; set; } = null!;
         public DbSet<Appeal> Appeals { get; set; } = null!;
+        public DbSet<AppealMessage> AppealMessages { get; set; } = null!;
         public DbSet<HospitalApprovalHistory> HospitalApprovalHistories { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -76,6 +77,10 @@ namespace LifeLink.Data
             modelBuilder.Entity<UserRole>(entity =>
             {
                 entity.HasKey(ur => new { ur.UserId, ur.RoleId });
+
+                // Single-admin rule: at most one Admin role assignment (RoleId 4) can exist
+                entity.HasIndex(ur => ur.RoleId, "IX_UserRoles_RoleId");
+                entity.HasIndex(ur => ur.RoleId, "IX_UserRoles_SingleAdmin").IsUnique().HasFilter("\"RoleId\" = 4");
 
                 entity.HasOne(ur => ur.User)
                       .WithMany(u => u.UserRoles)
@@ -498,6 +503,25 @@ namespace LifeLink.Data
                 entity.HasOne(a => a.ReviewedByAdmin)
                       .WithMany()
                       .HasForeignKey(a => a.ReviewedByAdminId)
+                      .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            // Appeal thread messages (appellant <-> admin), optional attachment
+            modelBuilder.Entity<AppealMessage>(entity =>
+            {
+                entity.HasKey(m => m.MessageId);
+                entity.HasIndex(m => m.AppealId);
+                entity.Property(m => m.Message).IsRequired().HasMaxLength(2000);
+                entity.Property(m => m.AttachmentName).HasMaxLength(255);
+
+                entity.HasOne(m => m.Appeal)
+                      .WithMany(a => a.Messages)
+                      .HasForeignKey(m => m.AppealId)
+                      .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(m => m.Admin)
+                      .WithMany()
+                      .HasForeignKey(m => m.AdminId)
                       .OnDelete(DeleteBehavior.SetNull);
             });
 

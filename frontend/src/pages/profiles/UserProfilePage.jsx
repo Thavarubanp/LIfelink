@@ -11,11 +11,13 @@ import {
   AlertCircle,
   Loader2,
   Sparkles,
-  Pencil
+  Pencil,
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
+import authApi from '../../api/authApi';
 import EditProfileModal from '../../components/common/EditProfileModal';
 
 const USER_EDIT_FIELDS = [
@@ -29,7 +31,7 @@ const USER_EDIT_FIELDS = [
 export const UserProfilePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, logout } = useAuth();
   const { addToast } = useNotification();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +43,20 @@ export const UserProfilePage = () => {
     setProfile(updated);
     setEditing(false);
     addToast({ title: 'Profile Updated', message: 'Your profile changes were saved.', type: 'success' });
+  };
+
+  // Donor/patient self-delete: personal data and login removed, history kept; the email can register again
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Permanently delete your account? Your personal details and login are removed and cannot be recovered. Your blood request and donation history is kept anonymously. You can register again later with the same email.')) {
+      return;
+    }
+    try {
+      await authApi.deleteMyAccount();
+      addToast({ title: 'Account Deleted', message: 'Your account has been deleted.', type: 'info' });
+      logout();
+    } catch (err) {
+      addToast({ title: 'Delete Failed', message: err.response?.data?.message || err.message, type: 'error' });
+    }
   };
 
   useEffect(() => {
@@ -124,10 +140,18 @@ export const UserProfilePage = () => {
               )}
             </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-xs text-slate-500">{profile.email}</span>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+              {profile.email && <span className="text-xs text-slate-500">{profile.email}</span>}
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                  profile.displayStatus === 'Permanently Blocked'
+                    ? 'bg-slate-800 text-white'
+                    : profile.displayStatus === 'Suspended'
+                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                }`}
+              >
                 <ShieldCheck className="w-3 h-3 inline mr-1" />
-                {profile.accountStatus || 'Active'}
+                {profile.displayStatus || 'Active'}
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                 <Sparkles className="w-3 h-3 inline mr-1" />
@@ -141,6 +165,15 @@ export const UserProfilePage = () => {
               className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white transition-colors"
             >
               <Pencil className="w-3.5 h-3.5" /> Edit Profile
+            </button>
+          )}
+          {/* Only donor/patient accounts can delete themselves (not the Admin) */}
+          {profile.canEdit && !currentUser?.isSuspended && !profile.roles?.includes('Admin') && (
+            <button
+              onClick={handleDeleteAccount}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-900 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" /> Delete My Account
             </button>
           )}
         </div>

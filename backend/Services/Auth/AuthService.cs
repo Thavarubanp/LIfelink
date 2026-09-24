@@ -114,7 +114,11 @@ namespace LifeLink.Services.Auth
             }
 
             // Check Account Status (Note: Suspended accounts are allowed to authenticate in Restricted Governance Mode)
-            if (user.AccountStatus == AccountStatus.Inactive)
+            if (user.AccountStatus == AccountStatus.Blocked)
+            {
+                throw new InvalidOperationException("This account has been permanently blocked.");
+            }
+            if (user.AccountStatus == AccountStatus.Inactive || user.AccountStatus == AccountStatus.Deleted)
             {
                 throw new InvalidOperationException("Your account is inactive. Please contact support.");
             }
@@ -130,6 +134,7 @@ namespace LifeLink.Services.Auth
             }
 
             var (token, expiresAt) = _jwtService.GenerateToken(user, roles);
+            var isSuspended = await GovernanceAccessHelper.IsSuspendedForAccessAsync(_context, user, roles);
 
             // Determine MustChangePassword for Doctor accounts
             bool mustChangePassword = false;
@@ -152,7 +157,7 @@ namespace LifeLink.Services.Auth
                     Email = user.Email,
                     Roles = roles,
                     AccountStatus = user.AccountStatus.ToString(),
-                    IsSuspended = user.IsSuspended,
+                    IsSuspended = isSuspended,
                     MustChangePassword = mustChangePassword
                 }
             };
@@ -171,12 +176,13 @@ namespace LifeLink.Services.Auth
             }
 
             // Inactive accounts cannot sign in; end any session still holding a token issued before deactivation
-            if (user.AccountStatus == AccountStatus.Inactive)
+            if (user.AccountStatus is AccountStatus.Inactive or AccountStatus.Blocked or AccountStatus.Deleted)
             {
                 throw new UnauthorizedAccessException("Your account is inactive. Please contact support.");
             }
 
             var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
+            var isSuspended = await GovernanceAccessHelper.IsSuspendedForAccessAsync(_context, user, roles);
 
             // Enrich with MustChangePassword for Doctor accounts
             bool mustChangePassword = false;
@@ -195,7 +201,7 @@ namespace LifeLink.Services.Auth
                 Email = user.Email,
                 Roles = roles,
                 AccountStatus = user.AccountStatus.ToString(),
-                IsSuspended = user.IsSuspended,
+                IsSuspended = isSuspended,
                 MustChangePassword = mustChangePassword
             };
         }
@@ -289,6 +295,20 @@ namespace LifeLink.Services.Auth
             }
 
             return null;
+        }
+
+        public async Task DeleteMyAccountAsync(Guid userId)
+        {
+            var user = await _context.Users.FindAsync(userId) ?? throw new KeyNotFoundException("User not found.");
+            if (AccountLifecycleHelper.IsRemoved(user))
+            {
+                throw new InvalidOperationException("This account no longer exists.");
+            }
+            // Admin, HospitalStaff and Doctor accounts cannot self-delete
+            await AccountLifecycleHelper.EnsureDonorPatientAccountAsync(_context, userId, "deleted by their owner");
+
+            await AccountLifecycleHelper.DeleteAccountAsync(_context, user);
+            await _context.SaveChangesAsync();
         }
 
         public async Task ForgotPasswordAsync(ForgotPasswordRequestDto request)

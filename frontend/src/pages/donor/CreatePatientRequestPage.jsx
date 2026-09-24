@@ -46,8 +46,8 @@ export const CreatePatientRequestPage = () => {
       try {
         const res = await hospitalApi.getHospitals(true);
         const list = Array.isArray(res) ? res : (res?.data || []);
-        // Display verified / active hospitals only
-        const activeList = list.filter((h) => h.isVerified === true);
+        // Display verified, non-suspended hospitals only
+        const activeList = list.filter((h) => h.isVerified === true && !h.isSuspended);
         setHospitals(activeList);
 
         // Hospital staff always request for their own hospital (matched by account email, as the backend does)

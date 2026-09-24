@@ -14,7 +14,6 @@ namespace LifeLink.Controllers
     [ApiController]
     [Route("api/hospital/activity-reports")]
     [Authorize(Roles = "HospitalStaff")]
-    [AllowSuspendedAccess]
     public class HospitalActivityReportsController : ControllerBase
     {
         private readonly IHospitalActivityService _activityService;

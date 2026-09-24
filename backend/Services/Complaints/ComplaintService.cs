@@ -285,9 +285,14 @@ namespace LifeLink.Services.Complaints
                 .Include(u => u.UserRoles)
                     .ThenInclude(ur => ur.Role)
                 .FirstOrDefaultAsync(u => u.UserId == targetUserId);
-            if (target == null)
+            // Deleted users no longer exist; permanently blocked users are kept only for history
+            if (target == null || target.AccountStatus == AccountStatus.Deleted)
             {
                 throw new InvalidOperationException("The selected user was not found.");
+            }
+            if (target.AccountStatus == AccountStatus.Blocked)
+            {
+                throw new InvalidOperationException("Permanently blocked accounts cannot be complaint targets.");
             }
 
             var roles = target.UserRoles.Select(ur => ur.Role.Name).ToList();

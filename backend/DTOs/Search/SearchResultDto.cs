@@ -12,6 +12,7 @@ namespace LifeLink.DTOs.Search
         public string? ExtraInfo { get; set; }
         public string? AvatarInitial { get; set; }
         public string Route { get; set; } = string.Empty;
+        public string? Status { get; set; } // "Active", "Suspended" or "Permanently Blocked"
     }
 
     public class SearchResponseDto

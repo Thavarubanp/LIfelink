@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminApi, doctorApi, hospitalApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
+import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../../components/common/Badge';
 import {
   ShieldAlert,
@@ -30,6 +31,7 @@ const extractArray = (res) => {
 
 export const AdminDashboard = () => {
   const { addToast } = useNotification();
+  const { user: currentUser, logout } = useAuth();
   const [stats, setStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
@@ -197,6 +199,37 @@ export const AdminDashboard = () => {
       });
     } finally {
       setSubmittingAction(false);
+    }
+  };
+
+  // Permanent block (donor/patient accounts only): name stays visible, login and re-registration are refused
+  const handleBlock = async (u) => {
+    const name = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+    if (!window.confirm(`Permanently block ${name}? They can never sign in or register again with this email. Their history is kept. This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await adminApi.blockUser(u.userId);
+      setUsersList((prev) => prev.map((x) => (x.userId === u.userId ? { ...x, isPermanentlyBlocked: true, isSuspended: false, accountStatus: 'Blocked', roles: [] } : x)));
+      addToast({ title: 'Account Permanently Blocked', message: `${name} has been permanently blocked.`, type: 'warning' });
+      fetchStats();
+    } catch (err) {
+      addToast({ title: 'Action Failed', message: err.response?.data?.message || err.message, type: 'error' });
+    }
+  };
+
+  // Admin ownership transfer: the selected user becomes the only Admin and you become a normal user (signed out)
+  const handlePromote = async (u) => {
+    const name = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+    if (!window.confirm(`Transfer Admin ownership to ${name}? You will immediately become a normal user and be signed out.`)) {
+      return;
+    }
+    try {
+      await adminApi.promoteToAdmin(u.userId);
+      addToast({ title: 'Admin Ownership Transferred', message: `${name} is now the system administrator.`, type: 'success' });
+      logout();
+    } catch (err) {
+      addToast({ title: 'Action Failed', message: err.response?.data?.message || err.message, type: 'error' });
     }
   };
 
@@ -477,7 +510,11 @@ export const AdminDashboard = () => {
                             {u.phoneNumber || '—'}
                           </td>
                           <td className="p-3">
-                            {u.isSuspended ? (
+                            {u.isPermanentlyBlocked ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-white border border-slate-700">
+                                <AlertTriangle className="w-3 h-3" /> Permanently Blocked
+                              </span>
+                            ) : u.isSuspended ? (
                               <div>
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-900">
                                   <AlertTriangle className="w-3 h-3" /> Suspended
@@ -498,22 +535,47 @@ export const AdminDashboard = () => {
                             {u.createdAt ? new Date(u.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                           </td>
                           <td className="p-3 pr-4 text-right">
-                            {u.isSuspended ? (
-                              <button
-                                onClick={() => handleReinstate('user', u)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 transition-colors"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" /> Reinstate User
-                              </button>
-                            ) : doctorUserIds.has(u.userId) ? (
-                              <span className="text-[11px] font-semibold text-slate-400 italic">Doctor — managed by hospital</span>
+                            {/* Governance actions apply only to donor/patient accounts (never the Admin, doctors or hospital staff) */}
+                            {u.isPermanentlyBlocked ? (
+                              <span className="text-[11px] font-semibold text-slate-400 italic">Permanently blocked</span>
+                            ) : u.roles?.includes('Admin') ? (
+                              <span className="text-[11px] font-semibold text-slate-400 italic">{u.userId === currentUser?.userId ? 'You (Admin)' : 'Admin'}</span>
+                            ) : doctorUserIds.has(u.userId) || u.roles?.includes('Doctor') ? (
+                              <span className="text-[11px] font-semibold text-slate-400 italic">Doctor (managed by hospital)</span>
+                            ) : u.roles?.includes('HospitalStaff') ? (
+                              <span className="text-[11px] font-semibold text-slate-400 italic">Hospital account (suspend via Hospitals)</span>
                             ) : (
-                              <button
-                                onClick={() => openSuspendModal('user', u)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-900 transition-colors"
-                              >
-                                <ShieldAlert className="w-3.5 h-3.5" /> Suspend User
-                              </button>
+                              <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                {u.isSuspended ? (
+                                  <button
+                                    onClick={() => handleReinstate('user', u)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800 transition-colors"
+                                  >
+                                    <ShieldCheck className="w-3.5 h-3.5" /> Reinstate User
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => openSuspendModal('user', u)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-900 transition-colors"
+                                    >
+                                      <ShieldAlert className="w-3.5 h-3.5" /> Suspend User
+                                    </button>
+                                    <button
+                                      onClick={() => handlePromote(u)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 dark:bg-purple-950/60 dark:text-purple-300 dark:hover:bg-purple-900 border border-purple-200 dark:border-purple-900 transition-colors"
+                                    >
+                                      <ShieldCheck className="w-3.5 h-3.5" /> Promote to Admin
+                                    </button>
+                                  </>
+                                )}
+                                <button
+                                  onClick={() => handleBlock(u)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-900 hover:bg-rose-800 text-white border border-rose-700 transition-colors"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5" /> Permanently Block
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>

@@ -21,6 +21,12 @@ export const authApi = {
     return response.data;
   },
 
+  /** Donor/patient permanently deletes their own account (history kept; the email can register again) */
+  deleteMyAccount: async () => {
+    const response = await client.delete('/Auth/me');
+    return response.data;
+  },
+
   getUserById: async (id) => {
     const response = await client.get(`/Auth/user/${id}`);
     return response.data;

@@ -62,6 +62,42 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// Appellant reply (with optional attachment), allowed after an admin message. Doctors can only view threads.
+        /// </summary>
+        [HttpPost("{id:guid}/reply")]
+        [Authorize]
+        [ProducesResponseType(typeof(ApiResponse<AppealResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> Reply(Guid id, [FromBody] LifeLink.DTOs.Complaints.ReviewComplaintDto request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue)
+            {
+                return Unauthorized(ApiResponse<object>.Fail("User identity could not be retrieved from token."));
+            }
+
+            try
+            {
+                var result = await _appealService.AppellantReplyAsync(id, userId.Value, request);
+                return Ok(ApiResponse<AppealResponseDto>.Ok(result, "Reply sent."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
         /// Retrieves the current user's submitted appeals.
         /// </summary>
         [HttpGet("my")]

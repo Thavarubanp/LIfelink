@@ -298,6 +298,7 @@ namespace LifeLink.Services.Hospitals
                 ContactNumber = hospital.ContactNumber,
                 Email = hospital.Email,
                 IsVerified = hospital.IsVerified,
+                IsSuspended = hospital.IsSuspended,
                 ApprovalStatus = hospital.ApprovalStatus.ToString(),
                 RejectionReason = hospital.RejectionReason,
                 RejectionReportUrl = hospital.RejectionReportUrl,

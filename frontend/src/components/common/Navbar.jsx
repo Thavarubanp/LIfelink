@@ -5,7 +5,6 @@ import {
   Bell,
   User,
   LogOut,
-  ShieldAlert,
   Sparkles,
   Moon,
   Sun,
@@ -337,6 +336,11 @@ export const Navbar = ({ onOpenNotifications }) => {
                                 <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">{item.displayName}</p>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{item.subText}</p>
                               </div>
+                              {item.status && item.status !== 'Active' && (
+                                <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-900">
+                                  {item.status}
+                                </span>
+                              )}
                               <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${section.badgeClass}`}>
                                 {section.badge}
                               </span>
@@ -412,15 +416,6 @@ export const Navbar = ({ onOpenNotifications }) => {
               >
                 <User className="w-3.5 h-3.5" />
                 My Profile
-              </Link>
-
-              <Link
-                to="/governance/status"
-                onClick={() => setDropdownOpen(false)}
-                className="flex items-center gap-2 px-4 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
-              >
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
-                Governance Status
               </Link>
 
               <div className="border-t border-slate-100 dark:border-slate-800 my-1" />

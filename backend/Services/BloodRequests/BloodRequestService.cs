@@ -65,6 +65,18 @@ namespace LifeLink.Services.BloodRequests
                 throw new InvalidOperationException("Hospital is not verified.");
             }
 
+            if (hospital.IsSuspended)
+            {
+                throw new InvalidOperationException("This hospital is suspended. Please choose another active hospital.");
+            }
+
+            // Permanently blocked / deleted accounts never create requests again
+            if (await _context.Users.AnyAsync(u => u.UserId == patientUserId &&
+                    (u.AccountStatus == AccountStatus.Blocked || u.AccountStatus == AccountStatus.Deleted)))
+            {
+                throw new InvalidOperationException("This account can no longer create blood requests.");
+            }
+
             var normalizedBloodGroup = BloodValidationHelper.NormalizeBloodGroup(dto.BloodGroup);
             var normalizedPriority = BloodValidationHelper.NormalizePriority(dto.Priority);
 

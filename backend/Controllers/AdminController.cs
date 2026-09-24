@@ -118,7 +118,7 @@ namespace LifeLink.Controllers
 
             try
             {
-                var result = await _adminService.SuspendUserAsync(id, dto);
+                var result = await _adminService.SuspendUserAsync(id, dto, GetAdminId());
                 return Ok(ApiResponse<AdminUserResponseDto>.Ok(result, "User suspended successfully."));
             }
             catch (KeyNotFoundException ex)
@@ -134,8 +134,46 @@ namespace LifeLink.Controllers
         {
             try
             {
-                var result = await _adminService.ReinstateUserAsync(id);
+                var result = await _adminService.ReinstateUserAsync(id, GetAdminId());
                 return Ok(ApiResponse<AdminUserResponseDto>.Ok(result, "User reinstated successfully."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>Permanently blocks a donor/patient account (not Admin, HospitalStaff or Doctor accounts, not yourself).</summary>
+        [HttpPut("users/{id:guid}/block")]
+        [ProducesResponseType(typeof(ApiResponse<AdminUserResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> BlockUser(Guid id)
+        {
+            try
+            {
+                var result = await _adminService.BlockUserAsync(id, GetAdminId());
+                return Ok(ApiResponse<AdminUserResponseDto>.Ok(result, "Account permanently blocked."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Transfers Admin ownership to an active donor/patient; the calling Admin becomes a normal User and is signed out.
+        /// </summary>
+        [HttpPut("users/{id:guid}/promote")]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> PromoteToAdmin(Guid id)
+        {
+            try
+            {
+                await _adminService.PromoteToAdminAsync(id, GetAdminId());
+                return Ok(ApiResponse<object>.Ok(null!, "Admin ownership transferred. You are now a normal user and will be signed out."));
             }
             catch (KeyNotFoundException ex)
             {
@@ -314,6 +352,43 @@ namespace LifeLink.Controllers
             {
                 var result = await _appealService.RejectAppealAsync(id, GetAdminId(), dto);
                 return Ok(ApiResponse<AppealResponseDto>.Ok(result, "Appeal rejected."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        [HttpPut("appeals/{id:guid}/reply")]
+        [ProducesResponseType(typeof(ApiResponse<AppealResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> ReplyToAppeal(Guid id, [FromBody] ReviewComplaintDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var result = await _appealService.AdminReplyAsync(id, GetAdminId(), dto);
+                return Ok(ApiResponse<AppealResponseDto>.Ok(result, "Reply sent."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>Permanently closes an appeal thread (read-only). The suspension itself is unchanged.</summary>
+        [HttpPut("appeals/{id:guid}/close")]
+        [ProducesResponseType(typeof(ApiResponse<AppealResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> CloseAppeal(Guid id, [FromBody] ReviewAppealDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+            try
+            {
+                var result = await _appealService.CloseAppealAsync(id, GetAdminId(), dto);
+                return Ok(ApiResponse<AppealResponseDto>.Ok(result, "Appeal thread closed."));
             }
             catch (KeyNotFoundException ex)
             {

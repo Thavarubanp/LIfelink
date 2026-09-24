@@ -46,6 +46,7 @@ namespace LifeLink.DTOs.Profiles
         public string Address { get; set; } = string.Empty;
         public List<string> Roles { get; set; } = new();
         public string AccountStatus { get; set; } = string.Empty;
+        public string DisplayStatus { get; set; } = "Active"; // "Active", "Suspended" or "Permanently Blocked"
         public DateTime CreatedAt { get; set; }
         public bool CanEdit { get; set; }
     }

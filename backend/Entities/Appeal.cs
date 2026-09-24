@@ -18,5 +18,6 @@ namespace LifeLink.Entities
         public User? User { get; set; }
         public Hospital? Hospital { get; set; }
         public User? ReviewedByAdmin { get; set; }
+        public System.Collections.Generic.ICollection<AppealMessage> Messages { get; set; } = new System.Collections.Generic.List<AppealMessage>();
     }
 }

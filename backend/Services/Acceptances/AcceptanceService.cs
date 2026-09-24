@@ -40,6 +40,13 @@ namespace LifeLink.Services.Acceptances
                 throw new ArgumentException("BloodRequestId is required.");
             }
 
+            // Permanently blocked / deleted accounts never donate again
+            if (await _context.Users.AnyAsync(u => u.UserId == donorUserId &&
+                    (u.AccountStatus == AccountStatus.Blocked || u.AccountStatus == AccountStatus.Deleted)))
+            {
+                throw new InvalidOperationException("This account can no longer accept donation requests.");
+            }
+
             // 1. Blood Request Exists
             var request = await _context.BloodRequests.FindAsync(dto.BloodRequestId);
             if (request == null)

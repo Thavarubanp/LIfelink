@@ -5,6 +5,7 @@ using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Profiles;
+using LifeLink.Entities;
 using LifeLink.Services.Common;
 using LifeLink.Services.Hospitals;
 using Microsoft.AspNetCore.Authorization;
@@ -15,9 +16,9 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeLink.Controllers
 {
     /// <summary>
-    /// Profile viewing (allowed in Restricted Governance Mode) and own-profile editing.
-    /// Edit endpoints carry no [AllowSuspendedAccess], so suspended accounts are blocked by
-    /// RestrictedGovernanceModeMiddleware. Editing anyone else's profile returns 403.
+    /// Profile viewing and own-profile editing. No endpoint here carries [AllowSuspendedAccess]: suspended accounts
+    /// are limited to the Governance Portal (their profile summary comes from /api/governance/status).
+    /// Editing anyone else's profile returns 403.
     /// </summary>
     [ApiController]
     [Route("api/profiles")]
@@ -41,7 +42,6 @@ namespace LifeLink.Controllers
         /// Hospital Staff, Doctors, and Admins can view blood inventory details.
         /// </summary>
         [HttpGet("hospital/{id:guid}")]
-        [AllowSuspendedAccess]
         public async Task<IActionResult> GetHospitalProfile(Guid id)
         {
             var hospital = await _context.Hospitals
@@ -105,7 +105,6 @@ namespace LifeLink.Controllers
         /// </summary>
         [HttpGet("user/{id:guid}")]
         [Authorize]
-        [AllowSuspendedAccess]
         public async Task<IActionResult> GetUserProfile(Guid id)
         {
             var user = await _context.Users
@@ -113,7 +112,8 @@ namespace LifeLink.Controllers
                     .ThenInclude(ur => ur.Role)
                 .FirstOrDefaultAsync(u => u.UserId == id);
 
-            if (user == null)
+            // Deleted accounts no longer exist
+            if (user == null || user.AccountStatus == AccountStatus.Deleted)
             {
                 return NotFound(ApiResponse<object>.Fail("User profile not found."));
             }
@@ -127,12 +127,14 @@ namespace LifeLink.Controllers
                 return NotFound(ApiResponse<object>.Fail("User profile not found."));
             }
 
+            var isBlocked = user.AccountStatus == AccountStatus.Blocked;
             var dto = new UserProfileDto
             {
                 UserId = user.UserId,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
-                Email = user.Email,
+                Email = isBlocked && !isCallerAdmin ? string.Empty : user.Email, // kept internally, hidden from others
+                DisplayStatus = isBlocked ? "Permanently Blocked" : (user.IsSuspended ? "Suspended" : "Active"),
                 PhoneNumber = user.PhoneNumber,
                 Gender = user.Gender,
                 Address = user.Address,
@@ -150,7 +152,6 @@ namespace LifeLink.Controllers
         /// </summary>
         [HttpGet("doctor/{id:guid}")]
         [Authorize]
-        [AllowSuspendedAccess]
         public async Task<IActionResult> GetDoctorProfile(Guid id)
         {
             var doctor = await _context.Doctors
@@ -190,7 +191,6 @@ namespace LifeLink.Controllers
         /// </summary>
         [HttpGet("me")]
         [Authorize]
-        [AllowSuspendedAccess]
         public async Task<IActionResult> GetMyProfile()
         {
             var userId = _currentUserService.UserId;

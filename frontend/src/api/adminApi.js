@@ -97,6 +97,28 @@ export const adminApi = {
     return response.data;
   },
 
+  replyToAppeal: async (id, dto) => {
+    const response = await client.put(`/Admin/appeals/${id}/reply`, dto);
+    return response.data;
+  },
+
+  closeAppeal: async (id, dto) => {
+    const response = await client.put(`/Admin/appeals/${id}/close`, dto);
+    return response.data;
+  },
+
+  /** Permanently block a donor/patient account */
+  blockUser: async (id) => {
+    const response = await client.put(`/Admin/users/${id}/block`);
+    return response.data;
+  },
+
+  /** Transfer Admin ownership to an active donor/patient (the caller becomes a normal User) */
+  promoteToAdmin: async (id) => {
+    const response = await client.put(`/Admin/users/${id}/promote`);
+    return response.data;
+  },
+
   permanentlyBlockAppeal: async (id, dto) => {
     const response = await client.put(`/Admin/appeals/${id}/permanently-block`, dto);
     return response.data;

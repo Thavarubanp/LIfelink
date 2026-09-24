@@ -4,10 +4,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Common;
 using LifeLink.Data;
-using LifeLink.DTOs.Appeals;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Governance;
 using LifeLink.Entities;
+using LifeLink.Services.Appeals;
 using LifeLink.Services.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -24,15 +24,18 @@ namespace LifeLink.Controllers
     {
         private readonly AppDbContext _context;
         private readonly ICurrentUserService _currentUserService;
+        private readonly IAppealService _appealService;
 
-        public GovernanceStatusController(AppDbContext context, ICurrentUserService currentUserService)
+        public GovernanceStatusController(AppDbContext context, ICurrentUserService currentUserService, IAppealService appealService)
         {
             _context = context;
             _currentUserService = currentUserService;
+            _appealService = appealService;
         }
 
         /// <summary>
-        /// Retrieves the current entity's suspension notice, reason, expiry, full appeal history, and allowed actions.
+        /// Governance Portal data for the caller: profile summary, suspension reason, appeal threads and what they may do.
+        /// Suspended users and staff of a suspended hospital can appeal and reply; doctors of a suspended hospital only view.
         /// </summary>
         [HttpGet]
         [ProducesResponseType(typeof(ApiResponse<GovernanceStatusDto>), StatusCodes.Status200OK)]
@@ -45,75 +48,54 @@ namespace LifeLink.Controllers
                 return Unauthorized(ApiResponse<object>.Fail("User identity could not be retrieved from token."));
             }
 
-            var user = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.UserId == userId.Value);
+            var user = await _context.Users.Include(u => u.UserRoles).ThenInclude(ur => ur.Role).AsNoTracking()
+                .FirstOrDefaultAsync(u => u.UserId == userId.Value);
             if (user == null)
             {
                 return NotFound(ApiResponse<object>.Fail("User not found."));
             }
 
-            // Check if user is associated with a hospital as doctor/staff
-            var doctor = await _context.Doctors
-                .Include(d => d.Hospital)
-                .AsNoTracking()
-                .FirstOrDefaultAsync(d => d.UserId == userId.Value);
-
+            var roles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
+            var hospital = await GovernanceAccessHelper.GetGovernedHospitalAsync(_context, user, roles);
+            var isDoctor = roles.Contains("Doctor");
             bool isUserSuspended = user.IsSuspended;
-            bool isHospitalSuspended = doctor?.Hospital != null && doctor.Hospital.IsSuspended;
-            bool isPermanentlyBlocked = user.IsPermanentlyBlocked ||
-                                        (doctor?.Hospital != null && doctor.Hospital.IsPermanentlyBlocked);
+            bool isHospitalSuspended = hospital?.IsSuspended == true;
 
-            // Fetch ALL appeals for this user/hospital, ordered oldest -> newest
-            var allAppeals = await _context.Appeals
-                .Include(a => a.ReviewedByAdmin)
-                .AsNoTracking()
-                .Where(a => a.UserId == user.UserId ||
-                            (doctor != null && a.HospitalId == doctor.HospitalId))
-                .OrderBy(a => a.SubmittedAt)
-                .ToListAsync();
-
+            // Oldest -> newest; each appeal carries its message thread
+            var allAppeals = (await _appealService.GetMyAppealsAsync(user.UserId)).OrderBy(a => a.SubmittedAt).ToList();
             var latestAppeal = allAppeals.LastOrDefault();
-
-            var allowedActions = new List<string>
-            {
-                "GET /api/governance/status",
-                "POST /api/appeals",
-                "GET /api/appeals/my",
-                "GET /api/auth/me",
-                "GET /api/notifications"
-            };
-
-            if (isHospitalSuspended || doctor != null)
-            {
-                allowedActions.Add("POST /api/hospital/activity-reports");
-            }
+            var hasOpenThread = allAppeals.Any(a => !a.IsClosed);
 
             var dto = new GovernanceStatusDto
             {
                 IsSuspended = isUserSuspended || isHospitalSuspended,
-                IsPermanentlyBlocked = isPermanentlyBlocked,
-                SuspensionReason = isUserSuspended
-                    ? user.SuspensionReason
-                    : (isHospitalSuspended ? doctor?.Hospital?.SuspensionReason : null),
-                SuspendedUntil = isUserSuspended
-                    ? user.SuspendedUntil
-                    : (isHospitalSuspended ? doctor?.Hospital?.SuspendedUntil : null),
-                AppealStatus = latestAppeal?.Status.ToString(),
-                HasPendingAppeal = latestAppeal?.Status == AppealStatus.PENDING,
+                IsPermanentlyBlocked = user.AccountStatus == AccountStatus.Blocked,
+                SuspensionReason = isUserSuspended ? user.SuspensionReason : (isHospitalSuspended ? hospital!.SuspensionReason : null),
+                SuspendedUntil = isUserSuspended ? user.SuspendedUntil : (isHospitalSuspended ? hospital!.SuspendedUntil : null),
+                AppealStatus = latestAppeal?.Status,
+                HasPendingAppeal = latestAppeal?.Status == nameof(AppealStatus.PENDING),
                 SuspendedEntity = isUserSuspended ? "User" : (isHospitalSuspended ? "Hospital" : "None"),
-                AllowedActions = allowedActions,
-                AllAppeals = allAppeals.Select(a => new AppealResponseDto
+                AllowedActions = new List<string> { "GET /api/governance/status", "POST /api/auth/logout" },
+                AllAppeals = allAppeals,
+                IsReadOnlyViewer = isDoctor,
+                CanAppeal = !isDoctor && (isUserSuspended || isHospitalSuspended) && !hasOpenThread,
+                Profile = new GovernanceProfileSummaryDto
                 {
-                    AppealId = a.AppealId,
-                    UserId = a.UserId,
-                    HospitalId = a.HospitalId,
-                    Reason = a.Reason,
-                    Status = a.Status.ToString(),
-                    SubmittedAt = a.SubmittedAt,
-                    ReviewedByAdminId = a.ReviewedByAdminId,
-                    ReviewedAt = a.ReviewedAt,
-                    AdminResponse = a.AdminResponse
-                }).ToList()
+                    Name = $"{user.FirstName} {user.LastName}".Trim(),
+                    Email = user.Email,
+                    Role = roles.FirstOrDefault() ?? "User",
+                    Phone = user.PhoneNumber,
+                    Status = isUserSuspended || isHospitalSuspended ? "Suspended" : user.AccountStatus.ToString(),
+                    CreatedAt = user.CreatedAt,
+                    HospitalName = hospital?.Name
+                }
             };
+
+            if (!isDoctor)
+            {
+                dto.AllowedActions.Add("POST /api/appeals");
+                dto.AllowedActions.Add("POST /api/appeals/{id}/reply");
+            }
 
             return Ok(ApiResponse<GovernanceStatusDto>.Ok(dto, "Governance status retrieved successfully."));
         }
