@@ -1,5 +1,5 @@
 import React from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard,
@@ -18,6 +18,7 @@ import {
 
 export const Sidebar = () => {
   const { user } = useAuth();
+  const { pathname } = useLocation();
   const userRoles = user?.roles ? (Array.isArray(user.roles) ? user.roles : [user.roles]) : ['User'];
 
   const getNavItems = () => {
@@ -65,6 +66,14 @@ export const Sidebar = () => {
 
   const navItems = getNavItems();
 
+  // Exactly one item is active: the most specific (longest) path that equals or is a
+  // segment prefix of the current route. NavLink's default prefix matching would light up
+  // both /donor/requests and /donor/requests/create at the same time.
+  const activePath = navItems
+    .map((item) => item.path)
+    .filter((path) => pathname === path || pathname.startsWith(`${path}/`))
+    .reduce((best, path) => (best && best.length >= path.length ? best : path), null);
+
   return (
     <aside className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 hidden md:flex flex-col justify-between p-4 transition-colors">
       <div className="space-y-1">
@@ -73,21 +82,21 @@ export const Sidebar = () => {
         </div>
         {navItems.map((item) => {
           const Icon = item.icon;
+          const isActive = item.path === activePath;
           return (
-            <NavLink
+            <Link
               key={item.path}
               to={item.path}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
-                  isActive
-                    ? 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 font-semibold border-l-4 border-red-600'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-                }`
-              }
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
+                isActive
+                  ? 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 font-semibold border-l-4 border-red-600'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+              }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span>{item.label}</span>
-            </NavLink>
+            </Link>
           );
         })}
       </div>

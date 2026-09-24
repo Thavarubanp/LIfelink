@@ -3,7 +3,7 @@ import { bloodRequestApi } from '../../api';
 import { DataTable } from '../../components/common/DataTable';
 import { Badge } from '../../components/common/Badge';
 import { Link } from 'react-router-dom';
-import { Droplet, Filter, ArrowRight, Plus } from 'lucide-react';
+import { Filter, ArrowRight } from 'lucide-react';
 
 export const AvailableRequestsPage = () => {
   const [requests, setRequests] = useState([]);
@@ -81,19 +81,11 @@ export const AvailableRequestsPage = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Available Blood Requests</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Browse verified public blood requests needing eligible donors.
-          </p>
-        </div>
-        <Link
-          to="/donor/requests/create"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold shadow-sm shadow-red-600/20 transition-all self-start md:self-auto"
-        >
-          <Plus className="w-4 h-4" /> Create Blood Request
-        </Link>
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Available Blood Requests</h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Browse verified public blood requests needing eligible donors.
+        </p>
       </div>
 
       {/* Filter Bar */}
