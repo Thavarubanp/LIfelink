@@ -37,6 +37,18 @@ export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
     }
   };
 
+  // Dismiss permanently deletes this notification; the others stay
+  const handleDismiss = async (e, notificationId) => {
+    e.stopPropagation();
+    try {
+      await notificationApi.dismiss(notificationId);
+      setNotifications((prev) => prev.filter((n) => (n.notificationId || n.id) !== notificationId));
+      window.dispatchEvent(new Event('lifelink-notifications-updated'));
+    } catch {
+      // Silently handle error
+    }
+  };
+
   const handleMarkAllRead = async () => {
     try {
       setMarkingAll(true);
@@ -103,16 +115,26 @@ export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
                       {n.title || n.subject}
                     </h5>
                   </div>
-                  <span className="text-[10px] text-slate-400 shrink-0">
-                    {n.createdAt
-                      ? new Date(n.createdAt).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })
-                      : ''}
-                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-[10px] text-slate-400">
+                      {n.createdAt
+                        ? new Date(n.createdAt).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })
+                        : ''}
+                    </span>
+                    <button
+                      onClick={(e) => handleDismiss(e, n.notificationId || n.id)}
+                      title="Dismiss notification"
+                      aria-label="Dismiss notification"
+                      className="p-0.5 rounded-md text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
                   {n.message || n.description}

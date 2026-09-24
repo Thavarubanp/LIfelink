@@ -430,7 +430,7 @@ namespace LifeLink.Tests
             var complaints = new LifeLink.Services.Complaints.ComplaintService(s.Context, notifications);
             LifeLink.DTOs.Complaints.CreateComplaintDto Dto(Guid target) => new()
             {
-                ComplaintType = "Conduct",
+                ComplaintType = "Other",
                 Subject = "Inappropriate behaviour",
                 Description = "Detailed description of the issue.",
                 TargetUserId = target

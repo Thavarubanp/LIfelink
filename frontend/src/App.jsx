@@ -144,8 +144,16 @@ export function App() {
               <Route path="/donor/my-requests" element={<Navigate to="/donor/requests/create" replace />} />
               <Route path="/donor/acceptances" element={<MyAcceptancesPage />} />
               <Route path="/donor/profile" element={<Navigate to="/my-profile" replace />} />
-              <Route path="/donor/complaints" element={<DonorComplaintsPage />} />
-              <Route path="/complaints" element={<DonorComplaintsPage />} />
+              {/* Complaints: Users and Hospital Staff only (no doctors, no admins) */}
+              <Route
+                path="/donor/complaints"
+                element={
+                  <ProtectedRoute allowedRoles={['User', 'HospitalStaff']}>
+                    <DonorComplaintsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/complaints" element={<Navigate to="/donor/complaints" replace />} />
 
               {/* Doctor Module */}
               <Route

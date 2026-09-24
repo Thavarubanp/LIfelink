@@ -60,9 +60,29 @@ namespace LifeLink.Controllers
                 })
                 .ToListAsync();
 
-            // 2. Search Doctors
-            var doctors = await _context.Doctors
-                .Include(d => d.Hospital)
+            // 2. Search Doctors — Admins see all, Hospital Staff only their hospital's doctors, Doctors only themselves, Users none
+            var doctorsQuery = _context.Doctors.Include(d => d.Hospital).AsQueryable();
+            if (!isCallerAdmin)
+            {
+                var callerRoles = _currentUserService.Roles.ToList();
+                Guid? staffHospitalId = null;
+                if (callerRoles.Contains("HospitalStaff") && !string.IsNullOrWhiteSpace(_currentUserService.Email))
+                {
+                    var email = _currentUserService.Email.Trim().ToLower();
+                    staffHospitalId = await _context.Hospitals
+                        .Where(h => h.Email != null && h.Email.ToLower() == email)
+                        .Select(h => (Guid?)h.HospitalId)
+                        .FirstOrDefaultAsync();
+                }
+                var callerUserId = _currentUserService.UserId;
+                bool isDoctor = callerRoles.Contains("Doctor");
+
+                doctorsQuery = doctorsQuery.Where(d =>
+                    (staffHospitalId != null && d.HospitalId == staffHospitalId) ||
+                    (isDoctor && callerUserId != null && d.UserId == callerUserId));
+            }
+
+            var doctors = await doctorsQuery
                 .Where(d => d.FirstName.ToLower().Contains(term) ||
                             d.LastName.ToLower().Contains(term) ||
                             (d.FirstName + " " + d.LastName).ToLower().Contains(term) ||

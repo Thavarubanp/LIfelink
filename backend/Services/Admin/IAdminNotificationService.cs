@@ -12,8 +12,8 @@ namespace LifeLink.Services.Admin
         Task NotifyHospitalSuspendedAsync(Hospital hospital, string reason, DateTime? until);
         Task NotifyUserReinstatedAsync(User user);
         Task NotifyHospitalReinstatedAsync(Hospital hospital);
-        Task NotifyComplaintResolvedAsync(Complaint complaint);
-        Task NotifyActivityReportRequestedAsync(Complaint complaint, string instructions, Guid hospitalId);
+        Task NotifyComplaintCreatorAsync(Complaint complaint, string title, string message);
+        Task NotifyComplaintAdminsAsync(Complaint complaint, string title, string message);
         Task NotifyAppealApprovedAsync(Appeal appeal);
         Task NotifyAppealRejectedAsync(Appeal appeal);
     }

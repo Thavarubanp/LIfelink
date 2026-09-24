@@ -16,6 +16,7 @@ namespace LifeLink.Services.Notification
         Task<int> GetUnreadCountAsync(Guid? userId, Guid? hospitalId = null);
         Task<List<NotificationResponseDto>> GetNotificationsForCallerAsync(Guid? userId, Guid? hospitalId = null);
         Task<bool> MarkNotificationReadAsync(Guid notificationId, Guid? userId, Guid? hospitalId = null, bool isAdmin = false);
+        Task<bool> DeleteNotificationAsync(Guid notificationId, Guid? userId, Guid? hospitalId = null);
         Task<int> MarkAllNotificationsReadAsync(Guid? userId, Guid? hospitalId = null, bool isAdmin = false);
     }
 }

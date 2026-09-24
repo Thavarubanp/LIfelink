@@ -11,6 +11,9 @@ namespace LifeLink.DTOs.Complaints
         public string PreviousStatus { get; set; } = string.Empty;
         public string NewStatus { get; set; } = string.Empty;
         public string? Notes { get; set; }
+        public string? AttachmentUrl { get; set; }
+        public string? AttachmentName { get; set; }
+        public bool IsReply { get; set; } // true for admin/creator messages (status unchanged)
         public DateTime CreatedAt { get; set; }
     }
 }

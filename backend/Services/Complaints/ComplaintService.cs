@@ -11,8 +11,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Complaints
 {
+    /// <summary>
+    /// Complaint workflow: Users and Hospital Staff create complaints; replies alternate creator -> admin -> creator
+    /// (the description is the creator's first message). Admins can only reply. Only the creator can mark a complaint
+    /// solved (RESOLVED, read-only) or delete it (any status). Replies are ComplaintAuditLog rows whose status is unchanged.
+    /// </summary>
     public class ComplaintService : IComplaintService
     {
+        public static readonly string[] UserCategories =
+            { "Donation Process", "Blood Request", "Hospital Service", "Account Issue", "Technical Issue", "Other" };
+
+        public static readonly string[] HospitalCategories =
+            { "Donor Misconduct", "Fake Blood Request", "Policy Violation", "Account Issue", "Technical Issue", "Other" };
+
         private readonly AppDbContext _context;
         private readonly IAdminNotificationService _notificationService;
 
@@ -24,6 +35,20 @@ namespace LifeLink.Services.Complaints
 
         public async Task<ComplaintResponseDto> CreateComplaintAsync(Guid? userId, Guid? hospitalId, CreateComplaintDto dto)
         {
+            if (!userId.HasValue)
+            {
+                throw new UnauthorizedAccessException("User identity could not be retrieved from token.");
+            }
+
+            var isHospitalStaff = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == userId.Value && ur.Role.Name == "HospitalStaff");
+            var categories = isHospitalStaff ? HospitalCategories : UserCategories;
+            var category = categories.FirstOrDefault(c => c.Equals(dto.ComplaintType.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (category == null)
+            {
+                throw new InvalidOperationException($"Invalid complaint category. Choose one of: {string.Join(", ", categories)}.");
+            }
+
             if (dto.TargetUserId.HasValue)
             {
                 await ValidateTargetUserAsync(dto.TargetUserId.Value, userId);
@@ -35,7 +60,7 @@ namespace LifeLink.Services.Complaints
                 UserId = userId,
                 TargetUserId = dto.TargetUserId,
                 HospitalId = dto.HospitalId ?? hospitalId,
-                ComplaintType = dto.ComplaintType.Trim(),
+                ComplaintType = category,
                 Subject = dto.Subject.Trim(),
                 Description = dto.Description.Trim(),
                 Status = ComplaintStatus.OPEN,
@@ -62,15 +87,7 @@ namespace LifeLink.Services.Complaints
 
         public async Task<List<ComplaintResponseDto>> GetComplaintsAsync(string? status = null)
         {
-            var query = _context.Complaints
-                .Include(c => c.User)
-                .Include(c => c.TargetUser)
-                .Include(c => c.Hospital)
-                .Include(c => c.AssignedAdmin)
-                .Include(c => c.ActivityReports)
-                .Include(c => c.AuditLogs)
-                    .ThenInclude(a => a.Admin)
-                .AsQueryable();
+            var query = WithDetails();
 
             if (!string.IsNullOrWhiteSpace(status) && Enum.TryParse<ComplaintStatus>(status, true, out var parsedStatus))
             {
@@ -83,209 +100,87 @@ namespace LifeLink.Services.Complaints
 
         public async Task<List<ComplaintResponseDto>> GetMyComplaintsAsync(Guid userId)
         {
-            var query = _context.Complaints
-                .Include(c => c.User)
-                .Include(c => c.TargetUser)
-                .Include(c => c.Hospital)
-                .Include(c => c.AssignedAdmin)
-                .Include(c => c.ActivityReports)
-                .Include(c => c.AuditLogs)
-                    .ThenInclude(a => a.Admin)
-                .Where(c => c.UserId == userId);
-
-            var list = await query.OrderByDescending(c => c.CreatedAt).ToListAsync();
+            var list = await WithDetails().Where(c => c.UserId == userId).OrderByDescending(c => c.CreatedAt).ToListAsync();
             return list.Select(MapToDto).ToList();
         }
 
         public async Task<ComplaintResponseDto?> GetComplaintByIdAsync(Guid complaintId)
         {
-            var complaint = await _context.Complaints
-                .Include(c => c.User)
-                .Include(c => c.TargetUser)
-                .Include(c => c.Hospital)
-                .Include(c => c.AssignedAdmin)
-                .Include(c => c.ActivityReports)
-                .Include(c => c.AuditLogs)
-                    .ThenInclude(a => a.Admin)
-                .FirstOrDefaultAsync(c => c.ComplaintId == complaintId);
-
+            var complaint = await WithDetails().FirstOrDefaultAsync(c => c.ComplaintId == complaintId);
             return complaint == null ? null : MapToDto(complaint);
         }
 
-        public async Task<ComplaintResponseDto> ReviewComplaintAsync(Guid complaintId, Guid adminId, ReviewComplaintDto? dto = null)
+        public async Task<ComplaintResponseDto> AdminReplyAsync(Guid complaintId, Guid adminId, ReviewComplaintDto dto)
         {
-            var complaint = await _context.Complaints.FindAsync(complaintId);
-            if (complaint == null)
+            var complaint = await LoadWithLogsAsync(complaintId);
+            EnsureOpen(complaint);
+            if (!IsAdminTurn(complaint))
             {
-                throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
+                throw new InvalidOperationException("Waiting for the complaint creator to respond before the next admin reply.");
             }
 
-            if (complaint.Status == ComplaintStatus.CANCELLED || complaint.Status == ComplaintStatus.RESOLVED || complaint.Status == ComplaintStatus.REJECTED)
-            {
-                throw new InvalidOperationException("Cannot review a closed or cancelled complaint.");
-            }
-
-            var previousStatus = complaint.Status.ToString();
-            complaint.Status = ComplaintStatus.UNDER_REVIEW;
             complaint.AssignedAdminId = adminId;
+            await AddReplyAsync(complaint, adminId, dto);
 
-            var auditLog = new ComplaintAuditLog
-            {
-                AuditId = Guid.NewGuid(),
-                ComplaintId = complaint.ComplaintId,
-                AdminId = adminId,
-                PreviousStatus = previousStatus,
-                NewStatus = ComplaintStatus.UNDER_REVIEW.ToString(),
-                Notes = dto?.Notes ?? "Complaint moved under review by administration.",
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.ComplaintAuditLogs.AddAsync(auditLog);
-            await _context.SaveChangesAsync();
+            await _notificationService.NotifyComplaintCreatorAsync(complaint,
+                "Admin Replied to Your Complaint",
+                $"An administrator replied to your complaint '{complaint.Subject}'.");
 
             return await GetComplaintByIdAsync(complaintId) ?? MapToDto(complaint);
         }
 
-        public async Task<ComplaintResponseDto> RequestActivityReportAsync(Guid complaintId, Guid adminId, RequestActivityReportDto dto)
+        public async Task<ComplaintResponseDto> CreatorReplyAsync(Guid complaintId, Guid userId, ReviewComplaintDto dto)
         {
-            var complaint = await _context.Complaints.FindAsync(complaintId);
-            if (complaint == null)
+            var complaint = await LoadWithLogsAsync(complaintId);
+            EnsureCreator(complaint, userId, "reply to");
+            EnsureOpen(complaint);
+            if (IsAdminTurn(complaint))
             {
-                throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
+                throw new InvalidOperationException("You can reply after an administrator responds.");
             }
 
-            if (complaint.Status == ComplaintStatus.CANCELLED || complaint.Status == ComplaintStatus.RESOLVED || complaint.Status == ComplaintStatus.REJECTED)
-            {
-                throw new InvalidOperationException("Cannot request evidence for a closed or cancelled complaint.");
-            }
+            await AddReplyAsync(complaint, null, dto);
 
-            if (!complaint.HospitalId.HasValue)
-            {
-                throw new InvalidOperationException("Cannot request hospital activity report for a complaint that is not associated with a hospital.");
-            }
-
-            var previousStatus = complaint.Status.ToString();
-            complaint.Status = ComplaintStatus.AWAITING_INFORMATION;
-            complaint.AssignedAdminId = adminId;
-
-            var auditLog = new ComplaintAuditLog
-            {
-                AuditId = Guid.NewGuid(),
-                ComplaintId = complaint.ComplaintId,
-                AdminId = adminId,
-                PreviousStatus = previousStatus,
-                NewStatus = ComplaintStatus.AWAITING_INFORMATION.ToString(),
-                Notes = $"Requested activity report from hospital. Instructions: {dto.Instructions}",
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.ComplaintAuditLogs.AddAsync(auditLog);
-            await _context.SaveChangesAsync();
-
-            // Notify target hospital
-            await _notificationService.NotifyActivityReportRequestedAsync(complaint, dto.Instructions, complaint.HospitalId.Value);
-
-            return await GetComplaintByIdAsync(complaintId) ?? MapToDto(complaint);
-        }
-
-        public async Task<ComplaintResponseDto> ResolveComplaintAsync(Guid complaintId, Guid adminId, ResolveComplaintDto dto)
-        {
-            var complaint = await _context.Complaints.FindAsync(complaintId);
-            if (complaint == null)
-            {
-                throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
-            }
-
-            if (complaint.Status == ComplaintStatus.CANCELLED)
-            {
-                throw new InvalidOperationException("Cannot resolve a complaint that has been cancelled.");
-            }
-
-            if (dto.Status.Equals("RESOLVED", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("Admins cannot mark complaints as solved. Only the complaint creator can mark a complaint as solved.");
-            }
-
-            if (!Enum.TryParse<ComplaintStatus>(dto.Status, true, out var finalStatus) || finalStatus != ComplaintStatus.REJECTED)
-            {
-                throw new InvalidOperationException("Admin resolution status must be 'REJECTED'.");
-            }
-
-            if (string.IsNullOrWhiteSpace(dto.ResolutionNotes))
-            {
-                throw new InvalidOperationException("A rejection reason is mandatory when rejecting a complaint.");
-            }
-
-            var previousStatus = complaint.Status.ToString();
-            complaint.Status = finalStatus;
-            complaint.AssignedAdminId = adminId;
-            complaint.ResolvedAt = DateTime.UtcNow;
-            complaint.ResolutionNotes = dto.ResolutionNotes.Trim();
-
-            var auditLog = new ComplaintAuditLog
-            {
-                AuditId = Guid.NewGuid(),
-                ComplaintId = complaint.ComplaintId,
-                AdminId = adminId,
-                PreviousStatus = previousStatus,
-                NewStatus = finalStatus.ToString(),
-                Notes = dto.ResolutionNotes.Trim(),
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.ComplaintAuditLogs.AddAsync(auditLog);
-            await _context.SaveChangesAsync();
-
-            await _notificationService.NotifyComplaintResolvedAsync(complaint);
+            await _notificationService.NotifyComplaintAdminsAsync(complaint,
+                "Complaint Reply Received",
+                $"The creator replied to complaint '{complaint.Subject}'.");
 
             return await GetComplaintByIdAsync(complaintId) ?? MapToDto(complaint);
         }
 
         public async Task<ComplaintResponseDto> SolveComplaintAsync(Guid complaintId, Guid userId, string? notes = null)
         {
-            var complaint = await _context.Complaints
-                .Include(c => c.AuditLogs)
-                .Include(c => c.ActivityReports)
-                .FirstOrDefaultAsync(c => c.ComplaintId == complaintId);
-
-            if (complaint == null)
-            {
-                throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
-            }
-
-            if (complaint.UserId != userId)
-            {
-                throw new UnauthorizedAccessException("Only the complaint creator can mark this complaint as solved.");
-            }
-
-            if (complaint.Status == ComplaintStatus.CANCELLED || complaint.Status == ComplaintStatus.RESOLVED || complaint.Status == ComplaintStatus.REJECTED)
-            {
-                throw new InvalidOperationException("This complaint is already closed or in a terminal state.");
-            }
+            var complaint = await LoadWithLogsAsync(complaintId);
+            EnsureCreator(complaint, userId, "mark as solved");
+            EnsureOpen(complaint);
 
             var previousStatus = complaint.Status.ToString();
+            var resolutionNotes = !string.IsNullOrWhiteSpace(notes) ? notes.Trim() : "Marked as solved by complaint creator.";
             complaint.Status = ComplaintStatus.RESOLVED;
             complaint.ResolvedAt = DateTime.UtcNow;
-            complaint.ResolutionNotes = !string.IsNullOrWhiteSpace(notes) ? notes.Trim() : "Marked as solved by complaint creator.";
+            complaint.ResolutionNotes = resolutionNotes;
 
-            var auditLog = new ComplaintAuditLog
+            await _context.ComplaintAuditLogs.AddAsync(new ComplaintAuditLog
             {
                 AuditId = Guid.NewGuid(),
                 ComplaintId = complaint.ComplaintId,
                 AdminId = null,
                 PreviousStatus = previousStatus,
                 NewStatus = ComplaintStatus.RESOLVED.ToString(),
-                Notes = !string.IsNullOrWhiteSpace(notes) ? notes.Trim() : "Marked as solved by complaint creator.",
+                Notes = resolutionNotes,
                 CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.ComplaintAuditLogs.AddAsync(auditLog);
+            });
             await _context.SaveChangesAsync();
+
+            await _notificationService.NotifyComplaintAdminsAsync(complaint,
+                "Complaint Marked as Solved",
+                $"The creator marked complaint '{complaint.Subject}' as solved.");
 
             return await GetComplaintByIdAsync(complaintId) ?? MapToDto(complaint);
         }
 
-        public async Task<ComplaintResponseDto> CancelComplaintAsync(Guid complaintId, Guid userId)
+        /// <summary>Creator permanently deletes the complaint (any status) with its audit log and activity reports.</summary>
+        public async Task DeleteComplaintAsync(Guid complaintId, Guid userId)
         {
             var complaint = await _context.Complaints
                 .Include(c => c.AuditLogs)
@@ -296,33 +191,84 @@ namespace LifeLink.Services.Complaints
             {
                 throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
             }
+            EnsureCreator(complaint, userId, "delete");
 
-            if (complaint.UserId != userId)
-            {
-                throw new UnauthorizedAccessException("Only the complaint creator can cancel this complaint.");
-            }
-
-            if (complaint.Status == ComplaintStatus.CANCELLED || complaint.Status == ComplaintStatus.RESOLVED || complaint.Status == ComplaintStatus.REJECTED)
-            {
-                throw new InvalidOperationException("This complaint is already closed or cancelled.");
-            }
-
-            // Permanently remove associated records and the complaint itself from the database
-            if (complaint.AuditLogs != null && complaint.AuditLogs.Any())
-            {
-                _context.ComplaintAuditLogs.RemoveRange(complaint.AuditLogs);
-            }
-
-            if (complaint.ActivityReports != null && complaint.ActivityReports.Any())
-            {
-                _context.HospitalActivityReports.RemoveRange(complaint.ActivityReports);
-            }
-
+            _context.ComplaintAuditLogs.RemoveRange(complaint.AuditLogs);
+            _context.HospitalActivityReports.RemoveRange(complaint.ActivityReports);
             _context.Complaints.Remove(complaint);
             await _context.SaveChangesAsync();
 
-            complaint.Status = ComplaintStatus.CANCELLED;
-            return MapToDto(complaint);
+            await _notificationService.NotifyComplaintAdminsAsync(complaint,
+                "Complaint Deleted",
+                $"The creator deleted complaint '{complaint.Subject}'.");
+        }
+
+        private IQueryable<Complaint> WithDetails() => _context.Complaints
+            .Include(c => c.User)
+            .Include(c => c.TargetUser)
+            .Include(c => c.Hospital)
+            .Include(c => c.AssignedAdmin)
+            .Include(c => c.ActivityReports)
+            .Include(c => c.AuditLogs)
+                .ThenInclude(a => a.Admin);
+
+        private async Task<Complaint> LoadWithLogsAsync(Guid complaintId) =>
+            await _context.Complaints.Include(c => c.AuditLogs).FirstOrDefaultAsync(c => c.ComplaintId == complaintId)
+            ?? throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
+
+        private static void EnsureCreator(Complaint complaint, Guid userId, string action)
+        {
+            if (complaint.UserId != userId)
+            {
+                throw new UnauthorizedAccessException($"Only the complaint creator can {action} this complaint.");
+            }
+        }
+
+        // Resolved (and legacy rejected/cancelled) complaints are read-only
+        private static void EnsureOpen(Complaint complaint)
+        {
+            if (complaint.Status is ComplaintStatus.RESOLVED or ComplaintStatus.REJECTED or ComplaintStatus.CANCELLED)
+            {
+                throw new InvalidOperationException("This complaint is closed and read-only.");
+            }
+        }
+
+        private static bool IsReply(ComplaintAuditLog log) => log.PreviousStatus == log.NewStatus;
+
+        // Admin's turn when no reply exists yet (the description counts as the creator's message) or the creator replied last
+        private static bool IsAdminTurn(Complaint complaint)
+        {
+            var lastReply = complaint.AuditLogs.Where(IsReply).OrderBy(a => a.CreatedAt).LastOrDefault();
+            return lastReply == null || lastReply.AdminId == null;
+        }
+
+        private async Task AddReplyAsync(Complaint complaint, Guid? adminId, ReviewComplaintDto dto)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Notes))
+            {
+                throw new InvalidOperationException("A reply message is required.");
+            }
+
+            var hasAttachment = !string.IsNullOrWhiteSpace(dto.AttachmentUrl);
+            if (hasAttachment && !dto.AttachmentUrl!.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Invalid attachment.");
+            }
+
+            var status = complaint.Status.ToString();
+            await _context.ComplaintAuditLogs.AddAsync(new ComplaintAuditLog
+            {
+                AuditId = Guid.NewGuid(),
+                ComplaintId = complaint.ComplaintId,
+                AdminId = adminId,
+                PreviousStatus = status,
+                NewStatus = status,
+                Notes = dto.Notes.Trim(),
+                AttachmentUrl = hasAttachment ? dto.AttachmentUrl : null,
+                AttachmentName = hasAttachment ? (string.IsNullOrWhiteSpace(dto.AttachmentName) ? "attachment" : dto.AttachmentName.Trim()) : null,
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
         }
 
         /// <summary>
@@ -345,12 +291,7 @@ namespace LifeLink.Services.Complaints
             }
 
             var roles = target.UserRoles.Select(ur => ur.Role.Name).ToList();
-            if (roles.Contains("Doctor"))
-            {
-                throw new InvalidOperationException("Complaints cannot be filed against doctors. File the complaint against the doctor's hospital instead.");
-            }
-
-            if (roles.Contains("Admin") || roles.Contains("HospitalStaff"))
+            if (roles.Contains("Doctor") || roles.Contains("Admin") || roles.Contains("HospitalStaff"))
             {
                 throw new InvalidOperationException("Complaints can only be filed against individual users or hospitals.");
             }
@@ -358,6 +299,9 @@ namespace LifeLink.Services.Complaints
 
         private static ComplaintResponseDto MapToDto(Complaint complaint)
         {
+            var isOpen = complaint.Status is not (ComplaintStatus.RESOLVED or ComplaintStatus.REJECTED or ComplaintStatus.CANCELLED);
+            var adminTurn = IsAdminTurn(complaint);
+
             return new ComplaintResponseDto
             {
                 ComplaintId = complaint.ComplaintId,
@@ -377,6 +321,8 @@ namespace LifeLink.Services.Complaints
                 AssignedAdminEmail = complaint.AssignedAdmin?.Email,
                 ResolvedAt = complaint.ResolvedAt,
                 ResolutionNotes = complaint.ResolutionNotes,
+                AwaitingAdminReply = isOpen && adminTurn,
+                CanCreatorReply = isOpen && !adminTurn,
                 ActivityReportsCount = complaint.ActivityReports?.Count ?? 0,
                 ActivityReports = complaint.ActivityReports?.OrderBy(r => r.SubmittedAt).Select(r => new ActivityReportResponseDto
                 {
@@ -399,6 +345,9 @@ namespace LifeLink.Services.Complaints
                     PreviousStatus = a.PreviousStatus,
                     NewStatus = a.NewStatus,
                     Notes = a.Notes,
+                    AttachmentUrl = a.AttachmentUrl,
+                    AttachmentName = a.AttachmentName,
+                    IsReply = IsReply(a),
                     CreatedAt = a.CreatedAt
                 }).ToList() ?? new List<ComplaintAuditLogDto>()
             };

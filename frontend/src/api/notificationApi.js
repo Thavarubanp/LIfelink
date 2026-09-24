@@ -26,6 +26,12 @@ export const notificationApi = {
     return response.data;
   },
 
+  /** Dismiss (permanently delete) one of the caller's notifications */
+  dismiss: async (notificationId) => {
+    const response = await client.delete(`/notifications/${notificationId}`);
+    return response.data;
+  },
+
   markAllRead: async () => {
     const response = await client.patch('/notifications/read-all');
     return response.data;

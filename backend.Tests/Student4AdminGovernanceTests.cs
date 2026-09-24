@@ -370,7 +370,7 @@ namespace LifeLink.Tests
             // Step 1: Create Complaint (Status: OPEN)
             var createDto = new CreateComplaintDto
             {
-                ComplaintType = "ServiceQuality",
+                ComplaintType = "Hospital Service",
                 Subject = "Delayed Blood Delivery",
                 Description = "Emergency transfer request was delayed by 3 hours without explanation.",
                 HospitalId = hospitalId
@@ -382,40 +382,21 @@ namespace LifeLink.Tests
             Assert.Single(complaint.AuditLogs);
             Assert.Equal("OPEN", complaint.AuditLogs[0].NewStatus);
 
-            // Step 2: Admin Reviews Complaint (Status: UNDER_REVIEW)
-            var reviewed = await complaintService.ReviewComplaintAsync(complaint.ComplaintId, adminId, new ReviewComplaintDto
+            // Step 2: Admin replies (the only admin action); status stays OPEN
+            var replied = await complaintService.AdminReplyAsync(complaint.ComplaintId, adminId, new ReviewComplaintDto
             {
                 Notes = "Investigating transfer logs with logistics provider."
             });
-            Assert.Equal("UNDER_REVIEW", reviewed.Status);
-            Assert.Equal(2, reviewed.AuditLogs.Count);
+            Assert.Equal("OPEN", replied.Status);
+            Assert.Equal(2, replied.AuditLogs.Count);
+            Assert.True(replied.CanCreatorReply);
 
-            // Step 3: Admin Requests Activity Report from Hospital (Status: AWAITING_INFORMATION)
-            var requested = await complaintService.RequestActivityReportAsync(complaint.ComplaintId, adminId, new RequestActivityReportDto
-            {
-                Instructions = "Submit logistics dispatch timestamps and ambulance logs."
-            });
-            Assert.Equal("AWAITING_INFORMATION", requested.Status);
-            Assert.Equal(3, requested.AuditLogs.Count);
-
-            // Verify hospital received notification
-            var hospitalNotif = await context.Notifications.FirstOrDefaultAsync(n => n.HospitalId == hospitalId && n.NotificationType == "ActivityReportRequested");
-            Assert.NotNull(hospitalNotif);
-
-            // Step 4: Admins cannot mark a complaint as solved (current rule: creator only)
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                complaintService.ResolveComplaintAsync(complaint.ComplaintId, adminId, new ResolveComplaintDto
-                {
-                    Status = "RESOLVED",
-                    ResolutionNotes = "Hospital provided proof of traffic road blockage; procedure guidelines updated."
-                }));
-
-            // Step 5: The complaint creator marks it solved (Status: RESOLVED)
+            // Step 3: The complaint creator marks it solved (Status: RESOLVED)
             var resolved = await complaintService.SolveComplaintAsync(complaint.ComplaintId, userId,
                 "Hospital provided proof of traffic road blockage; procedure guidelines updated.");
             Assert.Equal("RESOLVED", resolved.Status);
             Assert.NotNull(resolved.ResolvedAt);
-            Assert.Equal(4, resolved.AuditLogs.Count); // refused admin attempt adds no audit entry
+            Assert.Equal(3, resolved.AuditLogs.Count);
         }
 
         [Fact]
@@ -438,16 +419,16 @@ namespace LifeLink.Tests
             await context.Users.AddAsync(admin);
             await context.SaveChangesAsync();
 
-            var complaint = await complaintService.CreateComplaintAsync(null, hospitalId, new CreateComplaintDto
+            var complaint = await complaintService.CreateComplaintAsync(Guid.NewGuid(), hospitalId, new CreateComplaintDto
             {
-                ComplaintType = "InventoryMismatch",
+                ComplaintType = "Other",
                 Subject = "Reported unit discrepancy",
                 Description = "Stock levels differed from dashboard count.",
                 HospitalId = hospitalId
             });
 
-            // Move to review by admin
-            await complaintService.ReviewComplaintAsync(complaint.ComplaintId, adminId);
+            // Admin replies (assigns the complaint to that admin)
+            await complaintService.AdminReplyAsync(complaint.ComplaintId, adminId, new ReviewComplaintDto { Notes = "Please submit an activity report." });
 
             // Act - Hospital submits activity report
             var reportDto = new SubmitActivityReportDto
@@ -491,9 +472,9 @@ namespace LifeLink.Tests
             await context.Hospitals.AddRangeAsync(hospitalA, hospitalB);
             await context.SaveChangesAsync();
 
-            var complaint = await complaintService.CreateComplaintAsync(null, associatedHospitalId, new CreateComplaintDto
+            var complaint = await complaintService.CreateComplaintAsync(Guid.NewGuid(), associatedHospitalId, new CreateComplaintDto
             {
-                ComplaintType = "ServiceQuality",
+                ComplaintType = "Hospital Service",
                 Subject = "Delayed response",
                 Description = "Emergency ward delay.",
                 HospitalId = associatedHospitalId

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.Entities;
@@ -185,71 +187,55 @@ namespace LifeLink.Services.Admin
             }
         }
 
-        public async Task NotifyComplaintResolvedAsync(Complaint complaint)
+        /// <summary>
+        /// Notifies the complaint creator (User or HospitalStaff login). Addressed by UserId only, because
+        /// Complaint.HospitalId is the hospital complained about, not the creator.
+        /// </summary>
+        public async Task NotifyComplaintCreatorAsync(Complaint complaint, string title, string message)
         {
-            var title = $"Complaint '{complaint.Subject}' Resolved";
-            var message = $"Your complaint has been {complaint.Status}. Resolution notes: {complaint.ResolutionNotes}";
+            if (!complaint.UserId.HasValue) return;
 
-            var notification = new NotificationEntity
+            var isHospitalStaff = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == complaint.UserId.Value && ur.Role.Name == "HospitalStaff");
+
+            await _context.Notifications.AddAsync(new NotificationEntity
             {
                 NotificationId = Guid.NewGuid(),
                 UserId = complaint.UserId,
-                HospitalId = complaint.HospitalId,
                 Title = title,
                 Message = message,
-                NotificationType = "ComplaintResolved",
-                RecipientRole = complaint.UserId.HasValue ? "User" : "HospitalStaff",
+                NotificationType = "Complaint",
+                RecipientRole = isHospitalStaff ? "HospitalStaff" : "User",
                 IsRead = false,
                 CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.Notifications.AddAsync(notification);
+            });
             await _context.SaveChangesAsync();
-
-            // Retrieve email of complainant
-            string? recipientEmail = null;
-            if (complaint.UserId.HasValue)
-            {
-                var user = await _context.Users.FindAsync(complaint.UserId.Value);
-                recipientEmail = user?.Email;
-            }
-            else if (complaint.HospitalId.HasValue)
-            {
-                var hospital = await _context.Hospitals.FindAsync(complaint.HospitalId.Value);
-                recipientEmail = hospital?.Email;
-            }
-
-            if (!string.IsNullOrWhiteSpace(recipientEmail))
-            {
-                await _emailService.SendEmailAsync(recipientEmail, title, message);
-            }
         }
 
-        public async Task NotifyActivityReportRequestedAsync(Complaint complaint, string instructions, Guid hospitalId)
+        /// <summary>
+        /// Notifies the admin assigned to the complaint (the admin who replied), or every admin when none is assigned yet.
+        /// </summary>
+        public async Task NotifyComplaintAdminsAsync(Complaint complaint, string title, string message)
         {
-            var title = $"Evidence / Activity Report Requested: Complaint '{complaint.Subject}'";
-            var message = $"Platform administration is investigating a complaint and requests a supporting activity report from your facility. Instructions: {instructions}. Submit via POST /api/hospital/activity-reports.";
+            var adminIds = complaint.AssignedAdminId.HasValue
+                ? new List<Guid> { complaint.AssignedAdminId.Value }
+                : await _context.UserRoles.Where(ur => ur.Role.Name == "Admin").Select(ur => ur.UserId).Distinct().ToListAsync();
 
-            var notification = new NotificationEntity
+            foreach (var adminId in adminIds)
             {
-                NotificationId = Guid.NewGuid(),
-                HospitalId = hospitalId,
-                Title = title,
-                Message = message,
-                NotificationType = "ActivityReportRequested",
-                RecipientRole = "HospitalStaff",
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            await _context.Notifications.AddAsync(notification);
-            await _context.SaveChangesAsync();
-
-            var hospital = await _context.Hospitals.FindAsync(hospitalId);
-            if (hospital != null && !string.IsNullOrWhiteSpace(hospital.Email))
-            {
-                await _emailService.SendEmailAsync(hospital.Email, title, message);
+                await _context.Notifications.AddAsync(new NotificationEntity
+                {
+                    NotificationId = Guid.NewGuid(),
+                    UserId = adminId,
+                    Title = title,
+                    Message = message,
+                    NotificationType = "Complaint",
+                    RecipientRole = "Admin",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
             }
+            await _context.SaveChangesAsync();
         }
 
         public async Task NotifyAppealApprovedAsync(Appeal appeal)

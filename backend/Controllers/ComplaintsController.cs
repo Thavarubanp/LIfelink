@@ -12,7 +12,7 @@ namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
+    [Authorize(Roles = "User,HospitalStaff")] // only Users and Hospital Staff create/own complaints (no doctors, no admins)
     public class ComplaintsController : ControllerBase
     {
         private readonly IComplaintService _complaintService;
@@ -39,9 +39,52 @@ namespace LifeLink.Controllers
             }
 
             var userId = _currentUserService.UserId;
-            var result = await _complaintService.CreateComplaintAsync(userId, request.HospitalId, request);
+            try
+            {
+                var result = await _complaintService.CreateComplaintAsync(userId, request.HospitalId, request);
+                return StatusCode(StatusCodes.Status201Created, ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint submitted successfully."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
 
-            return StatusCode(StatusCodes.Status201Created, ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint submitted successfully."));
+        /// <summary>
+        /// Creator reply with an optional attachment. Allowed only after an admin reply (replies alternate).
+        /// </summary>
+        [HttpPost("{id:guid}/reply")]
+        [ProducesResponseType(typeof(ApiResponse<ComplaintResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> ReplyToComplaint(Guid id, [FromBody] ReviewComplaintDto request)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var userId = _currentUserService.UserId;
+            if (userId == null)
+            {
+                return Unauthorized(ApiResponse<object>.Fail("User identity could not be retrieved from token."));
+            }
+
+            try
+            {
+                var result = await _complaintService.CreatorReplyAsync(id, userId.Value, request);
+                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Reply sent."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>
@@ -100,10 +143,10 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Cancels/closes a complaint filed by the currently authenticated user.
+        /// Creator permanently deletes their complaint (any status) with its replies/audit log and activity reports.
         /// </summary>
         [HttpPut("{id:guid}/cancel")]
-        [ProducesResponseType(typeof(ApiResponse<ComplaintResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status401Unauthorized)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
@@ -117,8 +160,8 @@ namespace LifeLink.Controllers
 
             try
             {
-                var result = await _complaintService.CancelComplaintAsync(id, userId.Value);
-                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint has been cancelled and closed."));
+                await _complaintService.DeleteComplaintAsync(id, userId.Value);
+                return Ok(ApiResponse<object>.Ok(null!, "Complaint deleted."));
             }
             catch (KeyNotFoundException ex)
             {

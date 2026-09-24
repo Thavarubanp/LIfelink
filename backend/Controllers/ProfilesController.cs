@@ -157,7 +157,9 @@ namespace LifeLink.Controllers
                 .Include(d => d.Hospital)
                 .FirstOrDefaultAsync(d => d.DoctorId == id);
 
-            if (doctor == null)
+            // Visible only to Admins, the doctor themself and the doctor's own hospital; everyone else gets 404
+            if (doctor == null ||
+                !(_currentUserService.Roles.Contains("Admin") || IsOwnDoctorProfile(doctor.UserId) || await IsOwnHospitalAsync(doctor.HospitalId)))
             {
                 return NotFound(ApiResponse<object>.Fail("Doctor profile not found."));
             }

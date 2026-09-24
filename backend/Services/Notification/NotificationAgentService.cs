@@ -361,6 +361,21 @@ namespace LifeLink.Services.Notification
             return true;
         }
 
+        /// <summary>Deletes one notification addressed to the caller (their user or their hospital).</summary>
+        public async Task<bool> DeleteNotificationAsync(Guid notificationId, Guid? userId, Guid? hospitalId = null)
+        {
+            var notification = await _context.Notifications.FindAsync(notificationId);
+            if (notification == null) return false;
+
+            bool matchesUser = userId.HasValue && notification.UserId == userId.Value;
+            bool matchesHospital = hospitalId.HasValue && notification.HospitalId == hospitalId.Value;
+            if (!matchesUser && !matchesHospital) return false;
+
+            _context.Notifications.Remove(notification);
+            await _context.SaveChangesAsync();
+            return true;
+        }
+
         public async Task<int> MarkAllNotificationsReadAsync(Guid? userId, Guid? hospitalId = null, bool isAdmin = false)
         {
             var query = _context.Notifications.Where(n => !n.IsRead);

@@ -41,16 +41,15 @@ export const Sidebar = () => {
         { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck },
         { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight },
         { label: 'Doctor Management', path: '/hospital/doctors', icon: Stethoscope },
-        { label: 'Submit Evidence', path: '/hospital/activity-reports', icon: FileText },
         { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
       ];
     }
 
+    // Doctors have no complaint functionality
     if (userRoles.includes('Doctor')) {
       return [
         { label: 'Doctor Dashboard', path: '/doctor/dashboard', icon: LayoutDashboard },
-        { label: 'Screening Queue', path: '/doctor/screenings', icon: Stethoscope },
-        { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
+        { label: 'Screening Queue', path: '/doctor/screenings', icon: Stethoscope }
       ];
     }
 

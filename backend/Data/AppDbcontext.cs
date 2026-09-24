@@ -455,6 +455,7 @@ namespace LifeLink.Data
                 entity.Property(a => a.PreviousStatus).IsRequired().HasMaxLength(50);
                 entity.Property(a => a.NewStatus).IsRequired().HasMaxLength(50);
                 entity.Property(a => a.Notes).HasMaxLength(2000);
+                entity.Property(a => a.AttachmentName).HasMaxLength(255);
 
                 entity.HasOne(a => a.Complaint)
                       .WithMany(c => c.AuditLogs)

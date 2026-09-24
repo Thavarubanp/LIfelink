@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { complaintApi, hospitalApi, searchApi } from '../../api';
+import { USER_COMPLAINT_CATEGORIES, HOSPITAL_COMPLAINT_CATEGORIES } from '../../api/complaintApi';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
+import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import {
+  MessageSquare,
+  Trash2,
   AlertTriangle,
   Send,
   Loader2,
@@ -23,7 +27,7 @@ import {
 } from 'lucide-react';
 
 const EMPTY_FORM = {
-  complaintType: 'Hospital Service',
+  complaintType: '', // defaults to the first category for the creator's role
   subject: '',
   description: '',
   hospitalId: null,
@@ -33,6 +37,9 @@ const EMPTY_FORM = {
 export const DonorComplaintsPage = () => {
   const { user } = useAuth();
   const { addToast } = useNotification();
+
+  // Users and Hospital Staff have separate complaint categories
+  const categories = user?.roles?.includes('HospitalStaff') ? HOSPITAL_COMPLAINT_CATEGORIES : USER_COMPLAINT_CATEGORIES;
 
   // Form State
   const [formData, setFormData] = useState(EMPTY_FORM);
@@ -53,7 +60,8 @@ export const DonorComplaintsPage = () => {
   const [loadingComplaints, setLoadingComplaints] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [expandedComplaintIds, setExpandedComplaintIds] = useState(new Set());
-  const [cancellingId, setCancellingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [replyTarget, setReplyTarget] = useState(null);
 
   // Solve Modal State (Only complaint owner can mark solved)
   const [solveModal, setSolveModal] = useState({ isOpen: false, complaint: null, notes: '' });
@@ -101,34 +109,42 @@ export const DonorComplaintsPage = () => {
     }
   };
 
-  const handleCancelComplaint = async (complaint) => {
+  const handleDeleteComplaint = async (complaint) => {
     const complaintId = complaint.complaintId || complaint.id;
     if (
       !window.confirm(
-        `Are you sure you want to cancel this complaint ("${complaint.subject}")? Once cancelled, this complaint and its entire activity history will be permanently deleted from the database.`
+        `Are you sure you want to delete this complaint ("${complaint.subject}")? The complaint and its entire reply history will be permanently deleted.`
       )
     ) {
       return;
     }
 
-    setCancellingId(complaintId);
+    setDeletingId(complaintId);
     try {
-      await complaintApi.cancelComplaint(complaintId);
+      await complaintApi.deleteComplaint(complaintId);
       addToast({
-        title: 'Complaint Cancelled',
-        message: 'Your complaint has been permanently cancelled and removed from the system.',
+        title: 'Complaint Deleted',
+        message: 'Your complaint has been permanently deleted.',
         type: 'info'
       });
       await loadComplaintsHistory();
     } catch (err) {
       addToast({
         title: 'Action Failed',
-        message: err.response?.data?.message || 'Could not cancel complaint.',
+        message: err.response?.data?.message || 'Could not delete complaint.',
         type: 'error'
       });
     } finally {
-      setCancellingId(null);
+      setDeletingId(null);
     }
+  };
+
+  // Creator reply (only after an admin reply; replies alternate)
+  const handleSendReply = async (dto) => {
+    await complaintApi.replyToComplaint(replyTarget.complaintId, dto);
+    addToast({ title: 'Reply Sent', message: 'The administrator has been notified.', type: 'success' });
+    setReplyTarget(null);
+    await loadComplaintsHistory();
   };
 
   // Fetch Registered Directories for Target Autocomplete
@@ -272,7 +288,7 @@ export const DonorComplaintsPage = () => {
 
     try {
       const payload = {
-        complaintType: formData.complaintType,
+        complaintType: formData.complaintType || categories[0],
         subject: selectedTarget
           ? `[Target: ${selectedTarget.type} - ${selectedTarget.name}] ${formData.subject.trim()}`
           : formData.subject.trim(),
@@ -409,19 +425,17 @@ export const DonorComplaintsPage = () => {
                 Complaint Category *
               </label>
               <select
-                value={formData.complaintType}
+                value={formData.complaintType || categories[0]}
                 onChange={(e) => setFormData({ ...formData, complaintType: e.target.value })}
                 className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:border-red-500 transition-colors"
               >
-                <option value="Hospital Service">Hospital Service / Facility Misconduct</option>
-                <option value="Donor Screening">Donor Screening Dispute</option>
-                <option value="Medical Staff">Medical Staff Professional Misconduct</option>
-                <option value="Platform Issue">Technical / System Operation Bug</option>
-                <option value="Other">Other Operational Concern</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </div>
 
-            {/* Target Selection: Hospital, Doctor, or User */}
+            {/* Target Selection: Hospital or User */}
             <div className="relative" ref={dropdownRef}>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-slate-700 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
@@ -709,9 +723,24 @@ export const DonorComplaintsPage = () => {
 
                   {/* Actions & Toggle Bar */}
                   <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex-wrap">
-                    <div>
+                    <div className="flex items-center gap-2 flex-wrap">
                       {!isClosed ? (
-                        <div className="flex items-center gap-2">
+                        <>
+                          {item.canCreatorReply && (
+                            <button
+                              type="button"
+                              onClick={() => setReplyTarget(item)}
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-blue-500" />
+                              <span>Reply</span>
+                            </button>
+                          )}
+                          {item.awaitingAdminReply && (
+                            <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5" /> Waiting for admin response
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleOpenSolveModal(item)}
@@ -721,29 +750,25 @@ export const DonorComplaintsPage = () => {
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                             <span>Mark as Solved</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCancelComplaint(item)}
-                            disabled={cancellingId === complaintId}
-                            className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                          >
-                            {cancellingId === complaintId ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <XCircle className="w-3.5 h-3.5 text-rose-500" />
-                            )}
-                            <span>Cancel Complaint</span>
-                          </button>
-                        </div>
+                        </>
                       ) : (
                         <span className="text-xs font-semibold text-slate-400 italic px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
-                          {statusUpper === 'RESOLVED'
-                            ? 'Complaint Solved (Read-Only)'
-                            : statusUpper === 'REJECTED'
-                            ? 'Complaint Rejected (Read-Only)'
-                            : 'Complaint Closed (Read-Only)'}
+                          {statusUpper === 'RESOLVED' ? 'Resolved (Read-Only)' : 'Closed (Read-Only)'}
                         </span>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteComplaint(item)}
+                        disabled={deletingId === complaintId}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {deletingId === complaintId ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                        )}
+                        <span>Delete</span>
+                      </button>
                     </div>
 
                     <button
@@ -907,6 +932,10 @@ export const DonorComplaintsPage = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {replyTarget && (
+        <ComplaintReplyModal complaint={replyTarget} onSubmit={handleSendReply} onClose={() => setReplyTarget(null)} />
       )}
     </div>
   );

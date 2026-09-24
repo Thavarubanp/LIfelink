@@ -4,9 +4,10 @@ import { adminApi, profileApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
 import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
+import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import {
+  MessageSquare,
   AlertTriangle,
-  FileText,
   CheckCircle2,
   XCircle,
   Loader2,
@@ -16,16 +17,10 @@ import {
   Building2,
   User,
   Clock,
-  Send,
   X,
-  ShieldCheck,
-  FileQuestion,
-  HelpCircle,
   ExternalLink,
   Phone,
-  Mail,
-  MapPin,
-  ShieldAlert
+  MapPin
 } from 'lucide-react';
 
 export const AdminComplaintsPage = () => {
@@ -36,16 +31,8 @@ export const AdminComplaintsPage = () => {
   const [expandedComplaintIds, setExpandedComplaintIds] = useState(new Set());
   const { addToast } = useNotification();
 
-  // Modal States
-  const [evidenceModal, setEvidenceModal] = useState({ isOpen: false, complaintId: null, subject: '' });
-  const [evidenceInstructions, setEvidenceInstructions] = useState('');
-  const [evidenceDeadlineHours, setEvidenceDeadlineHours] = useState(48);
-  const [submittingEvidence, setSubmittingEvidence] = useState(false);
-
-  // Reject Modal State (Admin only rejects; only creator can solve)
-  const [rejectModal, setRejectModal] = useState({ isOpen: false, complaintId: null, subject: '' });
-  const [rejectionReason, setRejectionReason] = useState('');
-  const [submittingReject, setSubmittingReject] = useState(false);
+  // Reply Modal State (admins can only reply; only the creator can mark solved or delete)
+  const [replyTarget, setReplyTarget] = useState(null);
 
   // Creator Profile Modal State
   const [creatorModal, setCreatorModal] = useState({
@@ -96,18 +83,11 @@ export const AdminComplaintsPage = () => {
     try {
       if (complaint.userId) {
         const userProfile = await profileApi.getUserProfile(complaint.userId);
-        let doctorDetails = null;
         let hospitalDetails = null;
         let detectedType = 'User';
 
-        if (userProfile.roles && userProfile.roles.includes('Doctor')) {
-          detectedType = 'Doctor';
-          try {
-            doctorDetails = await profileApi.getDoctorProfile(complaint.userId);
-          } catch {
-            // fallback gracefully
-          }
-        } else if (userProfile.roles && userProfile.roles.includes('HospitalStaff')) {
+        // Complaint creators are Users or Hospital Staff only (doctors cannot create complaints)
+        if (userProfile.roles && userProfile.roles.includes('HospitalStaff')) {
           detectedType = 'HospitalStaff';
           if (complaint.hospitalId) {
             try {
@@ -121,7 +101,7 @@ export const AdminComplaintsPage = () => {
         setCreatorModal({
           isOpen: true,
           loading: false,
-          data: { ...userProfile, doctorDetails, hospitalDetails },
+          data: { ...userProfile, hospitalDetails },
           error: null,
           creatorType: detectedType
         });
@@ -154,89 +134,12 @@ export const AdminComplaintsPage = () => {
     }
   };
 
-  // Open Evidence Request Modal
-  const openEvidenceModal = (complaint) => {
-    setEvidenceModal({
-      isOpen: true,
-      complaintId: complaint.complaintId || complaint.id,
-      subject: complaint.subject
-    });
-    setEvidenceInstructions('');
-    setEvidenceDeadlineHours(48);
-  };
-
-  // Submit Evidence Request
-  const handleSubmitEvidence = async (e) => {
-    e.preventDefault();
-    if (!evidenceInstructions.trim()) {
-      addToast({ title: 'Validation Error', message: 'Instructions are required.', type: 'error' });
-      return;
-    }
-
-    setSubmittingEvidence(true);
-    try {
-      await adminApi.requestActivityReport(evidenceModal.complaintId, {
-        deadlineHours: Number(evidenceDeadlineHours) || 48,
-        instructions: evidenceInstructions.trim()
-      });
-      addToast({
-        title: 'Evidence Requested',
-        message: 'Formal activity report requested from hospital.',
-        type: 'info'
-      });
-      setEvidenceModal({ isOpen: false, complaintId: null, subject: '' });
-      await fetchComplaints();
-    } catch (err) {
-      addToast({
-        title: 'Operation Failed',
-        message: err.response?.data?.message || 'Error requesting evidence.',
-        type: 'error'
-      });
-    } finally {
-      setSubmittingEvidence(false);
-    }
-  };
-
-  // Open Reject Modal (Admin can only reject)
-  const openRejectModal = (complaint) => {
-    setRejectModal({
-      isOpen: true,
-      complaintId: complaint.complaintId || complaint.id,
-      subject: complaint.subject
-    });
-    setRejectionReason('');
-  };
-
-  // Submit Rejection
-  const handleSubmitReject = async (e) => {
-    e.preventDefault();
-    if (!rejectionReason.trim()) {
-      addToast({ title: 'Validation Error', message: 'A rejection reason is mandatory.', type: 'error' });
-      return;
-    }
-
-    setSubmittingReject(true);
-    try {
-      await adminApi.resolveComplaint(rejectModal.complaintId, {
-        status: 'REJECTED',
-        resolutionNotes: rejectionReason.trim()
-      });
-      addToast({
-        title: 'Complaint Rejected',
-        message: 'Complaint has been marked as rejected and closed.',
-        type: 'info'
-      });
-      setRejectModal({ isOpen: false, complaintId: null, subject: '' });
-      await fetchComplaints();
-    } catch (err) {
-      addToast({
-        title: 'Operation Failed',
-        message: err.response?.data?.message || 'Error rejecting complaint.',
-        type: 'error'
-      });
-    } finally {
-      setSubmittingReject(false);
-    }
+  // Admin reply (the only admin complaint action); errors are shown inside the modal
+  const handleSendReply = async (dto) => {
+    await adminApi.replyToComplaint(replyTarget.complaintId, dto);
+    addToast({ title: 'Reply Sent', message: 'The complaint creator has been notified.', type: 'success' });
+    setReplyTarget(null);
+    await fetchComplaints();
   };
 
   // Status Badge Component
@@ -473,24 +376,23 @@ export const AdminComplaintsPage = () => {
                   {/* Actions & Expand Toggle */}
                   <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800 flex-wrap">
                     {/* Active Governance Action Buttons (only visible if active) */}
+                    {/* Admins can only reply; replies alternate with the complaint creator */}
                     {!isClosedOrCancelled ? (
-                      <>
+                      c.awaitingAdminReply ? (
                         <button
-                          onClick={() => openEvidenceModal(c)}
+                          onClick={() => setReplyTarget(c)}
                           className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
                         >
-                          <FileQuestion className="w-3.5 h-3.5" /> Request Evidence
+                          <MessageSquare className="w-3.5 h-3.5" /> Reply
                         </button>
-                        <button
-                          onClick={() => openRejectModal(c)}
-                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
-                        >
-                          <XCircle className="w-3.5 h-3.5" /> Reject Complaint
-                        </button>
-                      </>
+                      ) : (
+                        <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 px-2.5 py-1 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5" /> Waiting for creator response
+                        </span>
+                      )
                     ) : (
                       <span className="text-xs font-semibold text-slate-400 italic px-2 py-1 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-                        {statusUpper === 'RESOLVED' ? 'Solved by Creator (Read-Only)' : statusUpper === 'REJECTED' ? 'Rejected by Admin (Read-Only)' : 'Complaint Closed (Read-Only)'}
+                        {statusUpper === 'RESOLVED' ? 'Resolved by Creator (Read-Only)' : 'Closed (Read-Only)'}
                       </span>
                     )}
 
@@ -628,154 +530,9 @@ export const AdminComplaintsPage = () => {
         </div>
       )}
 
-      {/* Request Evidence Modal */}
-      {evidenceModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <FileQuestion className="w-5 h-5 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Request Activity Evidence from Hospital
-                </h3>
-              </div>
-              <button
-                onClick={() => setEvidenceModal({ isOpen: false, complaintId: null, subject: '' })}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Filing formal request for complaint: <span className="font-semibold text-slate-900 dark:text-slate-100">{evidenceModal.subject}</span>
-            </p>
-
-            <form onSubmit={handleSubmitEvidence} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Evidence Instructions & Requirements <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={evidenceInstructions}
-                  onChange={(e) => setEvidenceInstructions(e.target.value)}
-                  placeholder="Detail the specific incident logs, medical records, or personnel statements required from the hospital facility..."
-                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-red-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Response Deadline (Hours)
-                </label>
-                <input
-                  type="number"
-                  min={12}
-                  max={168}
-                  value={evidenceDeadlineHours}
-                  onChange={(e) => setEvidenceDeadlineHours(e.target.value)}
-                  className="w-full p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:border-red-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setEvidenceModal({ isOpen: false, complaintId: null, subject: '' })}
-                  disabled={submittingEvidence}
-                  className="px-4 py-2 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingEvidence}
-                  className="px-4 py-2 rounded-xl font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {submittingEvidence ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Dispatching...
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3.5 h-3.5" /> Dispatch Evidence Request
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Reject Complaint Modal (Admin only rejects; creator solves) */}
-      {rejectModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <XCircle className="w-5 h-5 text-rose-600" />
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                  Reject & Dismiss Complaint
-                </h3>
-              </div>
-              <button
-                onClick={() => setRejectModal({ isOpen: false, complaintId: null, subject: '' })}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Rejecting grievance: <span className="font-semibold text-slate-900 dark:text-slate-100">{rejectModal.subject}</span>
-            </p>
-
-            <form onSubmit={handleSubmitReject} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Mandatory Rejection Justification <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  value={rejectionReason}
-                  onChange={(e) => setRejectionReason(e.target.value)}
-                  placeholder="Provide explicit reasons for dismissing this complaint (e.g. unsubstantiated claims, non-actionable, resolved externally, duplicate report)..."
-                  className="w-full p-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-red-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setRejectModal({ isOpen: false, complaintId: null, subject: '' })}
-                  disabled={submittingReject}
-                  className="px-4 py-2 rounded-xl font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submittingReject}
-                  className="px-4 py-2 rounded-xl font-semibold bg-rose-600 hover:bg-rose-700 text-white shadow-sm transition-colors disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  {submittingReject ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Dismissing...
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="w-3.5 h-3.5" /> Confirm Rejection
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* Reply Modal (shared with the creator's complaint page) */}
+      {replyTarget && (
+        <ComplaintReplyModal complaint={replyTarget} onSubmit={handleSendReply} onClose={() => setReplyTarget(null)} />
       )}
 
       {/* Creator Profile Modal (Reusing existing profile data) */}
@@ -870,24 +627,6 @@ export const AdminComplaintsPage = () => {
                 </div>
 
                 {/* Doctor specifics if available */}
-                {creatorModal.data.doctorDetails && (
-                  <div className="p-3 bg-blue-50/50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-xl space-y-1.5">
-                    <span className="text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400">
-                      Doctor Clinical Accreditation
-                    </span>
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div>
-                        <span className="text-slate-400">SLMC License:</span>{' '}
-                        <strong className="text-slate-700 dark:text-slate-200">{creatorModal.data.doctorDetails.licenseNumber}</strong>
-                      </div>
-                      <div>
-                        <span className="text-slate-400">Specialization:</span>{' '}
-                        <strong className="text-slate-700 dark:text-slate-200">{creatorModal.data.doctorDetails.specialization}</strong>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
                 <div className="text-[11px] text-slate-400 pt-1">
                   Registered:{' '}
                   {creatorModal.data.createdAt

@@ -136,7 +136,12 @@ namespace LifeLink.Controllers
                     .FirstOrDefaultAsync(h => h.Email != null && h.Email.ToLower() == userEmail!.Trim().ToLower());
 
                 if (hospital == null || doctor.HospitalId != hospital.HospitalId)
-                    return Forbid();
+                    return NotFound(ApiResponse<object>.Fail($"Doctor with ID {id} not found."));
+            }
+            // Doctors may only fetch their own record
+            else if (userRoles.Contains("Doctor") && !userRoles.Contains("Admin") && doctor.UserId != _currentUserService.UserId)
+            {
+                return NotFound(ApiResponse<object>.Fail($"Doctor with ID {id} not found."));
             }
 
             return Ok(ApiResponse<DoctorResponseDto>.Ok(doctor, "Doctor retrieved successfully."));

@@ -62,18 +62,9 @@ export const adminApi = {
     return response.data;
   },
 
-  reviewComplaint: async (id, dto = null) => {
-    const response = await client.put(`/Admin/complaints/${id}/review`, dto || {});
-    return response.data;
-  },
-
-  requestActivityReport: async (id, dto) => {
-    const response = await client.put(`/Admin/complaints/${id}/request-activity`, dto);
-    return response.data;
-  },
-
-  resolveComplaint: async (id, dto) => {
-    const response = await client.put(`/Admin/complaints/${id}/resolve`, dto);
+  /** Admin reply { notes, attachmentUrl?, attachmentName? } — the only admin complaint action */
+  replyToComplaint: async (id, dto) => {
+    const response = await client.put(`/Admin/complaints/${id}/review`, dto);
     return response.data;
   },
 

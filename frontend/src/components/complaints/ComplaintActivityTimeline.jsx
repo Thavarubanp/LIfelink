@@ -7,7 +7,9 @@ import {
   CheckCircle2,
   XCircle,
   Building2,
-  Calendar
+  Calendar,
+  MessageSquare,
+  Paperclip
 } from 'lucide-react';
 
 export const buildChronologicalTimeline = (complaint) => {
@@ -34,6 +36,23 @@ export const buildChronologicalTimeline = (complaint) => {
       // Don't duplicate initial "Complaint submitted" log if matching created event
       if (log.previousStatus === 'NONE' && log.newStatus === 'OPEN') return;
 
+      // Replies (status unchanged): admin <-> complaint creator messages, optionally with an attachment
+      if (log.isReply) {
+        const fromAdmin = !!log.adminId;
+        events.push({
+          id: `audit-${log.auditId || Math.random()}`,
+          date: new Date(log.createdAt),
+          title: fromAdmin ? 'Admin Reply' : 'Creator Reply',
+          type: 'reply',
+          actor: fromAdmin ? `Admin (${log.adminEmail || 'LifeLink'})` : complaint.userEmail || 'Complaint Owner',
+          role: fromAdmin ? 'Admin' : 'User',
+          notes: log.notes,
+          attachmentUrl: log.attachmentUrl,
+          attachmentName: log.attachmentName
+        });
+        return;
+      }
+
       const isCancellation = log.newStatus === 'CANCELLED';
       const isReview = log.newStatus === 'UNDER_REVIEW';
       const isAwaitingInfo = log.newStatus === 'AWAITING_INFORMATION';
@@ -57,8 +76,12 @@ export const buildChronologicalTimeline = (complaint) => {
         title = 'Hospital Activity Evidence Requested';
         type = 'evidence_requested';
       } else if (isResolved) {
-        title = 'Complaint Formally Resolved';
+        title = 'Marked as Solved';
         type = 'resolved';
+        if (!log.adminEmail) {
+          actor = complaint.userEmail || 'Complaint Owner';
+          role = 'User';
+        }
       } else if (isRejected) {
         title = 'Complaint Rejected by Administration';
         type = 'rejected';
@@ -140,6 +163,8 @@ export const ComplaintActivityTimeline = ({ complaint }) => {
     switch (type) {
       case 'created':
         return <AlertTriangle className="w-4 h-4 text-amber-500" />;
+      case 'reply':
+        return <MessageSquare className="w-4 h-4 text-blue-500" />;
       case 'review':
         return <Clock className="w-4 h-4 text-blue-500" />;
       case 'evidence_requested':
@@ -228,6 +253,16 @@ export const ComplaintActivityTimeline = ({ complaint }) => {
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed pt-1">
                 {event.description}
               </p>
+            )}
+
+            {event.attachmentUrl && (
+              <a
+                href={event.attachmentUrl}
+                download={event.attachmentName || 'attachment'}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Paperclip className="w-3 h-3" /> {event.attachmentName || 'Attachment'}
+              </a>
             )}
           </div>
         </div>

@@ -90,6 +90,22 @@ namespace LifeLink.Controllers
             return Ok(ApiResponse<object>.Ok(new object(), "Notification marked as read."));
         }
 
+        /// <summary>
+        /// Dismisses (permanently deletes) one of the caller's own notifications.
+        /// </summary>
+        [HttpDelete("{id:guid}")]
+        [Authorize]
+        public async Task<IActionResult> Dismiss(Guid id)
+        {
+            var caller = await ResolveCallerAsync();
+            bool success = await _notificationService.DeleteNotificationAsync(id, caller.UserId, caller.HospitalId);
+            if (!success)
+            {
+                return NotFound(ApiResponse<object>.Fail("Notification not found or access denied."));
+            }
+            return Ok(ApiResponse<object>.Ok(new object(), "Notification dismissed."));
+        }
+
         [HttpPatch("read-all")]
         [Authorize]
         public async Task<IActionResult> MarkAllAsRead()

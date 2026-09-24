@@ -219,57 +219,22 @@ namespace LifeLink.Controllers
             return Ok(ApiResponse<ComplaintResponseDto>.Ok(complaint, "Complaint retrieved successfully."));
         }
 
+        /// <summary>
+        /// Admin reply (the only admin complaint action). Replies alternate with the complaint creator;
+        /// an optional attachment may be included. Admins cannot resolve, reject or delete complaints.
+        /// </summary>
         [HttpPut("complaints/{id:guid}/review")]
         [ProducesResponseType(typeof(ApiResponse<ComplaintResponseDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> ReviewComplaint(Guid id, [FromBody] ReviewComplaintDto? dto)
-        {
-            try
-            {
-                var result = await _complaintService.ReviewComplaintAsync(id, GetAdminId(), dto);
-                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint marked under review."));
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(ApiResponse<object>.Fail(ex.Message));
-            }
-        }
-
-        [HttpPut("complaints/{id:guid}/request-activity")]
-        [ProducesResponseType(typeof(ApiResponse<ComplaintResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> RequestActivity(Guid id, [FromBody] RequestActivityReportDto dto)
+        public async Task<IActionResult> ReplyToComplaint(Guid id, [FromBody] ReviewComplaintDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             try
             {
-                var result = await _complaintService.RequestActivityReportAsync(id, GetAdminId(), dto);
-                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Activity report requested from hospital successfully."));
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return NotFound(ApiResponse<object>.Fail(ex.Message));
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(ApiResponse<object>.Fail(ex.Message));
-            }
-        }
-
-        [HttpPut("complaints/{id:guid}/resolve")]
-        [ProducesResponseType(typeof(ApiResponse<ComplaintResponseDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> ResolveComplaint(Guid id, [FromBody] ResolveComplaintDto dto)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            try
-            {
-                var result = await _complaintService.ResolveComplaintAsync(id, GetAdminId(), dto);
-                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, $"Complaint marked as {dto.Status}."));
+                var result = await _complaintService.AdminReplyAsync(id, GetAdminId(), dto);
+                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Reply sent."));
             }
             catch (KeyNotFoundException ex)
             {

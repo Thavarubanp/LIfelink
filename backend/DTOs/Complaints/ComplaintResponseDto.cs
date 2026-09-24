@@ -26,5 +26,9 @@ namespace LifeLink.DTOs.Complaints
         public int ActivityReportsCount { get; set; }
         public List<ActivityReportResponseDto> ActivityReports { get; set; } = new List<ActivityReportResponseDto>();
         public List<ComplaintAuditLogDto> AuditLogs { get; set; } = new List<ComplaintAuditLogDto>();
+
+        // Reply turn (replies alternate creator -> admin -> creator ...; the description is the creator's first message)
+        public bool AwaitingAdminReply { get; set; }
+        public bool CanCreatorReply { get; set; }
     }
 }
