@@ -183,7 +183,8 @@ namespace LifeLink.Services.Hospitals
 
         /// <summary>
         /// The hospital's reply in its rejected registration's conversation. Corrected details and documents apply to the
-        /// registration immediately; the registration stays Rejected until the admin approves it.
+        /// registration immediately and the registration moves to AwaitingAdminReview: the hospital cannot reply again
+        /// until the admin approves, rejects again or asks for more information.
         /// </summary>
         public async Task<HospitalResponseDto> ReplyToRegistrationAsync(Guid hospitalId, HospitalRegistrationReplyDto dto)
         {
@@ -192,9 +193,12 @@ namespace LifeLink.Services.Hospitals
 
             if (hospital.ApprovalStatus != ApprovalStatus.Rejected)
             {
-                throw new ConflictException(hospital.ApprovalStatus == ApprovalStatus.Approved
-                    ? "This registration is approved and read-only."
-                    : "You can reply once the administrator has reviewed your registration.");
+                throw new ConflictException(hospital.ApprovalStatus switch
+                {
+                    ApprovalStatus.Approved => "This registration is approved and read-only.",
+                    ApprovalStatus.AwaitingAdminReview => "Your reply is with the administrator. You can reply again after the administrator responds.",
+                    _ => "You can reply once the administrator has reviewed your registration."
+                });
             }
 
             var message = dto.Message?.Trim() ?? string.Empty;
@@ -280,6 +284,7 @@ namespace LifeLink.Services.Hospitals
                 ReportDocumentUrl = hasAttachment ? dto.AttachmentUrl : null,
                 ReportDocumentName = hasAttachment ? (string.IsNullOrWhiteSpace(dto.AttachmentName) ? "attachment" : dto.AttachmentName.Trim()) : null
             });
+            hospital.ApprovalStatus = ApprovalStatus.AwaitingAdminReview; // the admin's turn
             hospital.UpdatedAt = now;
 
             await SaveWithRegistrationNumberGuardAsync();

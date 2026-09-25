@@ -75,17 +75,25 @@ export const WaitingForApprovalPage = () => {
   const [message, setMessage] = useState('');
   const [attachment, setAttachment] = useState(null);
   const [showCorrections, setShowCorrections] = useState(false);
-  const [corrections, setCorrections] = useState(correctionsFrom(null));
+  const [corrections, setCorrections] = useState(() => correctionsFrom(location.state?.hospital));
   const [documents, setDocuments] = useState({ license: null, accreditation: null });
   const [formError, setFormError] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
+  // Every fresh copy of the registration also resets the correction fields to its current values
+  const showHospital = (data) => {
+    setHospital(data);
+    setCorrections(correctionsFrom(data));
+  };
+
   const loadHospital = useCallback(async () => {
     if (!signedIn) return;
-    setLoadError('');
     try {
-      setHospital(await hospitalApi.getMyHospital());
+      const data = await hospitalApi.getMyHospital();
+      setHospital(data);
+      setCorrections(correctionsFrom(data));
+      setLoadError('');
     } catch (err) {
       setLoadError(getApiErrorMessage(err));
     } finally {
@@ -94,12 +102,16 @@ export const WaitingForApprovalPage = () => {
   }, [signedIn]);
 
   useEffect(() => {
-    loadHospital();
-  }, [loadHospital]);
-
-  useEffect(() => {
-    setCorrections(correctionsFrom(hospital));
-  }, [hospital]);
+    if (!signedIn) return;
+    hospitalApi
+      .getMyHospital()
+      .then((data) => {
+        setHospital(data);
+        setCorrections(correctionsFrom(data));
+      })
+      .catch((err) => setLoadError(getApiErrorMessage(err)))
+      .finally(() => setLoading(false));
+  }, [signedIn]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -169,7 +181,7 @@ export const WaitingForApprovalPage = () => {
           payload.accreditationDocumentName = documents.accreditation.name;
         }
       }
-      setHospital(await hospitalApi.replyToRegistration(hospital.hospitalId, payload));
+      showHospital(await hospitalApi.replyToRegistration(hospital.hospitalId, payload));
       setMessage('');
       setAttachment(null);
       setDocuments({ license: null, accreditation: null });
@@ -185,13 +197,13 @@ export const WaitingForApprovalPage = () => {
 
   const status = hospital?.approvalStatus;
   const isApproved = status === 'Approved';
-  const isRejected = status === 'Rejected';
-  const awaitingAdmin = isRejected && hospital?.awaitingAdminReview;
+  const isRejected = status === 'Rejected'; // the hospital's turn: it may reply once
+  const awaitingAdmin = status === 'AwaitingAdminReview'; // the admin's turn: no replies until the admin responds
 
   const statusBadge = isApproved
     ? { text: 'Registration Approved', icon: CheckCircle2, className: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
     : awaitingAdmin
-    ? { text: 'Rejected · Your Reply Is With the Administrator', icon: Clock, className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' }
+    ? { text: 'Awaiting Admin Review', icon: Clock, className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' }
     : isRejected
     ? { text: 'Rejected · Please Reply or Send Corrections', icon: XCircle, className: 'bg-rose-500/20 text-rose-400 border-rose-500/30' }
     : { text: 'Pending Administrator Review', icon: Clock, className: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
@@ -289,7 +301,17 @@ export const WaitingForApprovalPage = () => {
                 <RegistrationThread entries={hospital.approvalHistory} onPreview={setPreviewDoc} />
               </div>
 
-              {/* Reply form: only while rejected */}
+              {awaitingAdmin && (
+                <div className="p-3.5 bg-blue-950/40 border border-blue-900/60 rounded-xl text-xs text-blue-100 flex items-start gap-2.5">
+                  <Clock className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <span>
+                    Your reply is with the administrator. You can reply again after the administrator responds; you will be
+                    notified by email.
+                  </span>
+                </div>
+              )}
+
+              {/* Reply form: only on the hospital's turn (Rejected), one reply per admin response */}
               {signedIn && isRejected && (
                 <form onSubmit={handleReply} className="pt-4 border-t border-slate-800 space-y-3 text-xs">
                   <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">

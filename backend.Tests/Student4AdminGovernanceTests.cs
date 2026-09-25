@@ -201,7 +201,7 @@ namespace LifeLink.Tests
                 AccreditationDocumentUrl = "data:application/pdf;base64,bmV3"
             });
 
-            Assert.Equal("Rejected", reply.ApprovalStatus); // no Resubmitted status, no new version
+            Assert.Equal("AwaitingAdminReview", reply.ApprovalStatus); // the admin's turn; no Resubmitted status, no new version
             Assert.True(reply.AwaitingAdminReview);
             Assert.Equal("Apex Hospital Colombo", reply.Name);
             Assert.Equal("Colombo", reply.City);
@@ -213,9 +213,9 @@ namespace LifeLink.Tests
 
             // The queue shows it as waiting for the admin
             var pendingQueue = await adminService.GetPendingHospitalsAsync();
-            Assert.Contains(pendingQueue, h => h.HospitalId == hospital.HospitalId && h.ApprovalStatus == "Rejected" && h.AwaitingAdminReview);
+            Assert.Contains(pendingQueue, h => h.HospitalId == hospital.HospitalId && h.ApprovalStatus == "AwaitingAdminReview" && h.AwaitingAdminReview);
 
-            // Act 3: Admin comments; the registration stays Rejected and the hospital is notified
+            // Act 3: Admin asks for more information; the turn goes back to the hospital (Rejected) and it is notified
             var commented = await adminService.CommentOnHospitalRegistrationAsync(hospital.HospitalId, adminId,
                 new HospitalRegistrationCommentDto { Message = "Thanks. Please also confirm the authorized person's phone number.", LastSeenEntryId = replyEntry.Id });
             Assert.Equal("Rejected", commented.ApprovalStatus);

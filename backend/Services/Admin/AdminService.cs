@@ -107,19 +107,21 @@ namespace LifeLink.Services.Admin
         }
 
         /// <summary>
-        /// Rejects a pending registration. The registration then stays Rejected, and the admin and hospital continue in
-        /// the same conversation (comments and replies) until the admin approves it; it cannot be rejected again.
+        /// Rejects a registration that is waiting for an admin decision: a new registration (Pending) or a hospital reply
+        /// (AwaitingAdminReview). It then waits for the hospital (Rejected) and cannot be rejected again until the
+        /// hospital has replied.
         /// </summary>
-        public async Task<AdminHospitalResponseDto> RejectHospitalAsync(Guid hospitalId, Guid adminId, RejectHospitalDto dto)
+        public async Task<AdminHospitalResponseDto> RejectHospitalAsync(Guid hospitalId, Guid adminId, RejectHospitalDto dto, Guid? lastSeenEntryId = null)
         {
             var hospital = await LoadHospitalWithConversationAsync(hospitalId);
 
-            if (hospital.ApprovalStatus != ApprovalStatus.Pending)
+            if (hospital.ApprovalStatus is not (ApprovalStatus.Pending or ApprovalStatus.AwaitingAdminReview))
             {
                 throw new ConflictException(hospital.ApprovalStatus == ApprovalStatus.Approved
                     ? "Approved registrations are read-only."
-                    : "This registration is already rejected. Add a comment to continue the conversation.");
+                    : "This registration is already rejected and waiting for the hospital. Add a comment to continue the conversation.");
             }
+            RegistrationThread.EnsureNoUnseenHospitalReply(hospital, lastSeenEntryId);
             AttachmentRules.EnsureValidIfPresent(dto.ReportDocumentUrl);
             var hasReport = AttachmentRules.HasContent(dto.ReportDocumentUrl);
             var reportName = hasReport ? (string.IsNullOrWhiteSpace(dto.ReportDocumentName) ? "Review_Report" : dto.ReportDocumentName.Trim()) : null;
@@ -150,12 +152,16 @@ namespace LifeLink.Services.Admin
             return MapToHospitalDto(hospital);
         }
 
-        /// <summary>Admin comment in a rejected registration's conversation. The status stays Rejected.</summary>
+        /// <summary>
+        /// Admin comment in a rejected registration's conversation. Answering a hospital reply (AwaitingAdminReview) asks
+        /// for more information and hands the turn back to the hospital (Rejected); while already waiting for the
+        /// hospital, a comment adds to the request and the status stays Rejected.
+        /// </summary>
         public async Task<AdminHospitalResponseDto> CommentOnHospitalRegistrationAsync(Guid hospitalId, Guid adminId, HospitalRegistrationCommentDto dto)
         {
             var hospital = await LoadHospitalWithConversationAsync(hospitalId);
 
-            if (hospital.ApprovalStatus != ApprovalStatus.Rejected)
+            if (hospital.ApprovalStatus is not (ApprovalStatus.Rejected or ApprovalStatus.AwaitingAdminReview))
             {
                 throw new ConflictException(hospital.ApprovalStatus == ApprovalStatus.Approved
                     ? "Approved registrations are read-only."
@@ -182,6 +188,7 @@ namespace LifeLink.Services.Admin
                 ReportDocumentName = hasAttachment ? (string.IsNullOrWhiteSpace(dto.AttachmentName) ? "attachment" : dto.AttachmentName.Trim()) : null,
                 ReportDocumentUrl = hasAttachment ? dto.AttachmentUrl : null
             });
+            hospital.ApprovalStatus = ApprovalStatus.Rejected; // the hospital's turn again
             hospital.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();

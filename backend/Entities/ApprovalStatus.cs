@@ -1,13 +1,15 @@
 namespace LifeLink.Entities
 {
     /// <summary>
-    /// A hospital registration stays Pending until the admin decides. A rejected registration stays Rejected while the
-    /// admin and the hospital exchange comments and corrections, until the admin approves it.
+    /// Hospital registration state. The admin acts on Pending and AwaitingAdminReview; the hospital replies only while
+    /// Rejected. A hospital reply moves Rejected to AwaitingAdminReview, and the hospital cannot reply again until the
+    /// admin approves, rejects again, or asks for more information (which returns it to Rejected).
     /// </summary>
     public enum ApprovalStatus
     {
         Pending,
         Approved,
-        Rejected
+        Rejected,
+        AwaitingAdminReview
     }
 }

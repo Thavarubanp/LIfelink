@@ -126,7 +126,7 @@ namespace LifeLink.Tests
                 AttachmentUrl = Pdf, AttachmentName = "cover-letter.pdf"
             });
 
-            Assert.Equal("Rejected", result.ApprovalStatus);
+            Assert.Equal("AwaitingAdminReview", result.ApprovalStatus);
             Assert.True(result.AwaitingAdminReview);
             Assert.Equal("0119876543", result.ContactNumber);
             Assert.Equal("license-2026.pdf", result.LicenseDocumentName);
@@ -138,13 +138,109 @@ namespace LifeLink.Tests
             Assert.Equal(new[] { "Submitted", "Rejected", "HospitalReply" }, result.ApprovalHistory.Select(e => e.Type).ToArray());
             Assert.True(await s.Db.Notifications.AnyAsync(n => n.UserId == s.AdminId && n.Title == "Hospital Registration Reply"));
 
-            // Several replies in a row are allowed, each as one conversation entry
-            var second = await s.Hospitals.ReplyToRegistrationAsync(id, Reply("One more document is on the way."));
-            Assert.Equal(4, second.ApprovalHistory.Count);
-            Assert.Null(second.ApprovalHistory.Last().ChangedFields);
-
             await s.Admin.ApproveHospitalAsync(id, s.AdminId);
             await Assert.ThrowsAsync<ConflictException>(() => s.Hospitals.ReplyToRegistrationAsync(id, Reply()));
+        }
+
+        // ---------- Turn taking: the hospital never acts twice without an admin action in between ----------
+
+        [Fact]
+        public async Task Reject_Then_Hospital_Reply_Moves_The_Registration_To_Awaiting_Admin_Review()
+        {
+            var s = await SeedAsync();
+            var id = await RejectedHospitalAsync(s);
+            Assert.Equal("Rejected", (await s.Hospitals.GetHospitalByIdAsync(id))!.ApprovalStatus);
+
+            var afterReply = await s.Hospitals.ReplyToRegistrationAsync(id, Reply("Renewed license uploaded."));
+
+            Assert.Equal("AwaitingAdminReview", afterReply.ApprovalStatus);
+            Assert.True(afterReply.AwaitingAdminReview);
+            Assert.False(afterReply.IsVerified);
+            Assert.Equal(ApprovalStatus.AwaitingAdminReview, (await s.Db.Hospitals.AsNoTracking().SingleAsync(h => h.HospitalId == id)).ApprovalStatus);
+            Assert.Contains(await s.Admin.GetPendingHospitalsAsync(), h => h.HospitalId == id);
+        }
+
+        [Fact]
+        public async Task A_Hospital_Cannot_Send_Two_Replies_In_A_Row()
+        {
+            var s = await SeedAsync();
+            var id = await RejectedHospitalAsync(s);
+            await s.Hospitals.ReplyToRegistrationAsync(id, Reply("First reply."));
+
+            var second = await Assert.ThrowsAsync<ConflictException>(() =>
+                s.Hospitals.ReplyToRegistrationAsync(id, new HospitalRegistrationReplyDto { Message = "Second reply.", ContactNumber = "0119999999" }));
+            Assert.Contains("with the administrator", second.Message);
+
+            // Nothing from the refused reply was stored
+            var hospital = await s.Db.Hospitals.AsNoTracking().Include(h => h.ApprovalHistories).SingleAsync(h => h.HospitalId == id);
+            Assert.Equal("0112345678", hospital.ContactNumber);
+            Assert.Single(hospital.ApprovalHistories, e => e.Status == RegistrationEntryType.HospitalReply);
+
+            // After the admin asks for more information, the hospital may reply once more
+            var commented = await s.Admin.CommentOnHospitalRegistrationAsync(id, s.AdminId, new HospitalRegistrationCommentDto { Message = "Please add the accreditation certificate." });
+            Assert.Equal("Rejected", commented.ApprovalStatus);
+            Assert.Equal("AwaitingAdminReview", (await s.Hospitals.ReplyToRegistrationAsync(id, Reply("Certificate attached."))).ApprovalStatus);
+            await Assert.ThrowsAsync<ConflictException>(() => s.Hospitals.ReplyToRegistrationAsync(id, Reply("And one more.")));
+        }
+
+        [Fact]
+        public async Task Hospital_Cannot_Act_On_Its_Registration_While_Awaiting_Admin_Review()
+        {
+            var s = await SeedAsync();
+            var id = await RejectedHospitalAsync(s);
+            await s.Hospitals.ReplyToRegistrationAsync(id, Reply());
+
+            // No further reply
+            await Assert.ThrowsAsync<ConflictException>(() => s.Hospitals.ReplyToRegistrationAsync(id, Reply()));
+
+            // No profile edits that would change registration details outside the conversation
+            var staff = new Mock<ICurrentUserService>();
+            staff.SetupGet(u => u.IsAuthenticated).Returns(true);
+            staff.SetupGet(u => u.Roles).Returns(new[] { "HospitalStaff" });
+            staff.SetupGet(u => u.Email).Returns("city@h.org");
+            var profiles = new ProfilesController(s.Db, staff.Object, s.Hospitals);
+
+            var edit = await profiles.UpdateHospitalProfile(id, new UpdateHospitalProfileDto
+            {
+                Name = "Renamed Hospital", Address = "2 Main Street", ContactNumber = "0112345678",
+                ContactPersonName = "Dr. Silva", ContactPersonPhone = "0771234567"
+            });
+            Assert.IsType<ConflictObjectResult>(edit);
+            Assert.Equal("City Hospital", (await s.Db.Hospitals.AsNoTracking().SingleAsync(h => h.HospitalId == id)).Name);
+
+            var profile = (HospitalProfileDto)((OkObjectResult)await profiles.GetHospitalProfile(id)).Value!;
+            Assert.False(profile.CanEdit);
+
+            // The registration only moves on through an admin action
+            Assert.Equal("AwaitingAdminReview", (await s.Hospitals.GetHospitalByIdAsync(id))!.ApprovalStatus);
+        }
+
+        [Fact]
+        public async Task Admin_Decides_On_A_Reply_By_Approving_Rejecting_Again_Or_Asking_For_More_Information()
+        {
+            var s = await SeedAsync();
+
+            // Reject again: back to the hospital, and not rejectable again until the hospital replies
+            var rejectAgain = await RejectedHospitalAsync(s, "again@h.org");
+            await Assert.ThrowsAsync<ConflictException>(() =>
+                s.Admin.RejectHospitalAsync(rejectAgain, s.AdminId, new RejectHospitalDto { Reason = "Twice without a reply." }));
+            await s.Hospitals.ReplyToRegistrationAsync(rejectAgain, Reply());
+            var rejected = await s.Admin.RejectHospitalAsync(rejectAgain, s.AdminId, new RejectHospitalDto { Reason = "Certificate is still expired." });
+            Assert.Equal("Rejected", rejected.ApprovalStatus);
+            Assert.Equal(new[] { "Submitted", "Rejected", "HospitalReply", "Rejected" }, rejected.ApprovalHistory.Select(e => e.Type).ToArray());
+
+            // Ask for more information: back to the hospital
+            var moreInfo = await RejectedHospitalAsync(s, "info@h.org");
+            await s.Hospitals.ReplyToRegistrationAsync(moreInfo, Reply());
+            Assert.Equal("Rejected", (await s.Admin.CommentOnHospitalRegistrationAsync(moreInfo, s.AdminId,
+                new HospitalRegistrationCommentDto { Message = "Which branch does this license cover?" })).ApprovalStatus);
+
+            // Approve
+            var approve = await RejectedHospitalAsync(s, "approve@h.org");
+            await s.Hospitals.ReplyToRegistrationAsync(approve, Reply());
+            var approved = await s.Admin.ApproveHospitalAsync(approve, s.AdminId);
+            Assert.Equal("Approved", approved.ApprovalStatus);
+            Assert.True(approved.IsVerified);
         }
 
         [Fact]
@@ -321,7 +417,7 @@ namespace LifeLink.Tests
         public void Values_Written_By_The_Old_Resubmission_Workflow_Are_Read_Under_The_New_One()
         {
             Assert.False(Enum.IsDefined(typeof(ApprovalStatus), "Resubmitted"));
-            Assert.Equal(ApprovalStatus.Rejected, RegistrationStatusConversions.ParseApprovalStatus("Resubmitted"));
+            Assert.Equal(ApprovalStatus.AwaitingAdminReview, RegistrationStatusConversions.ParseApprovalStatus("Resubmitted"));
             Assert.Equal(ApprovalStatus.Approved, RegistrationStatusConversions.ParseApprovalStatus("Approved"));
             Assert.Equal(RegistrationEntryType.Submitted, RegistrationStatusConversions.ParseEntryType("Pending"));
             Assert.Equal(RegistrationEntryType.HospitalReply, RegistrationStatusConversions.ParseEntryType("Resubmitted"));

@@ -93,7 +93,7 @@ namespace LifeLink.Controllers
             }
         }
 
-        /// <summary>Rejects a pending registration (409 once rejected or approved; continue with comments instead).</summary>
+        /// <summary>Rejects a pending registration or a hospital reply awaiting review (409 while waiting for the hospital or once approved).</summary>
         [HttpPut("hospitals/{id:guid}/reject")]
         [ProducesResponseType(typeof(ApiResponse<AdminHospitalResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -105,7 +105,7 @@ namespace LifeLink.Controllers
 
             try
             {
-                var result = await _adminService.RejectHospitalAsync(id, GetAdminId(), dto);
+                var result = await _adminService.RejectHospitalAsync(id, GetAdminId(), dto, dto.LastSeenEntryId);
                 return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Hospital registration rejected."));
             }
             catch (KeyNotFoundException ex)

@@ -95,10 +95,11 @@ namespace LifeLink.Tests
 
             var kept = await service.ReplyToRegistrationAsync(second.HospitalId, Reply("phsrc/ph/5678"));
             Assert.Equal("PHSRC/PH/5678", kept.RegistrationNumber);
+            Assert.Equal("AwaitingAdminReview", kept.ApprovalStatus); // a reply hands the turn to the admin
 
+            await RejectAsync(context, second.HospitalId); // the admin asks again
             var changed = await service.ReplyToRegistrationAsync(second.HospitalId, Reply(" phsrc/ph/9999 "));
             Assert.Equal("PHSRC/PH/9999", changed.RegistrationNumber);
-            Assert.Equal("Rejected", changed.ApprovalStatus); // replies never change the status
         }
 
         [Fact]

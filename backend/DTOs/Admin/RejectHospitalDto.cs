@@ -15,5 +15,8 @@ namespace LifeLink.DTOs.Admin
 
         [MaxLength(AttachmentRules.MaxDataUrlLength, ErrorMessage = "The review report cannot exceed 2 MB.")]
         public string? ReportDocumentUrl { get; set; }
+
+        /// <summary>The latest conversation entry the admin had seen; a newer hospital reply makes the request fail with 409.</summary>
+        public System.Guid? LastSeenEntryId { get; set; }
     }
 }

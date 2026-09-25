@@ -28,9 +28,9 @@ import {
   PauseCircle
 } from 'lucide-react';
 
-// A registration needs the admin when it is pending, or rejected with the hospital's reply as the latest entry
-const needsReview = (h) => h.approvalStatus === 'Pending' || (h.approvalStatus === 'Rejected' && h.awaitingAdminReview);
-const waitingForHospital = (h) => h.approvalStatus === 'Rejected' && !h.awaitingAdminReview;
+// The admin acts on Pending registrations and on hospital replies (AwaitingAdminReview); Rejected waits for the hospital
+const needsReview = (h) => h.approvalStatus === 'Pending' || h.approvalStatus === 'AwaitingAdminReview';
+const waitingForHospital = (h) => h.approvalStatus === 'Rejected';
 const lastEntryId = (h) => h.approvalHistory?.[h.approvalHistory.length - 1]?.id;
 
 const TABS = [
@@ -133,7 +133,12 @@ export const HospitalManagementPage = () => {
     setBusy(id, 'reject');
     try {
       const file = drafts[id]?.file;
-      await adminApi.rejectHospital(id, { reason, reportDocumentName: file?.name || null, reportDocumentUrl: file?.url || null });
+      await adminApi.rejectHospital(id, {
+        reason,
+        reportDocumentName: file?.name || null,
+        reportDocumentUrl: file?.url || null,
+        lastSeenEntryId: lastEntryId(hospital)
+      });
       addToast({
         title: 'Registration Rejected',
         message: 'The hospital can now reply and correct its details in the same conversation.',
@@ -198,10 +203,10 @@ export const HospitalManagementPage = () => {
         </span>
       );
     }
-    if (h.approvalStatus === 'Rejected' && h.awaitingAdminReview) {
+    if (h.approvalStatus === 'AwaitingAdminReview') {
       return (
         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30">
-          <MessageSquare className="w-3 h-3" /> Rejected · Hospital Replied
+          <MessageSquare className="w-3 h-3" /> Awaiting Admin Review
         </span>
       );
     }
@@ -222,7 +227,27 @@ export const HospitalManagementPage = () => {
   const renderDecisionPanel = (h) => {
     const id = h.hospitalId;
     const isPending = h.approvalStatus === 'Pending';
+    const isAwaitingReview = h.approvalStatus === 'AwaitingAdminReview';
+    const canReject = isPending || isAwaitingReview; // never while waiting for the hospital
+    const canComment = !isPending; // request more information / add to the request
     const draft = drafts[id] || { text: '', file: null };
+    const panel = isPending
+      ? {
+          title: 'Review Decision',
+          hint: 'Approve the registration, or reject it with a reason. The hospital then replies in this conversation.',
+          label: 'Rejection reason (required to reject)'
+        }
+      : isAwaitingReview
+      ? {
+          title: 'Hospital Replied · Your Decision',
+          hint: 'Approve, reject again with a reason, or request more information. The hospital cannot reply again until you act.',
+          label: 'Rejection reason or request for more information'
+        }
+      : {
+          title: 'Waiting for the Hospital',
+          hint: 'The hospital has been asked to reply. You can add to your request or approve; rejecting again is possible once the hospital replies.',
+          label: 'Comment to the hospital'
+        };
 
     if (h.approvalStatus === 'Approved') {
       return (
@@ -241,22 +266,16 @@ export const HospitalManagementPage = () => {
         <div className="pb-2 border-b border-slate-200 dark:border-slate-800">
           <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-cyan-500" />
-            {isPending ? 'Review Decision' : 'Continue the Conversation'}
+            {panel.title}
           </h4>
-          <p className="text-[11px] text-slate-400 mt-0.5">
-            {isPending
-              ? 'Approve the registration, or reject it with a reason. After a rejection you continue with comments; the registration cannot be rejected again.'
-              : 'This registration stays rejected until you approve it. Comment to ask for changes; the hospital replies and corrects its details here.'}
-          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">{panel.hint}</p>
         </div>
 
         <div>
-          <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 text-xs">
-            {isPending ? 'Rejection reason (required to reject)' : 'Comment to the hospital'}
-          </label>
+          <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 text-xs">{panel.label}</label>
           <textarea
             rows={2}
-            maxLength={isPending ? 500 : 1000}
+            maxLength={canReject ? 500 : 1000}
             value={draft.text}
             onChange={(e) => {
               setDraft(id, { text: e.target.value });
@@ -301,7 +320,7 @@ export const HospitalManagementPage = () => {
             <CheckCircle2 className="w-4 h-4" />
             {actionLoading[id] === 'approve' ? 'Approving...' : 'Approve Hospital'}
           </button>
-          {isPending ? (
+          {canReject && (
             <button
               type="button"
               onClick={() => handleReject(h)}
@@ -309,9 +328,10 @@ export const HospitalManagementPage = () => {
               className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
             >
               <XCircle className="w-4 h-4" />
-              {actionLoading[id] === 'reject' ? 'Rejecting...' : 'Reject Registration'}
+              {actionLoading[id] === 'reject' ? 'Rejecting...' : isAwaitingReview ? 'Reject Again' : 'Reject Registration'}
             </button>
-          ) : (
+          )}
+          {canComment && (
             <button
               type="button"
               onClick={() => handleComment(h)}
@@ -319,7 +339,7 @@ export const HospitalManagementPage = () => {
               className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs rounded-xl shadow-md flex items-center gap-2 disabled:opacity-50"
             >
               <Send className="w-4 h-4" />
-              {actionLoading[id] === 'comment' ? 'Sending...' : 'Send Comment'}
+              {actionLoading[id] === 'comment' ? 'Sending...' : isAwaitingReview ? 'Request More Information' : 'Send Comment'}
             </button>
           )}
         </div>

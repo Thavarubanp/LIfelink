@@ -9,24 +9,21 @@ using LifeLink.Entities;
 namespace LifeLink.Services.Hospitals
 {
     /// <summary>
-    /// A hospital registration is one continuous conversation: submitted, then (if rejected) admin comments and hospital
-    /// replies until the admin approves. The registration stays Rejected during the conversation; whether the admin must
-    /// act next is worked out from who wrote last.
+    /// A hospital registration is one continuous conversation with strict turns:
+    ///   Pending --admin reject--> Rejected --hospital reply--> AwaitingAdminReview
+    ///   AwaitingAdminReview --admin comment (more information)--> Rejected, --admin reject--> Rejected, --approve--> Approved
+    /// The hospital replies only while Rejected, so it can never send two replies without an admin action in between.
     /// </summary>
     public static class RegistrationThread
     {
-        /// <summary>Pending, or rejected with the hospital's reply as the latest entry. Translatable to SQL.</summary>
+        /// <summary>Registrations waiting for an admin decision. Translatable to SQL.</summary>
         public static readonly Expression<Func<Hospital, bool>> NeedsAdminReview = h =>
-            h.ApprovalStatus == ApprovalStatus.Pending ||
-            (h.ApprovalStatus == ApprovalStatus.Rejected &&
-             h.ApprovalHistories.OrderByDescending(e => e.Timestamp).Select(e => e.Status).FirstOrDefault() == RegistrationEntryType.HospitalReply);
+            h.ApprovalStatus == ApprovalStatus.Pending || h.ApprovalStatus == ApprovalStatus.AwaitingAdminReview;
 
         public static List<HospitalApprovalHistory> Ordered(Hospital hospital) =>
             (hospital.ApprovalHistories ?? new List<HospitalApprovalHistory>()).OrderBy(e => e.Timestamp).ToList();
 
-        public static bool IsAwaitingAdminReview(Hospital hospital) =>
-            hospital.ApprovalStatus == ApprovalStatus.Rejected &&
-            Ordered(hospital).LastOrDefault()?.Status == RegistrationEntryType.HospitalReply;
+        public static bool IsAwaitingAdminReview(Hospital hospital) => hospital.ApprovalStatus == ApprovalStatus.AwaitingAdminReview;
 
         public static bool IsAdminEntry(RegistrationEntryType type) =>
             type is RegistrationEntryType.Rejected or RegistrationEntryType.AdminComment or RegistrationEntryType.Approved;

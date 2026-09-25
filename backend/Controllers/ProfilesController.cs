@@ -78,7 +78,7 @@ namespace LifeLink.Controllers
                 PacketShelfLifeDays = hospital.PacketShelfLifeDays,
                 ExpiryAlertDays = hospital.ExpiryAlertDays,
                 CanViewInventory = canViewInventory,
-                CanEdit = await IsOwnHospitalAsync(id)
+                CanEdit = hospital.ApprovalStatus == ApprovalStatus.Approved && await IsOwnHospitalAsync(id)
             };
 
             // The authorized person's direct phone and email are shown to signed-in users only
@@ -336,7 +336,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Hospital staff edit their own hospital profile. Email, license number and registration number cannot be changed.
+        /// Hospital staff edit their own approved hospital's profile. Email, license number and registration number cannot be
+        /// changed. Before approval, details change only through replies in the registration conversation.
         /// </summary>
         [HttpPut("hospital/{id:guid}")]
         [Authorize(Roles = "HospitalStaff")]
@@ -348,6 +349,8 @@ namespace LifeLink.Controllers
             var hospital = await _context.Hospitals.FirstOrDefaultAsync(h => h.HospitalId == id);
             if (hospital == null)
                 return NotFound(ApiResponse<object>.Fail("Hospital profile not found."));
+            if (hospital.ApprovalStatus != ApprovalStatus.Approved)
+                return Conflict(ApiResponse<object>.Fail("Your registration is still under review. Send changes as a reply on your registration page."));
 
             hospital.Name = dto.Name.Trim();
             hospital.Address = dto.Address.Trim();
