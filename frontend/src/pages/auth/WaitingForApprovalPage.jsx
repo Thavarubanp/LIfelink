@@ -11,6 +11,7 @@ import {
   RotateCw,
   ArrowRight,
   CheckCircle2,
+  XCircle,
   AlertCircle,
   FileText,
   Upload,
