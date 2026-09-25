@@ -17,6 +17,12 @@ namespace LifeLink.DTOs.Auth
         /// Frontend uses this to force redirect to /doctor/change-password.
         /// </summary>
         public bool MustChangePassword { get; set; } = false;
+
+        /// <summary>
+        /// Hospital staff only: their hospital's registration status (Pending, Rejected, AwaitingAdminReview, Approved).
+        /// The frontend keeps staff of a hospital that is not Approved on the registration status page.
+        /// </summary>
+        public string? HospitalApprovalStatus { get; set; }
     }
 }
 

@@ -158,9 +158,22 @@ namespace LifeLink.Services.Auth
                     Roles = roles,
                     AccountStatus = user.AccountStatus.ToString(),
                     IsSuspended = isSuspended,
-                    MustChangePassword = mustChangePassword
+                    MustChangePassword = mustChangePassword,
+                    HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles)
                 }
             };
+        }
+
+        // Hospital staff accounts share their hospital's registered email address
+        private async Task<string?> HospitalApprovalStatusAsync(User user, List<string> roles)
+        {
+            if (!roles.Contains("HospitalStaff")) return null;
+            var email = user.Email.Trim().ToLower();
+            var status = await _context.Hospitals
+                .Where(h => h.Email != null && h.Email.ToLower() == email)
+                .Select(h => (ApprovalStatus?)h.ApprovalStatus)
+                .FirstOrDefaultAsync();
+            return status?.ToString();
         }
 
         public async Task<CurrentUserDto> GetCurrentUserAsync(Guid userId)
@@ -202,7 +215,8 @@ namespace LifeLink.Services.Auth
                 Roles = roles,
                 AccountStatus = user.AccountStatus.ToString(),
                 IsSuspended = isSuspended,
-                MustChangePassword = mustChangePassword
+                MustChangePassword = mustChangePassword,
+                HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles)
             };
         }
 

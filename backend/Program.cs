@@ -36,6 +36,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 // 1. Configure PostgreSQL / Neon Database Context
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+
+// Development-only: log which config source supplied DefaultConnection (password masked as length + hash prefix)
+if (builder.Environment.IsDevelopment())
+{
+    var winningProvider = ((IConfigurationRoot)builder.Configuration).Providers.Reverse()
+        .FirstOrDefault(p => p.TryGet("ConnectionStrings:DefaultConnection", out _));
+    var connectionSource = winningProvider is Microsoft.Extensions.Configuration.Json.JsonConfigurationProvider json
+        ? json.Source.FileProvider?.GetFileInfo(json.Source.Path!).PhysicalPath
+        : winningProvider?.ToString();
+    var csb = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+    var passwordHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(csb.Password ?? ""))).ToLowerInvariant()[..8];
+    Console.WriteLine($"[DB] Environment={builder.Environment.EnvironmentName}; ContentRoot={builder.Environment.ContentRootPath}");
+    Console.WriteLine($"[DB] DefaultConnection from: {connectionSource ?? "(not set)"}");
+    Console.WriteLine($"[DB] Host={csb.Host}; Database={csb.Database}; Username={csb.Username}; PasswordLength={csb.Password?.Length ?? 0}; PasswordSha256={passwordHash}");
+}
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(connectionString, npgsqlOptions =>
     {

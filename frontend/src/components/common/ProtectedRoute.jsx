@@ -1,7 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { getUserRoles, getDashboardPath } from '../../utils/roleUtils';
+import { getUserRoles, getDashboardPath, isUnapprovedHospitalStaff, HOSPITAL_WAITING_PATH } from '../../utils/roleUtils';
 import { Loader2 } from 'lucide-react';
 
 export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = false }) => {
@@ -24,6 +24,12 @@ export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = f
   // Check suspension status unless page explicitly allows suspended access
   if (user.isSuspended && !allowSuspended) {
     return <Navigate to="/governance/status" replace />;
+  }
+
+  // Hospital staff can use the app only once their hospital registration is approved; until then
+  // every protected route leads to the registration status page (status, admin conversation, replies)
+  if (isUnapprovedHospitalStaff(user)) {
+    return <Navigate to={HOSPITAL_WAITING_PATH} replace />;
   }
 
   // Doctor first-login enforcement: redirect to change-password page if flag is set.

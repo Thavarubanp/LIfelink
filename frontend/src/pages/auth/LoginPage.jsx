@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { hospitalApi } from '../../api';
 import { getApiErrorMessage } from '../../utils/errorUtils';
-import { getDashboardPath } from '../../utils/roleUtils';
+import { getDashboardPath, isUnapprovedHospitalStaff, HOSPITAL_WAITING_PATH } from '../../utils/roleUtils';
 import { Mail, Lock, Sparkles, AlertCircle, Loader2, Heart, Building2, ShieldCheck, Stethoscope, ArrowRight } from 'lucide-react';
 
 export const LoginPage = ({ initialRole }) => {
@@ -58,21 +57,14 @@ export const LoginPage = ({ initialRole }) => {
         return;
       }
 
-      // Default route based on primary JWT role
-      let targetDashboard = getDashboardPath(userObj);
-      if (!userRoles.includes('Admin') && (userRoles.includes('HospitalStaff') || activeTab === 'hospital')) {
-        // Hospitals that are not approved yet go to their registration page (status and review conversation)
-        try {
-          const myHospital = await hospitalApi.getMyHospital();
-          if (myHospital && (!myHospital.isVerified || myHospital.approvalStatus !== 'Approved')) {
-            navigate('/hospital/waiting-approval', { replace: true, state: { hospital: myHospital } });
-            return;
-          }
-          targetDashboard = '/hospital/dashboard';
-        } catch {
-          targetDashboard = '/hospital/dashboard';
-        }
+      // Hospital staff of a hospital that is not approved go only to their registration status page
+      if (isUnapprovedHospitalStaff(userObj)) {
+        navigate(HOSPITAL_WAITING_PATH, { replace: true });
+        return;
       }
+
+      // Default route based on primary JWT role
+      const targetDashboard = getDashboardPath(userObj);
 
       // Route to the originally attempted page, unless it was the generic root ("/"),
       // which would otherwise resolve before the role-aware dashboard is chosen

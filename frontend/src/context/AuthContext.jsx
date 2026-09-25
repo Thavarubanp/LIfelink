@@ -66,6 +66,13 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Reloads the signed-in user (for example after a hospital registration is approved)
+  const refreshUser = async () => {
+    const res = await authApi.getCurrentUser();
+    if (res?.success === true && res.data) setUser(res.data);
+    return res?.data;
+  };
+
   const hasRole = (roleName) => {
     if (!user || !user.roles) return false;
     if (Array.isArray(user.roles)) {
@@ -75,7 +82,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, login, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, logout, refreshUser, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

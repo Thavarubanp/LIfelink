@@ -62,7 +62,7 @@ const inputClass =
 export const WaitingForApprovalPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, refreshUser } = useAuth();
   const signedIn = !!user;
 
   const [hospital, setHospital] = useState(location.state?.hospital || null);
@@ -416,7 +416,14 @@ export const WaitingForApprovalPage = () => {
             {isApproved && signedIn ? (
               <button
                 type="button"
-                onClick={() => navigate('/hospital/dashboard', { replace: true })}
+                onClick={async () => {
+                  // The route guard reads the approval status from the signed-in user, so reload it first
+                  try {
+                    await refreshUser();
+                  } finally {
+                    navigate('/hospital/dashboard', { replace: true });
+                  }
+                }}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
               >
                 <span>Go to Hospital Dashboard</span>

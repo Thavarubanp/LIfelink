@@ -18,6 +18,7 @@ using LifeLink.Services.Hospitals;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -140,6 +141,39 @@ namespace LifeLink.Tests
 
             await s.Admin.ApproveHospitalAsync(id, s.AdminId);
             await Assert.ThrowsAsync<ConflictException>(() => s.Hospitals.ReplyToRegistrationAsync(id, Reply()));
+        }
+
+        // ---------- Signed-in user carries the hospital's registration status (drives frontend routing) ----------
+
+        [Fact]
+        public async Task Signed_In_Hospital_Staff_Carry_Their_Registration_Status_Until_Approval()
+        {
+            var s = await SeedAsync();
+            var registration = Registration("staff@h.org");
+            registration.Password = "Passw0rd!";
+            var hospitalId = (await s.Hospitals.CreateHospitalAsync(registration)).HospitalId;
+
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Jwt:Key"] = "LifeLink_Super_Secret_Jwt_Signing_Key_2026_For_Development_Only_Must_Be_Long!",
+                ["Jwt:Issuer"] = "LifeLinkAPI", ["Jwt:Audience"] = "LifeLinkApp", ["Jwt:ExpiryMinutes"] = "120"
+            }).Build();
+            var auth = new AuthService(s.Db, new PasswordHasherService(), new JwtService(config), new PasswordResetService(s.Db), new Mock<IEmailService>().Object);
+
+            var login = await auth.LoginAsync(new LifeLink.DTOs.Auth.LoginRequestDto { Email = "staff@h.org", Password = "Passw0rd!" });
+            Assert.Equal("Pending", login.User.HospitalApprovalStatus);
+            var staffId = login.User.UserId;
+
+            await s.Admin.RejectHospitalAsync(hospitalId, s.AdminId, new RejectHospitalDto { Reason = "License expired." });
+            Assert.Equal("Rejected", (await auth.GetCurrentUserAsync(staffId)).HospitalApprovalStatus);
+
+            await s.Hospitals.ReplyToRegistrationAsync(hospitalId, Reply());
+            Assert.Equal("AwaitingAdminReview", (await auth.GetCurrentUserAsync(staffId)).HospitalApprovalStatus);
+
+            await s.Admin.ApproveHospitalAsync(hospitalId, s.AdminId);
+            Assert.Equal("Approved", (await auth.GetCurrentUserAsync(staffId)).HospitalApprovalStatus);
+
+            Assert.Null((await auth.GetCurrentUserAsync(s.AdminId)).HospitalApprovalStatus); // only hospital staff carry it
         }
 
         // ---------- Turn taking: the hospital never acts twice without an admin action in between ----------
