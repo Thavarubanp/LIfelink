@@ -8,9 +8,12 @@ import {
   XCircle,
   Building2,
   Calendar,
-  MessageSquare,
-  Paperclip
+  MessageSquare
 } from 'lucide-react';
+import AttachmentLink from '../common/AttachmentLink';
+
+// Complainants' copies carry no admin email (only `fromAdmin`); admins' copies name the admin
+const adminLabel = (log) => (log.adminEmail ? `Admin (${log.adminEmail})` : 'LifeLink Admin');
 
 export const buildChronologicalTimeline = (complaint) => {
   if (!complaint) return [];
@@ -38,15 +41,16 @@ export const buildChronologicalTimeline = (complaint) => {
 
       // Replies (status unchanged): admin <-> complaint creator messages, optionally with an attachment
       if (log.isReply) {
-        const fromAdmin = !!log.adminId;
+        const fromAdmin = log.fromAdmin ?? !!log.adminId;
         events.push({
           id: `audit-${log.auditId || Math.random()}`,
           date: new Date(log.createdAt),
           title: fromAdmin ? 'Admin Reply' : 'Creator Reply',
           type: 'reply',
-          actor: fromAdmin ? `Admin (${log.adminEmail || 'LifeLink'})` : complaint.userEmail || 'Complaint Owner',
+          actor: fromAdmin ? adminLabel(log) : complaint.userEmail || 'Complaint Owner',
           role: fromAdmin ? 'Admin' : 'User',
           notes: log.notes,
+          canHaveFile: true,
           attachmentUrl: log.attachmentUrl,
           attachmentName: log.attachmentName
         });
@@ -59,10 +63,11 @@ export const buildChronologicalTimeline = (complaint) => {
       const isResolved = log.newStatus === 'RESOLVED';
       const isRejected = log.newStatus === 'REJECTED';
 
+      const byAdmin = log.fromAdmin ?? !!log.adminEmail;
       let title = `Status Update: ${log.newStatus}`;
       let type = 'status';
-      let actor = log.adminEmail ? `Admin (${log.adminEmail})` : 'System';
-      let role = log.adminEmail ? 'Admin' : 'System';
+      let actor = byAdmin ? adminLabel(log) : 'System';
+      let role = byAdmin ? 'Admin' : 'System';
 
       if (isCancellation) {
         title = 'Complaint Cancelled by Owner';
@@ -78,7 +83,7 @@ export const buildChronologicalTimeline = (complaint) => {
       } else if (isResolved) {
         title = 'Marked as Solved';
         type = 'resolved';
-        if (!log.adminEmail) {
+        if (!byAdmin) {
           actor = complaint.userEmail || 'Complaint Owner';
           role = 'User';
         }
@@ -255,15 +260,7 @@ export const ComplaintActivityTimeline = ({ complaint }) => {
               </p>
             )}
 
-            {event.attachmentUrl && (
-              <a
-                href={event.attachmentUrl}
-                download={event.attachmentName || 'attachment'}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
-              >
-                <Paperclip className="w-3 h-3" /> {event.attachmentName || 'Attachment'}
-              </a>
-            )}
+            {event.canHaveFile && <AttachmentLink url={event.attachmentUrl} name={event.attachmentName} />}
           </div>
         </div>
       ))}

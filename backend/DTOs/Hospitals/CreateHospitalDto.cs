@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using LifeLink.Common;
 
 namespace LifeLink.DTOs.Hospitals
 {
@@ -14,7 +15,8 @@ namespace LifeLink.DTOs.Hospitals
         [StringLength(500)]
         public string Address { get; set; } = string.Empty;
 
-        [StringLength(50)]
+        [Required(ErrorMessage = "Hospital contact number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Hospital contact number must be exactly 10 digits.")]
         public string ContactNumber { get; set; } = string.Empty;
 
         [EmailAddress]
@@ -26,12 +28,27 @@ namespace LifeLink.DTOs.Hospitals
 
         public string? RegistrationNumber { get; set; }
         public string? City { get; set; }
+
+        [Required(ErrorMessage = "Authorized person name is required.")]
+        [StringLength(200, ErrorMessage = "Authorized person name cannot exceed 200 characters.")]
         public string? ContactPersonName { get; set; }
+
+        [Required(ErrorMessage = "Authorized person phone number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Authorized person phone number must be exactly 10 digits.")]
         public string? ContactPersonPhone { get; set; }
+
         public string? ContactPersonEmail { get; set; }
+
+        [MaxLength(AttachmentRules.MaxDataUrlLength, ErrorMessage = "Each document cannot exceed 2 MB.")]
         public string? LicenseDocumentUrl { get; set; }
+
+        [StringLength(255)]
         public string? LicenseDocumentName { get; set; }
+
+        [MaxLength(AttachmentRules.MaxDataUrlLength, ErrorMessage = "Each document cannot exceed 2 MB.")]
         public string? AccreditationDocumentUrl { get; set; }
+
+        [StringLength(255)]
         public string? AccreditationDocumentName { get; set; }
     }
 }

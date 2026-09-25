@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { hospitalApi } from '../../api';
 import { getApiErrorMessage, getApiFieldErrors } from '../../utils/errorUtils';
+import { readFileAsAttachment } from '../../utils/fileUtils';
 import {
   Building2,
   ShieldCheck,
@@ -72,6 +73,8 @@ export const RegisterHospitalPage = () => {
   const isPasswordValid = hasMinLen && hasUpper && hasSpecial;
 
   const isAddressValid = formData.address.trim().length > 0;
+  const isContactPersonNameValid = formData.contactPersonName.trim().length > 0;
+  const isContactPersonPhoneValid = /^\d{10}$/.test(formData.contactPersonPhone.trim());
 
   const isFormValid =
     isNameValid &&
@@ -79,7 +82,9 @@ export const RegisterHospitalPage = () => {
     isContactNumberValid &&
     isEmailValid &&
     isPasswordValid &&
-    isAddressValid;
+    isAddressValid &&
+    isContactPersonNameValid &&
+    isContactPersonPhoneValid;
 
   const getFieldBorderClass = (fieldName, isValid) => {
     const value = formData[fieldName];
@@ -103,10 +108,10 @@ export const RegisterHospitalPage = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    if (name === 'contactNumber') {
-      // Allow numbers only, exactly max 10 digits
+    if (name === 'contactNumber' || name === 'contactPersonPhone') {
+      // Phone numbers: digits only, at most 10
       const digitsOnly = value.replace(/\D/g, '').slice(0, 10);
-      setFormData((prev) => ({ ...prev, contactNumber: digitsOnly }));
+      setFormData((prev) => ({ ...prev, [name]: digitsOnly }));
     } else {
       // Automatically convert PHSRC registration number to uppercase
       const finalValue = name === 'registrationNumber' && !isGovHospital ? value.toUpperCase() : value;
@@ -131,18 +136,19 @@ export const RegisterHospitalPage = () => {
     }
   };
 
-  const handleFileUpload = (e, fieldPrefix) => {
+  const handleFileUpload = async (e, fieldPrefix) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormData((prev) => ({
-        ...prev,
-        [`${fieldPrefix}Url`]: reader.result,
-        [`${fieldPrefix}Name`]: file.name
-      }));
-    };
-    reader.readAsDataURL(file);
+    try {
+      const picked = await readFileAsAttachment(file);
+      setFormData((prev) => ({ ...prev, [`${fieldPrefix}Url`]: picked.url, [`${fieldPrefix}Name`]: picked.name }));
+      setFieldErrors((prev) => ({ ...prev, [`${fieldPrefix}Url`]: null }));
+    } catch (err) {
+      // Empty or oversized files are refused and never sent
+      setFormData((prev) => ({ ...prev, [`${fieldPrefix}Url`]: '', [`${fieldPrefix}Name`]: '' }));
+      setFieldErrors((prev) => ({ ...prev, [`${fieldPrefix}Url`]: err.message }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -164,8 +170,8 @@ export const RegisterHospitalPage = () => {
         contactNumber: formData.contactNumber.trim(),
         address: formData.address.trim(),
         city: formData.city.trim() || undefined,
-        contactPersonName: formData.contactPersonName.trim() || undefined,
-        contactPersonPhone: formData.contactPersonPhone.trim() || undefined,
+        contactPersonName: formData.contactPersonName.trim(),
+        contactPersonPhone: formData.contactPersonPhone.trim(),
         contactPersonEmail: formData.contactPersonEmail.trim() || undefined,
         licenseDocumentUrl: formData.licenseDocumentUrl || undefined,
         licenseDocumentName: formData.licenseDocumentName || undefined,
@@ -326,7 +332,7 @@ export const RegisterHospitalPage = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-slate-300 font-semibold mb-1.5 uppercase tracking-wider text-[11px]">
-                    Emergency Phone Contact *
+                    Hospital Contact Number *
                   </label>
                   <div className="relative">
                     <Phone className="w-4 h-4 text-slate-500 absolute left-3.5 top-3" />
@@ -473,36 +479,58 @@ export const RegisterHospitalPage = () => {
               {/* Contact Person Details */}
               <div className="p-3.5 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-3">
                 <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-cyan-400" /> Authorized Contact Person Details
+                  <User className="w-3.5 h-3.5 text-cyan-400" /> Authorized Person Details
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-slate-400 text-[10px] uppercase font-semibold mb-1">
-                      Contact Person Name
+                      Authorized Person Name *
                     </label>
                     <input
                       type="text"
                       name="contactPersonName"
-                      maxLength={100}
+                      required
+                      maxLength={200}
                       value={formData.contactPersonName}
                       onChange={handleChange}
                       placeholder="e.g. Dr. K. Silva / Administrator"
-                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 text-xs"
+                      className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-slate-500 focus:outline-none text-xs ${getFieldBorderClass(
+                        'contactPersonName',
+                        isContactPersonNameValid
+                      )}`}
                     />
+                    {fieldErrors.contactPersonName && (
+                      <span className="text-[11px] text-red-400 mt-1 block font-medium">{fieldErrors.contactPersonName}</span>
+                    )}
                   </div>
                   <div>
                     <label className="block text-slate-400 text-[10px] uppercase font-semibold mb-1">
-                      Contact Person Direct Phone
+                      Authorized Person Phone Number *
                     </label>
                     <input
                       type="tel"
                       name="contactPersonPhone"
-                      maxLength={20}
+                      required
+                      inputMode="numeric"
+                      maxLength={10}
                       value={formData.contactPersonPhone}
                       onChange={handleChange}
                       placeholder="e.g. 0771234567"
-                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700/80 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 text-xs"
+                      className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-slate-500 focus:outline-none text-xs ${getFieldBorderClass(
+                        'contactPersonPhone',
+                        isContactPersonPhoneValid
+                      )}`}
                     />
+                    <p
+                      className={`text-[11px] mt-1 ${
+                        formData.contactPersonPhone && !isContactPersonPhoneValid ? 'text-red-400 font-medium' : 'text-slate-400'
+                      }`}
+                    >
+                      Phone number must contain exactly 10 digits.
+                    </p>
+                    {fieldErrors.contactPersonPhone && (
+                      <span className="text-[11px] text-red-400 mt-1 block font-medium">{fieldErrors.contactPersonPhone}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -535,6 +563,9 @@ export const RegisterHospitalPage = () => {
                         </span>
                       </label>
                     </div>
+                    {fieldErrors.licenseDocumentUrl && (
+                      <span className="text-[11px] text-red-400 mt-1 block font-medium">{fieldErrors.licenseDocumentUrl}</span>
+                    )}
                   </div>
 
                   <div>
@@ -559,6 +590,9 @@ export const RegisterHospitalPage = () => {
                         </span>
                       </label>
                     </div>
+                    {fieldErrors.accreditationDocumentUrl && (
+                      <span className="text-[11px] text-red-400 mt-1 block font-medium">{fieldErrors.accreditationDocumentUrl}</span>
+                    )}
                   </div>
                 </div>
               </div>

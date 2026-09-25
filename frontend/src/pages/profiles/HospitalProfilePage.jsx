@@ -13,22 +13,27 @@ import {
   Droplet,
   AlertCircle,
   Loader2,
-  Pencil
+  Pencil,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
+import hospitalApi from '../../api/hospitalApi';
 import EditProfileModal from '../../components/common/EditProfileModal';
+import AttachmentLink from '../../components/common/AttachmentLink';
+import RegistrationThread from '../../components/hospital/RegistrationThread';
+import { DocumentPreviewModal } from '../../components/common/DocumentPreviewModal';
 
 // Email, license number and registration number are not editable
 const HOSPITAL_EDIT_FIELDS = [
   { name: 'name', label: 'Hospital Name', fullWidth: true },
   { name: 'address', label: 'Address', fullWidth: true },
   { name: 'city', label: 'City' },
-  { name: 'contactNumber', label: 'Contact Number', type: 'tel', placeholder: '10 digits' },
-  { name: 'contactPersonName', label: 'Contact Person Name' },
-  { name: 'contactPersonPhone', label: 'Contact Person Phone', type: 'tel', placeholder: '10 digits' },
-  { name: 'contactPersonEmail', label: 'Contact Person Email', type: 'email', fullWidth: true },
+  { name: 'contactNumber', label: 'Hospital Contact Number', type: 'tel', placeholder: '10 digits', required: true, pattern: '\\d{10}', patternTitle: 'Exactly 10 digits' },
+  { name: 'contactPersonName', label: 'Authorized Person Name', required: true },
+  { name: 'contactPersonPhone', label: 'Authorized Person Phone Number', type: 'tel', placeholder: '10 digits', required: true, pattern: '\\d{10}', patternTitle: 'Exactly 10 digits' },
+  { name: 'contactPersonEmail', label: 'Authorized Person Email', type: 'email', fullWidth: true },
   { name: 'packetShelfLifeDays', label: 'Blood packet shelf life (21-35 days)', type: 'number' },
   { name: 'expiryAlertDays', label: 'Expiry alert window (days)', type: 'number' }
 ];
@@ -42,6 +47,11 @@ export const HospitalProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  const [registration, setRegistration] = useState(null); // documents + registration conversation (own hospital or admin)
+  const [previewDoc, setPreviewDoc] = useState(null);
+
+  const currentRoles = Array.isArray(currentUser?.roles) ? currentUser.roles : [currentUser?.roles];
+  const isAdmin = currentRoles.includes('Admin');
 
   const handleSave = async (values) => {
     const updated = await profileApi.updateHospitalProfile(profile.hospitalId, {
@@ -72,6 +82,16 @@ export const HospitalProfilePage = () => {
       fetchProfile();
     }
   }, [id]);
+
+  // The registration record (documents and conversation) is visible to the hospital's own staff and to admins
+  const canEdit = !!profile?.canEdit;
+  const canSeeRegistration = !!profile && (canEdit || isAdmin);
+  useEffect(() => {
+    if (!canSeeRegistration) return;
+    const request = canEdit ? hospitalApi.getMyHospital() : hospitalApi.getHospitalById(profile.hospitalId);
+    request.then(setRegistration).catch(() => setRegistration(null));
+  }, [profile, canEdit, canSeeRegistration]);
+  const shownRegistration = canSeeRegistration ? registration : null;
 
   if (loading) {
     return (
@@ -152,7 +172,7 @@ export const HospitalProfilePage = () => {
           </div>
 
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800">
-            <span className="text-slate-400 text-[10px] uppercase font-semibold block">Emergency Hotline</span>
+            <span className="text-slate-400 text-[10px] uppercase font-semibold block">Hospital Contact Number</span>
             <div className="font-bold text-slate-900 dark:text-slate-100 mt-1 flex items-center gap-1.5 text-xs">
               <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{profile.contactNumber || 'N/A'}</span>
@@ -199,14 +219,14 @@ export const HospitalProfilePage = () => {
 
             <div className="space-y-3">
               <div>
-                <span className="text-slate-400 text-[11px] block">Primary Liaison / Administrator</span>
+                <span className="text-slate-400 text-[11px] block">Authorized Person</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200">
-                  {profile.contactPersonName || 'Hospital Desk'}
+                  {profile.contactPersonName || 'Not provided'}
                 </span>
               </div>
               {profile.contactPersonPhone && (
                 <div>
-                  <span className="text-slate-400 text-[11px] block">Direct Contact Phone</span>
+                  <span className="text-slate-400 text-[11px] block">Authorized Person Phone</span>
                   <span className="font-medium text-slate-800 dark:text-slate-200">{profile.contactPersonPhone}</span>
                 </div>
               )}
@@ -285,6 +305,20 @@ export const HospitalProfilePage = () => {
         )}
       </div>
 
+      {shownRegistration && (
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center gap-2">
+            <MessageSquare className="w-5 h-5 text-cyan-600" />
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Registration & Approval History</h3>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <AttachmentLink label="License" url={shownRegistration.licenseDocumentUrl} name={shownRegistration.licenseDocumentName} onPreview={setPreviewDoc} />
+            <AttachmentLink label="Accreditation" url={shownRegistration.accreditationDocumentUrl} name={shownRegistration.accreditationDocumentName} onPreview={setPreviewDoc} />
+          </div>
+          <RegistrationThread entries={shownRegistration.approvalHistory} onPreview={setPreviewDoc} />
+        </div>
+      )}
+
       {editing && (
         <EditProfileModal
           title="Edit Hospital Profile"
@@ -292,6 +326,16 @@ export const HospitalProfilePage = () => {
           initialValues={profile}
           onSave={handleSave}
           onClose={() => setEditing(false)}
+        />
+      )}
+
+      {previewDoc && (
+        <DocumentPreviewModal
+          isOpen={!!previewDoc}
+          onClose={() => setPreviewDoc(null)}
+          title={previewDoc.title || 'Document'}
+          documentUrl={previewDoc.url}
+          documentName={previewDoc.name}
         />
       )}
     </div>

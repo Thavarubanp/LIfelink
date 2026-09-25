@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Appeals;
 using LifeLink.DTOs.Complaints;
@@ -321,11 +322,8 @@ namespace LifeLink.Services.Appeals
             {
                 throw new InvalidOperationException("A message is required.");
             }
-            var hasAttachment = !string.IsNullOrWhiteSpace(attachmentUrl);
-            if (hasAttachment && !attachmentUrl!.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("Invalid attachment.");
-            }
+            AttachmentRules.EnsureValidIfPresent(attachmentUrl); // data URL with content, or no file
+            var hasAttachment = AttachmentRules.HasContent(attachmentUrl);
             return new AppealMessage
             {
                 MessageId = Guid.NewGuid(),
@@ -367,8 +365,8 @@ namespace LifeLink.Services.Appeals
                     FromAdmin = m.AdminId != null,
                     AdminEmail = m.Admin?.Email,
                     Message = m.Message,
-                    AttachmentUrl = m.AttachmentUrl,
-                    AttachmentName = m.AttachmentName,
+                    AttachmentUrl = AttachmentRules.HasContent(m.AttachmentUrl) ? m.AttachmentUrl : null,
+                    AttachmentName = AttachmentRules.HasContent(m.AttachmentUrl) ? m.AttachmentName : null,
                     CreatedAt = m.CreatedAt
                 }).ToList()
             };

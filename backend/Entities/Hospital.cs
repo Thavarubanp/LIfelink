@@ -39,6 +39,7 @@ namespace LifeLink.Entities
         public string? LicenseDocumentName { get; set; }
         public string? AccreditationDocumentUrl { get; set; }
         public string? AccreditationDocumentName { get; set; }
+        // Legacy fields of the retired resubmission workflow; no longer written (the registration conversation records replies)
         public DateTime? ResubmittedAt { get; set; }
         public string? UpdatedFields { get; set; }
 

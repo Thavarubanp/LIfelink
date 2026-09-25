@@ -217,7 +217,7 @@ namespace LifeLink.Services.Assistant
         private async Task<Dictionary<string, object?>> AdminAsync() => new()
         {
             ["role"] = "Admin",
-            ["pendingHospitalRegistrations"] = await _context.Hospitals.CountAsync(h => h.ApprovalStatus == ApprovalStatus.Pending || h.ApprovalStatus == ApprovalStatus.Resubmitted),
+            ["pendingHospitalRegistrations"] = await _context.Hospitals.CountAsync(LifeLink.Services.Hospitals.RegistrationThread.NeedsAdminReview),
             ["openComplaints"] = await _context.Complaints.CountAsync(c => c.Status == ComplaintStatus.OPEN || c.Status == ComplaintStatus.UNDER_REVIEW || c.Status == ComplaintStatus.AWAITING_INFORMATION),
             ["pendingAppeals"] = await _context.Appeals.CountAsync(a => a.Status == AppealStatus.PENDING)
         };

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Complaints;
 using LifeLink.DTOs.HospitalActivity;
@@ -249,11 +250,8 @@ namespace LifeLink.Services.Complaints
                 throw new InvalidOperationException("A reply message is required.");
             }
 
-            var hasAttachment = !string.IsNullOrWhiteSpace(dto.AttachmentUrl);
-            if (hasAttachment && !dto.AttachmentUrl!.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("Invalid attachment.");
-            }
+            AttachmentRules.EnsureValidIfPresent(dto.AttachmentUrl); // data URL with content, or no file
+            var hasAttachment = AttachmentRules.HasContent(dto.AttachmentUrl);
 
             var status = complaint.Status.ToString();
             await _context.ComplaintAuditLogs.AddAsync(new ComplaintAuditLog
@@ -346,12 +344,13 @@ namespace LifeLink.Services.Complaints
                     AuditId = a.AuditId,
                     ComplaintId = a.ComplaintId,
                     AdminId = a.AdminId,
+                    FromAdmin = a.AdminId != null,
                     AdminEmail = a.Admin?.Email,
                     PreviousStatus = a.PreviousStatus,
                     NewStatus = a.NewStatus,
                     Notes = a.Notes,
-                    AttachmentUrl = a.AttachmentUrl,
-                    AttachmentName = a.AttachmentName,
+                    AttachmentUrl = AttachmentRules.HasContent(a.AttachmentUrl) ? a.AttachmentUrl : null,
+                    AttachmentName = AttachmentRules.HasContent(a.AttachmentUrl) ? a.AttachmentName : null,
                     IsReply = IsReply(a),
                     CreatedAt = a.CreatedAt
                 }).ToList() ?? new List<ComplaintAuditLogDto>()

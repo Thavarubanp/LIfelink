@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Admin;
 using LifeLink.Entities;
+using LifeLink.Services.Hospitals;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Admin
@@ -34,8 +36,8 @@ namespace LifeLink.Services.Admin
                 c.Status == ComplaintStatus.UNDER_REVIEW ||
                 c.Status == ComplaintStatus.AWAITING_INFORMATION);
 
-            var pendingHospitalApprovals = await _context.Hospitals.CountAsync(h =>
-                h.ApprovalStatus == ApprovalStatus.Pending || !h.IsVerified);
+            // Registrations waiting for the admin: pending, or rejected with a hospital reply as the latest entry
+            var pendingHospitalApprovals = await _context.Hospitals.CountAsync(RegistrationThread.NeedsAdminReview);
 
             var pendingAppeals = await _context.Appeals.CountAsync(a => a.Status == AppealStatus.PENDING);
             var activeSuspendedUsers = await _context.Users.CountAsync(u => u.IsSuspended);
@@ -55,26 +57,28 @@ namespace LifeLink.Services.Admin
             };
         }
 
+        /// <summary>Registrations waiting for the admin: pending, or rejected with a hospital reply as the latest entry.</summary>
         public async Task<List<AdminHospitalResponseDto>> GetPendingHospitalsAsync()
         {
             var list = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .Where(h => h.ApprovalStatus == ApprovalStatus.Pending || h.ApprovalStatus == ApprovalStatus.Resubmitted || !h.IsVerified)
+                .Include(h => h.ApprovalHistories).ThenInclude(e => e.Admin)
+                .Where(RegistrationThread.NeedsAdminReview)
                 .OrderByDescending(h => h.UpdatedAt)
                 .ToListAsync();
 
             return list.Select(MapToHospitalDto).ToList();
         }
 
-        public async Task<AdminHospitalResponseDto> ApproveHospitalAsync(Guid hospitalId, Guid adminId)
+        /// <summary>Approves a pending or rejected registration. Approved registrations are read-only.</summary>
+        public async Task<AdminHospitalResponseDto> ApproveHospitalAsync(Guid hospitalId, Guid adminId, Guid? lastSeenEntryId = null)
         {
-            var hospital = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
-            if (hospital == null)
+            var hospital = await LoadHospitalWithConversationAsync(hospitalId);
+
+            if (hospital.ApprovalStatus == ApprovalStatus.Approved)
             {
-                throw new KeyNotFoundException($"Hospital with ID {hospitalId} was not found.");
+                throw new ConflictException("This hospital registration is already approved.");
             }
+            RegistrationThread.EnsureNoUnseenHospitalReply(hospital, lastSeenEntryId);
 
             hospital.ApprovalStatus = ApprovalStatus.Approved;
             hospital.IsVerified = true; // Automatic synchronization
@@ -88,9 +92,10 @@ namespace LifeLink.Services.Admin
             await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
             {
                 HospitalId = hospital.HospitalId,
-                Status = ApprovalStatus.Approved,
+                Status = RegistrationEntryType.Approved,
                 Timestamp = DateTime.UtcNow,
                 AdminId = adminId,
+                AdminName = await AdminEmailAsync(adminId),
                 Comments = "Hospital registration verified and approved."
             });
 
@@ -101,32 +106,41 @@ namespace LifeLink.Services.Admin
             return MapToHospitalDto(hospital);
         }
 
+        /// <summary>
+        /// Rejects a pending registration. The registration then stays Rejected, and the admin and hospital continue in
+        /// the same conversation (comments and replies) until the admin approves it; it cannot be rejected again.
+        /// </summary>
         public async Task<AdminHospitalResponseDto> RejectHospitalAsync(Guid hospitalId, Guid adminId, RejectHospitalDto dto)
         {
-            var hospital = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
-            if (hospital == null)
+            var hospital = await LoadHospitalWithConversationAsync(hospitalId);
+
+            if (hospital.ApprovalStatus != ApprovalStatus.Pending)
             {
-                throw new KeyNotFoundException($"Hospital with ID {hospitalId} was not found.");
+                throw new ConflictException(hospital.ApprovalStatus == ApprovalStatus.Approved
+                    ? "Approved registrations are read-only."
+                    : "This registration is already rejected. Add a comment to continue the conversation.");
             }
+            AttachmentRules.EnsureValidIfPresent(dto.ReportDocumentUrl);
+            var hasReport = AttachmentRules.HasContent(dto.ReportDocumentUrl);
+            var reportName = hasReport ? (string.IsNullOrWhiteSpace(dto.ReportDocumentName) ? "Review_Report" : dto.ReportDocumentName.Trim()) : null;
 
             hospital.ApprovalStatus = ApprovalStatus.Rejected;
             hospital.IsVerified = false; // Automatic synchronization
             hospital.RejectionReason = dto.Reason;
-            hospital.RejectionReportName = dto.ReportDocumentName;
-            hospital.RejectionReportUrl = dto.ReportDocumentUrl;
+            hospital.RejectionReportName = reportName;
+            hospital.RejectionReportUrl = hasReport ? dto.ReportDocumentUrl : null;
             hospital.UpdatedAt = DateTime.UtcNow;
 
             await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
             {
                 HospitalId = hospital.HospitalId,
-                Status = ApprovalStatus.Rejected,
+                Status = RegistrationEntryType.Rejected,
                 Timestamp = DateTime.UtcNow,
                 AdminId = adminId,
+                AdminName = await AdminEmailAsync(adminId),
                 Comments = dto.Reason,
-                ReportDocumentName = dto.ReportDocumentName,
-                ReportDocumentUrl = dto.ReportDocumentUrl
+                ReportDocumentName = reportName,
+                ReportDocumentUrl = hasReport ? dto.ReportDocumentUrl : null
             });
 
             await _context.SaveChangesAsync();
@@ -135,6 +149,56 @@ namespace LifeLink.Services.Admin
 
             return MapToHospitalDto(hospital);
         }
+
+        /// <summary>Admin comment in a rejected registration's conversation. The status stays Rejected.</summary>
+        public async Task<AdminHospitalResponseDto> CommentOnHospitalRegistrationAsync(Guid hospitalId, Guid adminId, HospitalRegistrationCommentDto dto)
+        {
+            var hospital = await LoadHospitalWithConversationAsync(hospitalId);
+
+            if (hospital.ApprovalStatus != ApprovalStatus.Rejected)
+            {
+                throw new ConflictException(hospital.ApprovalStatus == ApprovalStatus.Approved
+                    ? "Approved registrations are read-only."
+                    : "Comments are available once the registration has been rejected. Approve or reject the pending registration first.");
+            }
+            RegistrationThread.EnsureNoUnseenHospitalReply(hospital, dto.LastSeenEntryId);
+
+            var message = dto.Message?.Trim() ?? string.Empty;
+            if (message.Length < 3)
+            {
+                throw new InvalidOperationException("A comment of at least 3 characters is required.");
+            }
+            AttachmentRules.EnsureValidIfPresent(dto.AttachmentUrl);
+            var hasAttachment = AttachmentRules.HasContent(dto.AttachmentUrl);
+
+            await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
+            {
+                HospitalId = hospital.HospitalId,
+                Status = RegistrationEntryType.AdminComment,
+                Timestamp = DateTime.UtcNow,
+                AdminId = adminId,
+                AdminName = await AdminEmailAsync(adminId),
+                Comments = message,
+                ReportDocumentName = hasAttachment ? (string.IsNullOrWhiteSpace(dto.AttachmentName) ? "attachment" : dto.AttachmentName.Trim()) : null,
+                ReportDocumentUrl = hasAttachment ? dto.AttachmentUrl : null
+            });
+            hospital.UpdatedAt = DateTime.UtcNow;
+
+            await _context.SaveChangesAsync();
+
+            await _notificationService.NotifyHospitalRegistrationCommentAsync(hospital, message);
+
+            return MapToHospitalDto(hospital);
+        }
+
+        private async Task<Hospital> LoadHospitalWithConversationAsync(Guid hospitalId) =>
+            await _context.Hospitals
+                .Include(h => h.ApprovalHistories).ThenInclude(e => e.Admin)
+                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId)
+            ?? throw new KeyNotFoundException($"Hospital with ID {hospitalId} was not found.");
+
+        private Task<string?> AdminEmailAsync(Guid adminId) =>
+            _context.Users.Where(u => u.UserId == adminId).Select(u => (string?)u.Email).FirstOrDefaultAsync();
 
         public async Task<AdminUserResponseDto> SuspendUserAsync(Guid userId, SuspendUserDto dto, Guid? actingAdminId = null)
         {
@@ -356,7 +420,7 @@ namespace LifeLink.Services.Admin
         public async Task<List<AdminHospitalResponseDto>> GetAllHospitalsAsync()
         {
             var hospitals = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
+                .Include(h => h.ApprovalHistories).ThenInclude(e => e.Admin)
                 .OrderByDescending(h => h.CreatedAt)
                 .ToListAsync();
 
@@ -365,6 +429,9 @@ namespace LifeLink.Services.Admin
 
         private static AdminHospitalResponseDto MapToHospitalDto(Hospital hospital)
         {
+            var hasLicense = AttachmentRules.HasContent(hospital.LicenseDocumentUrl);
+            var hasAccreditation = AttachmentRules.HasContent(hospital.AccreditationDocumentUrl);
+            var hasRejectionReport = AttachmentRules.HasContent(hospital.RejectionReportUrl);
             return new AdminHospitalResponseDto
             {
                 HospitalId = hospital.HospitalId,
@@ -375,41 +442,27 @@ namespace LifeLink.Services.Admin
                 Email = hospital.Email,
                 IsVerified = hospital.IsVerified,
                 ApprovalStatus = hospital.ApprovalStatus.ToString(),
+                AwaitingAdminReview = RegistrationThread.IsAwaitingAdminReview(hospital),
                 ApprovedAt = hospital.ApprovedAt,
                 ApprovedByAdminId = hospital.ApprovedByAdminId,
                 RejectionReason = hospital.RejectionReason,
-                RejectionReportUrl = hospital.RejectionReportUrl,
-                RejectionReportName = hospital.RejectionReportName,
+                RejectionReportUrl = hasRejectionReport ? hospital.RejectionReportUrl : null,
+                RejectionReportName = hasRejectionReport ? hospital.RejectionReportName : null,
                 RegistrationNumber = hospital.RegistrationNumber,
                 City = hospital.City,
                 ContactPersonName = hospital.ContactPersonName,
                 ContactPersonPhone = hospital.ContactPersonPhone,
                 ContactPersonEmail = hospital.ContactPersonEmail,
-                LicenseDocumentUrl = hospital.LicenseDocumentUrl,
-                LicenseDocumentName = hospital.LicenseDocumentName,
-                AccreditationDocumentUrl = hospital.AccreditationDocumentUrl,
-                AccreditationDocumentName = hospital.AccreditationDocumentName,
-                ResubmittedAt = hospital.ResubmittedAt,
-                UpdatedFields = hospital.UpdatedFields,
+                LicenseDocumentUrl = hasLicense ? hospital.LicenseDocumentUrl : null,
+                LicenseDocumentName = hasLicense ? hospital.LicenseDocumentName : null,
+                AccreditationDocumentUrl = hasAccreditation ? hospital.AccreditationDocumentUrl : null,
+                AccreditationDocumentName = hasAccreditation ? hospital.AccreditationDocumentName : null,
                 IsSuspended = hospital.IsSuspended,
                 SuspendedUntil = hospital.SuspendedUntil,
                 SuspensionReason = hospital.SuspensionReason,
                 CreatedAt = hospital.CreatedAt,
                 UpdatedAt = hospital.UpdatedAt,
-                ApprovalHistory = hospital.ApprovalHistories?
-                    .OrderBy(h => h.Timestamp)
-                    .Select(h => new LifeLink.DTOs.Hospitals.HospitalApprovalHistoryDto
-                    {
-                        Id = h.Id,
-                        Status = h.Status.ToString(),
-                        Timestamp = h.Timestamp,
-                        AdminId = h.AdminId,
-                        AdminName = h.AdminName ?? h.Admin?.FirstName,
-                        Comments = h.Comments,
-                        ReportDocumentName = h.ReportDocumentName,
-                        ReportDocumentUrl = h.ReportDocumentUrl,
-                        ChangedFields = h.ChangedFields
-                    }).ToList() ?? new List<LifeLink.DTOs.Hospitals.HospitalApprovalHistoryDto>()
+                ApprovalHistory = RegistrationThread.ToDtos(hospital, includeAdminIdentity: true)
             };
         }
 

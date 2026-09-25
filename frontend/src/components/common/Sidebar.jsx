@@ -42,7 +42,8 @@ export const Sidebar = () => {
         { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck },
         { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight },
         { label: 'Doctor Management', path: '/hospital/doctors', icon: Stethoscope },
-        { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
+        { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle },
+        { label: 'My Appeals', path: '/appeals/history', icon: FileText }
       ];
     }
 
@@ -60,7 +61,8 @@ export const Sidebar = () => {
       { label: 'Available Requests', path: '/donor/requests', icon: Droplet },
       { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
       { label: 'My Acceptances', path: '/donor/acceptances', icon: UserCheck },
-      { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle }
+      { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle },
+      { label: 'My Appeals', path: '/appeals/history', icon: FileText }
     ];
   };
 

@@ -11,8 +11,9 @@ namespace LifeLink.DTOs.Hospitals
         public string ContactNumber { get; set; } = string.Empty;
         public string Email { get; set; } = string.Empty;
         public bool IsVerified { get; set; }
-        public bool IsSuspended { get; set; } // suspended hospitals are hidden from operational hospital pickers
+        public bool IsSuspended { get; set; }
         public string ApprovalStatus { get; set; } = "Pending";
+        public bool AwaitingAdminReview { get; set; } // rejected, and the hospital replied last
         public string? RejectionReason { get; set; }
         public string? RejectionReportUrl { get; set; }
         public string? RejectionReportName { get; set; }
@@ -25,8 +26,6 @@ namespace LifeLink.DTOs.Hospitals
         public string? LicenseDocumentName { get; set; }
         public string? AccreditationDocumentUrl { get; set; }
         public string? AccreditationDocumentName { get; set; }
-        public DateTime? ResubmittedAt { get; set; }
-        public string? UpdatedFields { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public System.Collections.Generic.List<HospitalApprovalHistoryDto> ApprovalHistory { get; set; } = new();

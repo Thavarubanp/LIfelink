@@ -53,6 +53,10 @@ namespace LifeLink.Middleware
                     statusCode = (int)HttpStatusCode.NotFound;
                     message = knfe.Message;
                     break;
+                case LifeLink.Common.ConflictException ce:
+                    statusCode = (int)HttpStatusCode.Conflict;
+                    message = ce.Message;
+                    break;
                 case InvalidOperationException ioe:
                     statusCode = (int)HttpStatusCode.BadRequest;
                     message = ioe.Message;

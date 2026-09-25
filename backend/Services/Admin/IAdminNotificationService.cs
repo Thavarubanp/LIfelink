@@ -8,6 +8,7 @@ namespace LifeLink.Services.Admin
     {
         Task NotifyHospitalApprovedAsync(Hospital hospital);
         Task NotifyHospitalRejectedAsync(Hospital hospital, string reason);
+        Task NotifyHospitalRegistrationCommentAsync(Hospital hospital, string comment);
         Task NotifyUserSuspendedAsync(User user, string reason, DateTime? until);
         Task NotifyHospitalSuspendedAsync(Hospital hospital, string reason, DateTime? until);
         Task NotifyUserReinstatedAsync(User user);

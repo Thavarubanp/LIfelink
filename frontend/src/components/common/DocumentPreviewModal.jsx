@@ -1,14 +1,17 @@
 import React from 'react';
-import { X, ExternalLink, Download, FileText } from 'lucide-react';
+import { X, Download, FileText } from 'lucide-react';
+import { hasFileContent } from '../../utils/fileUtils';
 
 export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, documentName }) => {
   if (!isOpen) return null;
 
-  const isPdf = documentUrl?.startsWith('data:application/pdf') || documentUrl?.endsWith('.pdf');
-  const isImage = documentUrl?.startsWith('data:image/') || /\.(png|jpe?g|webp|gif)$/i.test(documentUrl || '');
+  // An empty (zero-byte) file is treated as no file: nothing to preview or download
+  const hasFile = hasFileContent(documentUrl);
+  const isPdf = hasFile && (documentUrl.startsWith('data:application/pdf') || documentUrl.endsWith('.pdf'));
+  const isImage = hasFile && (documentUrl.startsWith('data:image/') || /\.(png|jpe?g|webp|gif)$/i.test(documentUrl));
 
   const handleDownload = () => {
-    if (!documentUrl) return;
+    if (!hasFile) return;
     const a = document.createElement('a');
     a.href = documentUrl;
     a.download = documentName || 'Document';
@@ -25,12 +28,12 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-cyan-400" />
             <h3 className="font-bold text-slate-100 text-sm">{title || 'Document Preview'}</h3>
-            {documentName && (
+            {hasFile && documentName && (
               <span className="text-xs text-slate-400 font-mono">({documentName})</span>
             )}
           </div>
           <div className="flex items-center gap-2">
-            {documentUrl && (
+            {hasFile && (
               <button
                 type="button"
                 onClick={handleDownload}
@@ -65,7 +68,7 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
               alt={title}
               className="max-h-[550px] max-w-full rounded-lg object-contain border border-slate-800 shadow-md"
             />
-          ) : documentUrl ? (
+          ) : hasFile ? (
             <div className="text-center p-8 space-y-4">
               <FileText className="w-16 h-16 text-cyan-400/80 mx-auto animate-pulse" />
               <div>
@@ -83,7 +86,7 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
           ) : (
             <div className="text-center p-8 text-slate-400 text-xs">
               <FileText className="w-12 h-12 text-slate-600 mx-auto mb-2" />
-              <p>No document attachment provided.</p>
+              <p>No files uploaded</p>
             </div>
           )}
         </div>

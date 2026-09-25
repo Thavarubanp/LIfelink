@@ -30,6 +30,7 @@ namespace LifeLink.Controllers
         /// Submits an appeal or explanation regarding an account or hospital suspension.
         /// </summary>
         [HttpPost]
+        [Authorize] // suspended users and hospital staff sign in to appeal; appeals are never filed on someone else's behalf
         [ProducesResponseType(typeof(ApiResponse<AppealResponseDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
@@ -45,7 +46,7 @@ namespace LifeLink.Controllers
             try
             {
                 var result = await _appealService.SubmitAppealAsync(request, currentUserId);
-                return StatusCode(StatusCodes.Status201Created, ApiResponse<AppealResponseDto>.Ok(result, "Appeal submitted successfully."));
+                return StatusCode(StatusCodes.Status201Created, ApiResponse<AppealResponseDto>.Ok(AdminIdentityRedaction.ForAppellant(result), "Appeal submitted successfully."));
             }
             catch (ArgumentException ex)
             {
@@ -81,7 +82,7 @@ namespace LifeLink.Controllers
             try
             {
                 var result = await _appealService.AppellantReplyAsync(id, userId.Value, request);
-                return Ok(ApiResponse<AppealResponseDto>.Ok(result, "Reply sent."));
+                return Ok(ApiResponse<AppealResponseDto>.Ok(AdminIdentityRedaction.ForAppellant(result), "Reply sent."));
             }
             catch (KeyNotFoundException ex)
             {
@@ -112,7 +113,7 @@ namespace LifeLink.Controllers
             }
 
             var list = await _appealService.GetMyAppealsAsync(userId.Value);
-            return Ok(ApiResponse<List<AppealResponseDto>>.Ok(list, "User appeals retrieved successfully."));
+            return Ok(ApiResponse<List<AppealResponseDto>>.Ok(AdminIdentityRedaction.ForAppellant(list), "User appeals retrieved successfully."));
         }
     }
 }

@@ -200,8 +200,9 @@ namespace LifeLink.Data
                 entity.Property(h => h.Email).HasMaxLength(200);
                 entity.Property(h => h.ContactNumber).HasMaxLength(50);
                 entity.Property(h => h.IsVerified).IsRequired().HasDefaultValue(false);
+                // Stored as text; rows written by the retired "Resubmitted" status read as Rejected
                 entity.Property(h => h.ApprovalStatus)
-                      .HasConversion<string>()
+                      .HasConversion(v => v.ToString(), v => RegistrationStatusConversions.ParseApprovalStatus(v))
                       .HasMaxLength(50)
                       .IsRequired()
                       .HasDefaultValue(ApprovalStatus.Pending);
@@ -226,8 +227,9 @@ namespace LifeLink.Data
             modelBuilder.Entity<HospitalApprovalHistory>(entity =>
             {
                 entity.HasKey(h => h.Id);
+                // Entry type, stored as text; old "Pending"/"Resubmitted" rows read as Submitted/HospitalReply
                 entity.Property(h => h.Status)
-                      .HasConversion<string>()
+                      .HasConversion(v => v.ToString(), v => RegistrationStatusConversions.ParseEntryType(v))
                       .HasMaxLength(50);
                 entity.HasOne(h => h.Hospital)
                       .WithMany(h => h.ApprovalHistories)

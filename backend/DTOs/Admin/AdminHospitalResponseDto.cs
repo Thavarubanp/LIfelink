@@ -12,6 +12,7 @@ namespace LifeLink.DTOs.Admin
         public string Email { get; set; } = string.Empty;
         public bool IsVerified { get; set; }
         public string ApprovalStatus { get; set; } = string.Empty;
+        public bool AwaitingAdminReview { get; set; } // rejected, and the hospital replied last
         public DateTime? ApprovedAt { get; set; }
         public Guid? ApprovedByAdminId { get; set; }
         public string? RejectionReason { get; set; }
@@ -26,8 +27,6 @@ namespace LifeLink.DTOs.Admin
         public string? LicenseDocumentName { get; set; }
         public string? AccreditationDocumentUrl { get; set; }
         public string? AccreditationDocumentName { get; set; }
-        public DateTime? ResubmittedAt { get; set; }
-        public string? UpdatedFields { get; set; }
         public bool IsSuspended { get; set; }
         public DateTime? SuspendedUntil { get; set; }
         public string? SuspensionReason { get; set; }

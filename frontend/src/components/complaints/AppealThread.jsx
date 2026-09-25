@@ -1,5 +1,9 @@
 import React from 'react';
-import { MessageSquare, ShieldCheck, Calendar, Paperclip } from 'lucide-react';
+import { MessageSquare, ShieldCheck, Calendar } from 'lucide-react';
+import AttachmentLink from '../common/AttachmentLink';
+
+// Decisions are recorded as "[APPROVED] ..." admin messages and never carry a file
+const isDecision = (m) => m.fromAdmin && /^\[(APPROVED|REJECTED|CLOSED|PENDING)\]/.test(m.message || '');
 
 /**
  * Appeal conversation thread (appellant <-> admin), styled like the complaint activity timeline.
@@ -46,15 +50,7 @@ export const AppealThread = ({ appeal, appellantLabel = 'You' }) => {
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 whitespace-pre-line">
               {m.message}
             </p>
-            {m.attachmentUrl && (
-              <a
-                href={m.attachmentUrl}
-                download={m.attachmentName || 'attachment'}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors"
-              >
-                <Paperclip className="w-3 h-3" /> {m.attachmentName || 'Attachment'}
-              </a>
-            )}
+            {!isDecision(m) && <AttachmentLink url={m.attachmentUrl} name={m.attachmentName} />}
           </div>
         </div>
       ))}

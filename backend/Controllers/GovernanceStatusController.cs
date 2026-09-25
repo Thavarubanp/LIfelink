@@ -76,7 +76,7 @@ namespace LifeLink.Controllers
                 HasPendingAppeal = latestAppeal?.Status == nameof(AppealStatus.PENDING),
                 SuspendedEntity = isUserSuspended ? "User" : (isHospitalSuspended ? "Hospital" : "None"),
                 AllowedActions = new List<string> { "GET /api/governance/status", "POST /api/auth/logout" },
-                AllAppeals = allAppeals,
+                AllAppeals = AdminIdentityRedaction.ForAppellant(allAppeals),
                 IsReadOnlyViewer = isDoctor,
                 CanAppeal = !isDoctor && (isUserSuspended || isHospitalSuspended) && !hasOpenThread,
                 Profile = new GovernanceProfileSummaryDto

@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Hospitals;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
 
+using LifeLink.Services.Admin;
 using LifeLink.Services.Auth;
 using LifeLink.Services.Common;
 
@@ -16,11 +19,13 @@ namespace LifeLink.Services.Hospitals
     {
         private readonly AppDbContext _context;
         private readonly IPasswordHasherService _passwordHasher;
+        private readonly IAdminNotificationService? _notificationService;
 
-        public HospitalService(AppDbContext context, IPasswordHasherService? passwordHasher = null)
+        public HospitalService(AppDbContext context, IPasswordHasherService? passwordHasher = null, IAdminNotificationService? notificationService = null)
         {
             _context = context;
             _passwordHasher = passwordHasher ?? new PasswordHasherService();
+            _notificationService = notificationService;
         }
 
         public async Task<HospitalResponseDto> CreateHospitalAsync(CreateHospitalDto dto)
@@ -42,6 +47,9 @@ namespace LifeLink.Services.Hospitals
                 throw new InvalidOperationException(DuplicateRegistrationMessage);
             }
 
+            AttachmentRules.EnsureValidIfPresent(dto.LicenseDocumentUrl);
+            AttachmentRules.EnsureValidIfPresent(dto.AccreditationDocumentUrl);
+
             var hospital = new Hospital
             {
                 HospitalId = Guid.NewGuid(),
@@ -55,10 +63,10 @@ namespace LifeLink.Services.Hospitals
                 ContactPersonName = dto.ContactPersonName?.Trim(),
                 ContactPersonPhone = dto.ContactPersonPhone?.Trim(),
                 ContactPersonEmail = dto.ContactPersonEmail?.Trim(),
-                LicenseDocumentUrl = dto.LicenseDocumentUrl,
-                LicenseDocumentName = dto.LicenseDocumentName,
-                AccreditationDocumentUrl = dto.AccreditationDocumentUrl,
-                AccreditationDocumentName = dto.AccreditationDocumentName,
+                LicenseDocumentUrl = AttachmentRules.HasContent(dto.LicenseDocumentUrl) ? dto.LicenseDocumentUrl : null,
+                LicenseDocumentName = AttachmentRules.HasContent(dto.LicenseDocumentUrl) ? dto.LicenseDocumentName : null,
+                AccreditationDocumentUrl = AttachmentRules.HasContent(dto.AccreditationDocumentUrl) ? dto.AccreditationDocumentUrl : null,
+                AccreditationDocumentName = AttachmentRules.HasContent(dto.AccreditationDocumentUrl) ? dto.AccreditationDocumentName : null,
                 ApprovalStatus = ApprovalStatus.Pending,
                 IsVerified = false,
                 CreatedAt = DateTime.UtcNow,
@@ -67,11 +75,11 @@ namespace LifeLink.Services.Hospitals
 
             await _context.Hospitals.AddAsync(hospital);
 
-            // Log initial approval history
+            // First entry of the registration conversation
             await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
             {
                 HospitalId = hospital.HospitalId,
-                Status = ApprovalStatus.Pending,
+                Status = RegistrationEntryType.Submitted,
                 Timestamp = DateTime.UtcNow,
                 Comments = "Hospital registration submitted."
             });
@@ -112,22 +120,35 @@ namespace LifeLink.Services.Hospitals
 
             await SaveWithRegistrationNumberGuardAsync();
 
-            return MapToResponseDto(hospital);
+            return MapToResponseDto(hospital, includeAdminIdentity: false);
         }
 
-        public async Task<List<HospitalResponseDto>> GetHospitalsAsync(bool? isVerified = null)
+        public async Task<List<HospitalSummaryDto>> GetHospitalsAsync(bool? isVerified = null)
         {
-            var query = _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .AsQueryable();
+            var query = _context.Hospitals.AsNoTracking().AsQueryable();
 
             if (isVerified.HasValue)
             {
                 query = query.Where(h => h.IsVerified == isVerified.Value);
             }
 
-            var list = await query.OrderByDescending(h => h.UpdatedAt).ToListAsync();
-            return list.Select(MapToResponseDto).ToList();
+            return await query
+                .OrderByDescending(h => h.UpdatedAt)
+                .Select(h => new HospitalSummaryDto
+                {
+                    HospitalId = h.HospitalId,
+                    Name = h.Name,
+                    City = h.City,
+                    Address = h.Address,
+                    Email = h.Email,
+                    ContactNumber = h.ContactNumber,
+                    LicenseNumber = h.LicenseNumber,
+                    RegistrationNumber = h.RegistrationNumber,
+                    IsVerified = h.IsVerified,
+                    IsSuspended = h.IsSuspended,
+                    CreatedAt = h.CreatedAt
+                })
+                .ToListAsync();
         }
 
         public async Task<Guid?> GetHospitalIdByEmailAsync(string? email)
@@ -142,50 +163,61 @@ namespace LifeLink.Services.Hospitals
                 .FirstOrDefaultAsync();
         }
 
-        public async Task<HospitalResponseDto?> GetHospitalByIdAsync(Guid hospitalId)
+        public async Task<HospitalResponseDto?> GetHospitalByIdAsync(Guid hospitalId, bool includeAdminIdentity = false)
         {
-            var hospital = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
-            return hospital == null ? null : MapToResponseDto(hospital);
+            var hospital = await LoadWithConversationAsync(hospitalId);
+            return hospital == null ? null : MapToResponseDto(hospital, includeAdminIdentity);
         }
 
         public async Task<HospitalResponseDto?> VerifyHospitalAsync(Guid hospitalId, bool isVerified)
         {
-            var hospital = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
+            var hospital = await LoadWithConversationAsync(hospitalId);
             if (hospital == null) return null;
 
             hospital.IsVerified = isVerified;
             hospital.UpdatedAt = DateTime.UtcNow;
 
             await _context.SaveChangesAsync();
-            return MapToResponseDto(hospital);
+            return MapToResponseDto(hospital, includeAdminIdentity: true);
         }
 
-        public async Task<HospitalResponseDto> ResubmitHospitalAsync(Guid hospitalId, ResubmitHospitalDto dto)
+        /// <summary>
+        /// The hospital's reply in its rejected registration's conversation. Corrected details and documents apply to the
+        /// registration immediately; the registration stays Rejected until the admin approves it.
+        /// </summary>
+        public async Task<HospitalResponseDto> ReplyToRegistrationAsync(Guid hospitalId, HospitalRegistrationReplyDto dto)
         {
-            var hospital = await _context.Hospitals
-                .Include(h => h.ApprovalHistories)
-                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
+            var hospital = await LoadWithConversationAsync(hospitalId)
+                ?? throw new KeyNotFoundException($"Hospital with ID {hospitalId} not found.");
 
-            if (hospital == null)
+            if (hospital.ApprovalStatus != ApprovalStatus.Rejected)
             {
-                throw new KeyNotFoundException($"Hospital with ID {hospitalId} not found.");
+                throw new ConflictException(hospital.ApprovalStatus == ApprovalStatus.Approved
+                    ? "This registration is approved and read-only."
+                    : "You can reply once the administrator has reviewed your registration.");
             }
 
-            var changedFields = new List<string>();
-            if (!string.IsNullOrWhiteSpace(dto.Name) && dto.Name.Trim() != hospital.Name)
+            var message = dto.Message?.Trim() ?? string.Empty;
+            if (message.Length < 3)
             {
-                changedFields.Add("Hospital Name");
-                hospital.Name = dto.Name.Trim();
+                throw new InvalidOperationException("A reply message of at least 3 characters is required.");
             }
-            if (!string.IsNullOrWhiteSpace(dto.LicenseNumber) && dto.LicenseNumber.Trim() != hospital.LicenseNumber)
+            AttachmentRules.EnsureValidIfPresent(dto.AttachmentUrl);
+
+            var changes = new List<string>();
+
+            void Correct(string label, string? incoming, string? current, Action<string> apply)
             {
-                changedFields.Add("License Number");
-                hospital.LicenseNumber = dto.LicenseNumber.Trim();
+                if (string.IsNullOrWhiteSpace(incoming)) return; // blank keeps the current value
+                var value = incoming.Trim();
+                if (value == current) return;
+                changes.Add($"{label}: {Shown(current)} -> {value}");
+                apply(value);
             }
+
+            Correct("Hospital Name", dto.Name, hospital.Name, v => hospital.Name = v);
+            Correct("License Number", dto.LicenseNumber, hospital.LicenseNumber, v => hospital.LicenseNumber = v);
+
             var registrationNumber = NormalizeRegistrationNumber(dto.RegistrationNumber);
             if (registrationNumber != null && registrationNumber != hospital.RegistrationNumber)
             {
@@ -193,72 +225,88 @@ namespace LifeLink.Services.Hospitals
                 {
                     throw new InvalidOperationException(DuplicateRegistrationMessage);
                 }
-                changedFields.Add("Registration Number");
+                changes.Add($"Registration Number: {Shown(hospital.RegistrationNumber)} -> {registrationNumber}");
                 hospital.RegistrationNumber = registrationNumber;
             }
-            if (!string.IsNullOrWhiteSpace(dto.Address) && dto.Address.Trim() != hospital.Address)
-            {
-                changedFields.Add("Address");
-                hospital.Address = dto.Address.Trim();
-            }
-            if (!string.IsNullOrWhiteSpace(dto.ContactNumber) && dto.ContactNumber.Trim() != hospital.ContactNumber)
-            {
-                changedFields.Add("Contact Phone");
-                hospital.ContactNumber = dto.ContactNumber.Trim();
-            }
-            if (!string.IsNullOrWhiteSpace(dto.City) && dto.City.Trim() != hospital.City)
-            {
-                changedFields.Add("City / Region");
-                hospital.City = dto.City.Trim();
-            }
-            if (!string.IsNullOrWhiteSpace(dto.ContactPersonName) && dto.ContactPersonName.Trim() != hospital.ContactPersonName)
-            {
-                changedFields.Add("Contact Person Name");
-                hospital.ContactPersonName = dto.ContactPersonName.Trim();
-            }
-            if (!string.IsNullOrWhiteSpace(dto.ContactPersonPhone) && dto.ContactPersonPhone.Trim() != hospital.ContactPersonPhone)
-            {
-                changedFields.Add("Contact Person Phone");
-                hospital.ContactPersonPhone = dto.ContactPersonPhone.Trim();
-            }
-            if (!string.IsNullOrWhiteSpace(dto.ContactPersonEmail) && dto.ContactPersonEmail.Trim() != hospital.ContactPersonEmail)
-            {
-                changedFields.Add("Contact Person Email");
-                hospital.ContactPersonEmail = dto.ContactPersonEmail.Trim();
-            }
+
+            Correct("Address", dto.Address, hospital.Address, v => hospital.Address = v);
+            Correct("City / Region", dto.City, hospital.City, v => hospital.City = v);
+            Correct("Hospital Contact Number", dto.ContactNumber, hospital.ContactNumber, v => hospital.ContactNumber = v);
+            Correct("Authorized Person Name", dto.ContactPersonName, hospital.ContactPersonName, v => hospital.ContactPersonName = v);
+            Correct("Authorized Person Phone", dto.ContactPersonPhone, hospital.ContactPersonPhone, v => hospital.ContactPersonPhone = v);
+            Correct("Authorized Person Email", dto.ContactPersonEmail, hospital.ContactPersonEmail, v => hospital.ContactPersonEmail = v);
+
+            // Documents: only a new file is checked and recorded; an unchanged document is not re-validated
             if (!string.IsNullOrWhiteSpace(dto.LicenseDocumentUrl) && dto.LicenseDocumentUrl != hospital.LicenseDocumentUrl)
             {
-                changedFields.Add("License Document");
+                AttachmentRules.EnsureValidIfPresent(dto.LicenseDocumentUrl);
+                var fileName = string.IsNullOrWhiteSpace(dto.LicenseDocumentName) ? "License_Document" : dto.LicenseDocumentName.Trim();
+                changes.Add($"License Document: {ShownFile(hospital.LicenseDocumentUrl, hospital.LicenseDocumentName)} -> {fileName}");
                 hospital.LicenseDocumentUrl = dto.LicenseDocumentUrl;
-                hospital.LicenseDocumentName = dto.LicenseDocumentName ?? "License_Document";
+                hospital.LicenseDocumentName = fileName;
             }
             if (!string.IsNullOrWhiteSpace(dto.AccreditationDocumentUrl) && dto.AccreditationDocumentUrl != hospital.AccreditationDocumentUrl)
             {
-                changedFields.Add("Accreditation Document");
+                AttachmentRules.EnsureValidIfPresent(dto.AccreditationDocumentUrl);
+                var fileName = string.IsNullOrWhiteSpace(dto.AccreditationDocumentName) ? "Accreditation_Document" : dto.AccreditationDocumentName.Trim();
+                changes.Add($"Accreditation Document: {ShownFile(hospital.AccreditationDocumentUrl, hospital.AccreditationDocumentName)} -> {fileName}");
                 hospital.AccreditationDocumentUrl = dto.AccreditationDocumentUrl;
-                hospital.AccreditationDocumentName = dto.AccreditationDocumentName ?? "Accreditation_Document";
+                hospital.AccreditationDocumentName = fileName;
             }
 
-            hospital.ApprovalStatus = ApprovalStatus.Resubmitted;
-            hospital.ResubmittedAt = DateTime.UtcNow;
-            hospital.UpdatedAt = DateTime.UtcNow;
-            hospital.UpdatedFields = changedFields.Count > 0 ? string.Join(", ", changedFields) : "Registration Details Updated";
+            // The corrected registration must still meet the registration rules
+            if (string.IsNullOrWhiteSpace(hospital.ContactPersonName))
+            {
+                throw new InvalidOperationException("Authorized person name is required.");
+            }
+            if (!IsTenDigits(hospital.ContactPersonPhone))
+            {
+                throw new InvalidOperationException("Authorized person phone number must be exactly 10 digits.");
+            }
+            if (!IsTenDigits(hospital.ContactNumber))
+            {
+                throw new InvalidOperationException("Hospital contact number must be exactly 10 digits.");
+            }
 
-            var history = new HospitalApprovalHistory
+            var hasAttachment = AttachmentRules.HasContent(dto.AttachmentUrl);
+            var now = DateTime.UtcNow;
+            await _context.HospitalApprovalHistories.AddAsync(new HospitalApprovalHistory
             {
                 HospitalId = hospital.HospitalId,
-                Status = ApprovalStatus.Resubmitted,
-                Timestamp = DateTime.UtcNow,
-                Comments = !string.IsNullOrWhiteSpace(dto.Comments) ? dto.Comments : "Application updated and resubmitted for admin review.",
-                ChangedFields = hospital.UpdatedFields
-            };
-            await _context.HospitalApprovalHistories.AddAsync(history);
+                Status = RegistrationEntryType.HospitalReply,
+                Timestamp = now,
+                Comments = message,
+                ChangedFields = changes.Count > 0 ? string.Join("\n", changes) : null,
+                ReportDocumentUrl = hasAttachment ? dto.AttachmentUrl : null,
+                ReportDocumentName = hasAttachment ? (string.IsNullOrWhiteSpace(dto.AttachmentName) ? "attachment" : dto.AttachmentName.Trim()) : null
+            });
+            hospital.UpdatedAt = now;
 
             await SaveWithRegistrationNumberGuardAsync();
-            return MapToResponseDto(hospital);
+
+            if (_notificationService != null)
+            {
+                await _notificationService.NotifyAdminAsync(
+                    "Hospital Registration Reply",
+                    $"{hospital.Name} replied to its registration review{(changes.Count > 0 ? " with corrections" : string.Empty)}.");
+            }
+
+            return MapToResponseDto(hospital, includeAdminIdentity: false);
         }
 
         private const string DuplicateRegistrationMessage = "A hospital with this registration number already exists.";
+
+        private Task<Hospital?> LoadWithConversationAsync(Guid hospitalId) =>
+            _context.Hospitals
+                .Include(h => h.ApprovalHistories).ThenInclude(e => e.Admin)
+                .FirstOrDefaultAsync(h => h.HospitalId == hospitalId);
+
+        private static bool IsTenDigits(string? value) => value != null && Regex.IsMatch(value, @"^\d{10}$");
+
+        private static string Shown(string? value) => string.IsNullOrWhiteSpace(value) ? "(empty)" : value;
+
+        private static string ShownFile(string? url, string? name) =>
+            AttachmentRules.HasContent(url) ? (string.IsNullOrWhiteSpace(name) ? "previous file" : name) : "no file";
 
         /// <summary>Registration numbers are stored trimmed + upper-cased; blank becomes null (no NOT NULL constraint).</summary>
         private static string? NormalizeRegistrationNumber(string? raw)
@@ -287,8 +335,11 @@ namespace LifeLink.Services.Hospitals
             }
         }
 
-        private static HospitalResponseDto MapToResponseDto(Hospital hospital)
+        private static HospitalResponseDto MapToResponseDto(Hospital hospital, bool includeAdminIdentity)
         {
+            var hasLicense = AttachmentRules.HasContent(hospital.LicenseDocumentUrl);
+            var hasAccreditation = AttachmentRules.HasContent(hospital.AccreditationDocumentUrl);
+            var hasRejectionReport = AttachmentRules.HasContent(hospital.RejectionReportUrl);
             return new HospitalResponseDto
             {
                 HospitalId = hospital.HospitalId,
@@ -300,36 +351,22 @@ namespace LifeLink.Services.Hospitals
                 IsVerified = hospital.IsVerified,
                 IsSuspended = hospital.IsSuspended,
                 ApprovalStatus = hospital.ApprovalStatus.ToString(),
+                AwaitingAdminReview = RegistrationThread.IsAwaitingAdminReview(hospital),
                 RejectionReason = hospital.RejectionReason,
-                RejectionReportUrl = hospital.RejectionReportUrl,
-                RejectionReportName = hospital.RejectionReportName,
+                RejectionReportUrl = hasRejectionReport ? hospital.RejectionReportUrl : null,
+                RejectionReportName = hasRejectionReport ? hospital.RejectionReportName : null,
                 RegistrationNumber = hospital.RegistrationNumber,
                 City = hospital.City,
                 ContactPersonName = hospital.ContactPersonName,
                 ContactPersonPhone = hospital.ContactPersonPhone,
                 ContactPersonEmail = hospital.ContactPersonEmail,
-                LicenseDocumentUrl = hospital.LicenseDocumentUrl,
-                LicenseDocumentName = hospital.LicenseDocumentName,
-                AccreditationDocumentUrl = hospital.AccreditationDocumentUrl,
-                AccreditationDocumentName = hospital.AccreditationDocumentName,
-                ResubmittedAt = hospital.ResubmittedAt,
-                UpdatedFields = hospital.UpdatedFields,
+                LicenseDocumentUrl = hasLicense ? hospital.LicenseDocumentUrl : null,
+                LicenseDocumentName = hasLicense ? hospital.LicenseDocumentName : null,
+                AccreditationDocumentUrl = hasAccreditation ? hospital.AccreditationDocumentUrl : null,
+                AccreditationDocumentName = hasAccreditation ? hospital.AccreditationDocumentName : null,
                 CreatedAt = hospital.CreatedAt,
                 UpdatedAt = hospital.UpdatedAt,
-                ApprovalHistory = hospital.ApprovalHistories?
-                    .OrderBy(h => h.Timestamp)
-                    .Select(h => new HospitalApprovalHistoryDto
-                    {
-                        Id = h.Id,
-                        Status = h.Status.ToString(),
-                        Timestamp = h.Timestamp,
-                        AdminId = h.AdminId,
-                        AdminName = h.AdminName ?? h.Admin?.FirstName,
-                        Comments = h.Comments,
-                        ReportDocumentName = h.ReportDocumentName,
-                        ReportDocumentUrl = h.ReportDocumentUrl,
-                        ChangedFields = h.ChangedFields
-                    }).ToList() ?? new List<HospitalApprovalHistoryDto>()
+                ApprovalHistory = RegistrationThread.ToDtos(hospital, includeAdminIdentity)
             };
         }
     }

@@ -137,14 +137,16 @@ namespace LifeLink.DTOs.Profiles
         [StringLength(100, ErrorMessage = "City cannot exceed 100 characters.")]
         public string? City { get; set; }
 
-        [Required(ErrorMessage = "Contact number is required.")]
-        [RegularExpression(@"^\d{10}$", ErrorMessage = "Contact number must be exactly 10 digits.")]
+        [Required(ErrorMessage = "Hospital contact number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Hospital contact number must be exactly 10 digits.")]
         public string ContactNumber { get; set; } = string.Empty;
 
-        [StringLength(200, ErrorMessage = "Contact person name cannot exceed 200 characters.")]
+        [Required(ErrorMessage = "Authorized person name is required.")]
+        [StringLength(200, ErrorMessage = "Authorized person name cannot exceed 200 characters.")]
         public string? ContactPersonName { get; set; }
 
-        [RegularExpression(@"^\d{10}$", ErrorMessage = "Contact person phone must be exactly 10 digits.")]
+        [Required(ErrorMessage = "Authorized person phone number is required.")]
+        [RegularExpression(@"^\d{10}$", ErrorMessage = "Authorized person phone number must be exactly 10 digits.")]
         public string? ContactPersonPhone { get; set; }
 
         [EmailAddress(ErrorMessage = "Invalid contact person email address.")]

@@ -61,17 +61,14 @@ export const LoginPage = ({ initialRole }) => {
       // Default route based on primary JWT role
       let targetDashboard = getDashboardPath(userObj);
       if (!userRoles.includes('Admin') && (userRoles.includes('HospitalStaff') || activeTab === 'hospital')) {
-        // Check hospital approval & verification status
+        // Hospitals that are not approved yet go to their registration page (status and review conversation)
         try {
-          const hospitals = await hospitalApi.getHospitals();
-          const normEmail = email.trim().toLowerCase();
-          const match = Array.isArray(hospitals) && hospitals.find((h) => h.email?.toLowerCase() === normEmail);
-          if (match && (!match.isVerified || match.approvalStatus === 'Pending')) {
-            navigate('/hospital/waiting-approval', { replace: true, state: { hospital: match } });
+          const myHospital = await hospitalApi.getMyHospital();
+          if (myHospital && (!myHospital.isVerified || myHospital.approvalStatus !== 'Approved')) {
+            navigate('/hospital/waiting-approval', { replace: true, state: { hospital: myHospital } });
             return;
-          } else {
-            targetDashboard = '/hospital/dashboard';
           }
+          targetDashboard = '/hospital/dashboard';
         } catch {
           targetDashboard = '/hospital/dashboard';
         }

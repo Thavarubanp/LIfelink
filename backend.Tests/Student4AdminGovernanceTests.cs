@@ -147,14 +147,14 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Hospital_Rejection_With_Report_And_Resubmission_Workflow()
+        public async Task Hospital_Rejection_Then_Conversation_Until_Approval_Workflow()
         {
             // Arrange
             var context = GetInMemoryDbContext();
             var mockEmail = new Mock<IEmailService>();
             var notifService = new AdminNotificationService(context, mockEmail.Object, NullLogger<AdminNotificationService>.Instance);
             var adminService = new AdminService(context, notifService);
-            var hospitalService = new LifeLink.Services.Hospitals.HospitalService(context);
+            var hospitalService = new LifeLink.Services.Hospitals.HospitalService(context, null, notifService);
 
             var adminId = Guid.NewGuid();
             var hospital = new Hospital
@@ -164,6 +164,8 @@ namespace LifeLink.Tests
                 LicenseNumber = "PHSRC/PH/999",
                 Address = "Old Address",
                 ContactNumber = "0112223334",
+                ContactPersonName = "Dr. Perera",
+                ContactPersonPhone = "0771234567",
                 Email = "admin@apexhospital.org",
                 ApprovalStatus = ApprovalStatus.Pending,
                 IsVerified = false
@@ -171,7 +173,7 @@ namespace LifeLink.Tests
             await context.Hospitals.AddAsync(hospital);
             await context.SaveChangesAsync();
 
-            // Act 1: Admin rejects with report
+            // Act 1: Admin rejects the pending registration with a report
             var rejectDto = new RejectHospitalDto
             {
                 Reason = "Please re-upload valid 2026 accreditation certificate.",
@@ -180,35 +182,52 @@ namespace LifeLink.Tests
             };
             var rejectResult = await adminService.RejectHospitalAsync(hospital.HospitalId, adminId, rejectDto);
 
-            // Assert rejection
             Assert.Equal("Rejected", rejectResult.ApprovalStatus);
             Assert.Equal("Audit_Report.pdf", rejectResult.RejectionReportName);
             Assert.Equal("data:application/pdf;base64,dGVzdA==", rejectResult.RejectionReportUrl);
+            Assert.Equal("Audit_Report.pdf", rejectResult.ApprovalHistory.Last().AttachmentName);
 
-            // Act 2: Hospital resubmits with updated information
-            var resubmitDto = new LifeLink.DTOs.Hospitals.ResubmitHospitalDto
+            // A rejected registration cannot be rejected again
+            await Assert.ThrowsAsync<ConflictException>(() => adminService.RejectHospitalAsync(hospital.HospitalId, adminId, rejectDto));
+
+            // Act 2: Hospital replies in the same conversation with corrected details and a new certificate
+            var reply = await hospitalService.ReplyToRegistrationAsync(hospital.HospitalId, new LifeLink.DTOs.Hospitals.HospitalRegistrationReplyDto
             {
+                Message = "Attached renewed 2026 certificate and corrected facility address.",
                 Name = "Apex Hospital Colombo",
                 Address = "New Healthcare Blvd, Colombo",
                 City = "Colombo",
                 AccreditationDocumentName = "Accreditation_2026.pdf",
-                AccreditationDocumentUrl = "data:application/pdf;base64,bmV3",
-                Comments = "Attached renewed 2026 certificate and corrected facility address."
-            };
-            var resubmitResult = await hospitalService.ResubmitHospitalAsync(hospital.HospitalId, resubmitDto);
+                AccreditationDocumentUrl = "data:application/pdf;base64,bmV3"
+            });
 
-            // Assert resubmission
-            Assert.Equal("Resubmitted", resubmitResult.ApprovalStatus);
-            Assert.Equal("Apex Hospital Colombo", resubmitResult.Name);
-            Assert.Equal("Colombo", resubmitResult.City);
-            Assert.Contains("Hospital Name", resubmitResult.UpdatedFields!);
-            Assert.Contains("Address", resubmitResult.UpdatedFields!);
-            Assert.NotNull(resubmitResult.ResubmittedAt);
-            Assert.NotEmpty(resubmitResult.ApprovalHistory);
+            Assert.Equal("Rejected", reply.ApprovalStatus); // no Resubmitted status, no new version
+            Assert.True(reply.AwaitingAdminReview);
+            Assert.Equal("Apex Hospital Colombo", reply.Name);
+            Assert.Equal("Colombo", reply.City);
+            var replyEntry = reply.ApprovalHistory.Last();
+            Assert.Equal("HospitalReply", replyEntry.Type);
+            Assert.False(replyEntry.FromAdmin);
+            Assert.Contains("Hospital Name: Apex Hospital -> Apex Hospital Colombo", replyEntry.ChangedFields!);
+            Assert.Contains("Accreditation Document: no file -> Accreditation_2026.pdf", replyEntry.ChangedFields!);
 
-            // Verify queue includes resubmitted hospital
+            // The queue shows it as waiting for the admin
             var pendingQueue = await adminService.GetPendingHospitalsAsync();
-            Assert.Contains(pendingQueue, h => h.HospitalId == hospital.HospitalId && h.ApprovalStatus == "Resubmitted");
+            Assert.Contains(pendingQueue, h => h.HospitalId == hospital.HospitalId && h.ApprovalStatus == "Rejected" && h.AwaitingAdminReview);
+
+            // Act 3: Admin comments; the registration stays Rejected and the hospital is notified
+            var commented = await adminService.CommentOnHospitalRegistrationAsync(hospital.HospitalId, adminId,
+                new HospitalRegistrationCommentDto { Message = "Thanks. Please also confirm the authorized person's phone number.", LastSeenEntryId = replyEntry.Id });
+            Assert.Equal("Rejected", commented.ApprovalStatus);
+            Assert.False(commented.AwaitingAdminReview);
+            Assert.Equal("AdminComment", commented.ApprovalHistory.Last().Type);
+            Assert.True(await context.Notifications.AnyAsync(n => n.HospitalId == hospital.HospitalId && n.NotificationType == "HospitalRegistrationComment"));
+
+            // Act 4: Admin approves; the conversation ends and approval is not repeatable
+            var approved = await adminService.ApproveHospitalAsync(hospital.HospitalId, adminId, commented.ApprovalHistory.Last().Id);
+            Assert.Equal("Approved", approved.ApprovalStatus);
+            Assert.Equal(new[] { "Rejected", "HospitalReply", "AdminComment", "Approved" }, approved.ApprovalHistory.Select(e => e.Type).ToArray());
+            await Assert.ThrowsAsync<ConflictException>(() => adminService.ApproveHospitalAsync(hospital.HospitalId, adminId));
         }
 
         #endregion

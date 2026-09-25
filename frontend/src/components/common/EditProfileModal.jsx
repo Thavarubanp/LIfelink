@@ -4,7 +4,7 @@ import { getApiErrorMessage, getApiFieldErrors } from '../../utils/errorUtils';
 
 /**
  * Shared own-profile edit modal used by the User, Doctor and Hospital profile pages.
- * `fields`: [{ name, label, type?, options?, placeholder? }]; `initialValues`: current profile values.
+ * `fields`: [{ name, label, type?, options?, placeholder?, required? }]; `initialValues`: current profile values.
  * `onSave(values)` performs the API call; backend validation errors are shown inline.
  */
 export const EditProfileModal = ({ title, fields, initialValues, onSave, onClose }) => {
@@ -66,7 +66,7 @@ export const EditProfileModal = ({ title, fields, initialValues, onSave, onClose
           {fields.map((f) => (
             <div key={f.name} className={f.fullWidth ? 'sm:col-span-2' : ''}>
               <label htmlFor={`edit-${f.name}`} className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
-                {f.label}
+                {f.label}{f.required ? ' *' : ''}
               </label>
               {f.options ? (
                 <select
@@ -74,6 +74,7 @@ export const EditProfileModal = ({ title, fields, initialValues, onSave, onClose
                   name={f.name}
                   value={values[f.name]}
                   onChange={handleChange}
+                  required={!!f.required}
                   className={inputClass + (fieldErrors[f.name] ? 'border-red-400' : 'border-slate-200 dark:border-slate-700')}
                 >
                   <option value="">Not specified</option>
@@ -89,6 +90,9 @@ export const EditProfileModal = ({ title, fields, initialValues, onSave, onClose
                   value={values[f.name]}
                   onChange={handleChange}
                   placeholder={f.placeholder}
+                  required={!!f.required}
+                  pattern={f.pattern}
+                  title={f.patternTitle}
                   className={inputClass + (fieldErrors[f.name] ? 'border-red-400' : 'border-slate-200 dark:border-slate-700')}
                 />
               )}

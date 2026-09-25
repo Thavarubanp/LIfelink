@@ -11,13 +11,21 @@ export const adminApi = {
     return response.data;
   },
 
-  approveHospital: async (id) => {
-    const response = await client.put(`/Admin/hospitals/${id}/approve`);
+  // dto: { lastSeenEntryId } - refused (409) if the hospital replied after that conversation entry
+  approveHospital: async (id, dto = {}) => {
+    const response = await client.put(`/Admin/hospitals/${id}/approve`, dto);
     return response.data;
   },
 
+  // Pending registrations only; afterwards the admin continues with comments
   rejectHospital: async (id, dto) => {
     const response = await client.put(`/Admin/hospitals/${id}/reject`, dto);
+    return response.data;
+  },
+
+  // dto: { message, attachmentUrl?, attachmentName?, lastSeenEntryId }
+  commentOnHospitalRegistration: async (id, dto) => {
+    const response = await client.post(`/Admin/hospitals/${id}/comments`, dto);
     return response.data;
   },
 

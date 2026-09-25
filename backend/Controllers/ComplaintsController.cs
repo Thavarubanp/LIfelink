@@ -42,7 +42,7 @@ namespace LifeLink.Controllers
             try
             {
                 var result = await _complaintService.CreateComplaintAsync(userId, request.HospitalId, request);
-                return StatusCode(StatusCodes.Status201Created, ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint submitted successfully."));
+                return StatusCode(StatusCodes.Status201Created, ApiResponse<ComplaintResponseDto>.Ok(AdminIdentityRedaction.ForComplainant(result), "Complaint submitted successfully."));
             }
             catch (InvalidOperationException ex)
             {
@@ -71,7 +71,7 @@ namespace LifeLink.Controllers
             try
             {
                 var result = await _complaintService.CreatorReplyAsync(id, userId.Value, request);
-                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Reply sent."));
+                return Ok(ApiResponse<ComplaintResponseDto>.Ok(AdminIdentityRedaction.ForComplainant(result), "Reply sent."));
             }
             catch (KeyNotFoundException ex)
             {
@@ -103,7 +103,7 @@ namespace LifeLink.Controllers
             }
 
             var result = await _complaintService.GetMyComplaintsAsync(userId.Value);
-            return Ok(ApiResponse<System.Collections.Generic.List<ComplaintResponseDto>>.Ok(result, "User complaints retrieved successfully."));
+            return Ok(ApiResponse<System.Collections.Generic.List<ComplaintResponseDto>>.Ok(AdminIdentityRedaction.ForComplainant(result), "User complaints retrieved successfully."));
         }
 
         /// <summary>
@@ -126,7 +126,7 @@ namespace LifeLink.Controllers
             try
             {
                 var result = await _complaintService.SolveComplaintAsync(id, userId.Value, request?.Notes);
-                return Ok(ApiResponse<ComplaintResponseDto>.Ok(result, "Complaint has been marked as solved."));
+                return Ok(ApiResponse<ComplaintResponseDto>.Ok(AdminIdentityRedaction.ForComplainant(result), "Complaint has been marked as solved."));
             }
             catch (KeyNotFoundException ex)
             {

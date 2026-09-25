@@ -8,10 +8,10 @@ namespace LifeLink.Services.Hospitals
     public interface IHospitalService
     {
         Task<HospitalResponseDto> CreateHospitalAsync(CreateHospitalDto dto);
-        Task<List<HospitalResponseDto>> GetHospitalsAsync(bool? isVerified = null);
-        Task<HospitalResponseDto?> GetHospitalByIdAsync(Guid hospitalId);
+        Task<List<HospitalSummaryDto>> GetHospitalsAsync(bool? isVerified = null);
+        Task<HospitalResponseDto?> GetHospitalByIdAsync(Guid hospitalId, bool includeAdminIdentity = false);
         Task<Guid?> GetHospitalIdByEmailAsync(string? email);
         Task<HospitalResponseDto?> VerifyHospitalAsync(Guid hospitalId, bool isVerified);
-        Task<HospitalResponseDto> ResubmitHospitalAsync(Guid hospitalId, ResubmitHospitalDto dto);
+        Task<HospitalResponseDto> ReplyToRegistrationAsync(Guid hospitalId, HospitalRegistrationReplyDto dto);
     }
 }

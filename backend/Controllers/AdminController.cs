@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.DTOs.Admin;
 using LifeLink.DTOs.Appeals;
 using LifeLink.DTOs.Common;
@@ -14,6 +15,7 @@ using LifeLink.Services.HospitalActivity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace LifeLink.Controllers
 {
@@ -69,26 +71,34 @@ namespace LifeLink.Controllers
             return Ok(ApiResponse<List<AdminHospitalResponseDto>>.Ok(list, "Pending hospitals retrieved successfully."));
         }
 
+        /// <summary>Approves a pending or rejected registration (409 if already approved or a newer hospital reply exists).</summary>
         [HttpPut("hospitals/{id:guid}/approve")]
         [ProducesResponseType(typeof(ApiResponse<AdminHospitalResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
-        public async Task<IActionResult> ApproveHospital(Guid id)
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> ApproveHospital(Guid id, [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ApproveHospitalDto? dto)
         {
             try
             {
-                var result = await _adminService.ApproveHospitalAsync(id, GetAdminId());
+                var result = await _adminService.ApproveHospitalAsync(id, GetAdminId(), dto?.LastSeenEntryId);
                 return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Hospital approved successfully."));
             }
             catch (KeyNotFoundException ex)
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
             }
+            catch (ConflictException ex)
+            {
+                return Conflict(ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
+        /// <summary>Rejects a pending registration (409 once rejected or approved; continue with comments instead).</summary>
         [HttpPut("hospitals/{id:guid}/reject")]
         [ProducesResponseType(typeof(ApiResponse<AdminHospitalResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
         public async Task<IActionResult> RejectHospital(Guid id, [FromBody] RejectHospitalDto dto)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
@@ -101,6 +111,43 @@ namespace LifeLink.Controllers
             catch (KeyNotFoundException ex)
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (ConflictException ex)
+            {
+                return Conflict(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>Admin comment in a rejected registration's conversation; the registration stays Rejected.</summary>
+        [HttpPost("hospitals/{id:guid}/comments")]
+        [ProducesResponseType(typeof(ApiResponse<AdminHospitalResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> CommentOnHospitalRegistration(Guid id, [FromBody] HospitalRegistrationCommentDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            try
+            {
+                var result = await _adminService.CommentOnHospitalRegistrationAsync(id, GetAdminId(), dto);
+                return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Comment sent to the hospital."));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (ConflictException ex)
+            {
+                return Conflict(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
         }
 

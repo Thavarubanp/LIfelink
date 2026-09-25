@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { X, Loader2, Send, AlertCircle, MessageSquare, Paperclip } from 'lucide-react';
 import { getApiErrorMessage } from '../../utils/errorUtils';
-
-const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024; // 2 MB, enforced by the backend too
+import { readFileAsAttachment } from '../../utils/fileUtils';
 
 /**
  * Shared complaint reply modal (admin and complaint creator): message + optional file attachment.
@@ -14,18 +13,18 @@ export const ComplaintReplyModal = ({ complaint, onSubmit, onClose, title = 'Rep
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
-  const handleFile = (e) => {
+  // Empty files and files over 2 MB are refused (the backend enforces the same rules)
+  const handleFile = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      setError('Attachment cannot exceed 2 MB.');
-      e.target.value = '';
-      return;
+    try {
+      setAttachment(await readFileAsAttachment(file));
+      setError('');
+    } catch (err) {
+      setAttachment(null);
+      setError(err.message);
     }
-    const reader = new FileReader();
-    reader.onload = () => setAttachment({ url: reader.result, name: file.name });
-    reader.readAsDataURL(file);
-    setError('');
   };
 
   const handleSubmit = async (e) => {

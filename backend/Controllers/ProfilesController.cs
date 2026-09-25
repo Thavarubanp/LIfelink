@@ -81,6 +81,13 @@ namespace LifeLink.Controllers
                 CanEdit = await IsOwnHospitalAsync(id)
             };
 
+            // The authorized person's direct phone and email are shown to signed-in users only
+            if (!_currentUserService.IsAuthenticated)
+            {
+                dto.ContactPersonPhone = null;
+                dto.ContactPersonEmail = null;
+            }
+
             if (canViewInventory)
             {
                 dto.Inventory = await _context.BloodInventories

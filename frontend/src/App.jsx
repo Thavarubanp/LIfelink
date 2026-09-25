@@ -49,6 +49,7 @@ import AdminAppealsPage from './pages/admin/AdminAppealsPage';
 
 // Governance Page
 import SuspendedGovernancePage from './pages/governance/SuspendedGovernancePage';
+import MyAppealsPage from './pages/governance/MyAppealsPage';
 
 // Profile Pages
 import HospitalProfilePage from './pages/profiles/HospitalProfilePage';
@@ -167,6 +168,14 @@ export function App() {
                 }
               />
               <Route path="/complaints" element={<Navigate to="/donor/complaints" replace />} />
+              <Route
+                path="/appeals/history"
+                element={
+                  <ProtectedRoute allowedRoles={['User', 'HospitalStaff']}>
+                    <MyAppealsPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Doctor Module */}
               <Route

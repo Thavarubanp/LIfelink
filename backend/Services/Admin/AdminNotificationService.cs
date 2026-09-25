@@ -56,7 +56,7 @@ namespace LifeLink.Services.Admin
         public async Task NotifyHospitalRejectedAsync(Hospital hospital, string reason)
         {
             var title = "Hospital Registration Rejected";
-            var message = $"Your hospital registration was rejected. Reason: {reason}. Please contact support or resolve licensing discrepancies.";
+            var message = $"Your hospital registration was rejected. Reason: {reason}. Reply or send corrections from your registration status page.";
 
             var notification = new NotificationEntity
             {
@@ -71,6 +71,30 @@ namespace LifeLink.Services.Admin
             };
 
             await _context.Notifications.AddAsync(notification);
+            await _context.SaveChangesAsync();
+
+            if (!string.IsNullOrWhiteSpace(hospital.Email))
+            {
+                await _emailService.SendEmailAsync(hospital.Email, title, message);
+            }
+        }
+
+        public async Task NotifyHospitalRegistrationCommentAsync(Hospital hospital, string comment)
+        {
+            var title = "New Message About Your Hospital Registration";
+            var message = $"LifeLink administration commented on your registration: {comment} Reply or send corrections from your registration status page.";
+
+            await _context.Notifications.AddAsync(new NotificationEntity
+            {
+                NotificationId = Guid.NewGuid(),
+                HospitalId = hospital.HospitalId,
+                Title = title,
+                Message = message,
+                NotificationType = "HospitalRegistrationComment",
+                RecipientRole = "HospitalStaff",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
             await _context.SaveChangesAsync();
 
             if (!string.IsNullOrWhiteSpace(hospital.Email))

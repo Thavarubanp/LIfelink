@@ -1,217 +1,207 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { hospitalApi } from '../../api';
+import { getApiErrorMessage } from '../../utils/errorUtils';
+import { readFileAsAttachment } from '../../utils/fileUtils';
 import { DocumentPreviewModal } from '../../components/common/DocumentPreviewModal';
+import AttachmentLink from '../../components/common/AttachmentLink';
+import RegistrationThread from '../../components/hospital/RegistrationThread';
 import {
   Clock,
   ShieldCheck,
-  Building2,
   LogOut,
+  LogIn,
   RotateCw,
   ArrowRight,
   CheckCircle2,
   XCircle,
   AlertCircle,
-  FileText,
   Upload,
   Send,
-  Eye,
-  User,
-  Phone,
-  Mail,
-  MapPin,
-  Sparkles,
+  Paperclip,
+  MessageSquare,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
 
+const TEN_DIGITS = /^\d{10}$/;
+const PHONE_FIELDS = ['contactNumber', 'contactPersonPhone'];
+
+const correctionsFrom = (h) => ({
+  name: h?.name || '',
+  licenseNumber: h?.licenseNumber || '',
+  registrationNumber: h?.registrationNumber || '',
+  contactNumber: h?.contactNumber || '',
+  address: h?.address || '',
+  city: h?.city || '',
+  contactPersonName: h?.contactPersonName || '',
+  contactPersonPhone: h?.contactPersonPhone || '',
+  contactPersonEmail: h?.contactPersonEmail || ''
+});
+
+const CORRECTION_FIELDS = [
+  { name: 'name', label: 'Hospital Name' },
+  { name: 'licenseNumber', label: 'License Number / PHSRC Code', mono: true },
+  { name: 'registrationNumber', label: 'Registration / Facility Code', mono: true },
+  { name: 'contactNumber', label: 'Hospital Contact Number *', type: 'tel', placeholder: '10 digits' },
+  { name: 'city', label: 'City / District / Region' },
+  { name: 'contactPersonName', label: 'Authorized Person Name *' },
+  { name: 'contactPersonPhone', label: 'Authorized Person Phone Number *', type: 'tel', placeholder: '10 digits' },
+  { name: 'contactPersonEmail', label: 'Authorized Person Email', type: 'email' },
+  { name: 'address', label: 'Physical Hospital Address', wide: true }
+];
+
+const inputClass =
+  'w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 text-xs';
+
+/**
+ * The hospital's registration page: status, submitted details and documents, and the registration conversation
+ * with the administrator. While the registration is rejected, the hospital replies here and can correct its details.
+ */
 export const WaitingForApprovalPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const signedIn = !!user;
 
-  const [hospitalInfo, setHospitalInfo] = useState(location.state?.hospital || null);
-  const [checking, setChecking] = useState(false);
-  const [checkError, setCheckError] = useState('');
-  const [isApproved, setIsApproved] = useState(false);
-
-  // Edit / Resubmission Form State
-  const [showEditForm, setShowEditForm] = useState(true);
-  const [resubmitLoading, setResubmitLoading] = useState(false);
-  const [resubmitSuccess, setResubmitSuccess] = useState(false);
-  const [resubmitError, setResubmitError] = useState('');
-
-  const [formData, setFormData] = useState({
-    name: '',
-    licenseNumber: '',
-    registrationNumber: '',
-    contactNumber: '',
-    address: '',
-    city: '',
-    contactPersonName: '',
-    contactPersonPhone: '',
-    contactPersonEmail: '',
-    licenseDocumentUrl: '',
-    licenseDocumentName: '',
-    accreditationDocumentUrl: '',
-    accreditationDocumentName: '',
-    comments: ''
-  });
-
-  // Document modal preview state
+  const [hospital, setHospital] = useState(location.state?.hospital || null);
+  const [loading, setLoading] = useState(signedIn);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [previewDoc, setPreviewDoc] = useState(null);
 
-  // Populate form data whenever hospitalInfo updates
-  useEffect(() => {
-    if (hospitalInfo) {
-      setFormData({
-        name: hospitalInfo.name || '',
-        licenseNumber: hospitalInfo.licenseNumber || '',
-        registrationNumber: hospitalInfo.registrationNumber || hospitalInfo.licenseNumber || '',
-        contactNumber: hospitalInfo.contactNumber || '',
-        address: hospitalInfo.address || '',
-        city: hospitalInfo.city || '',
-        contactPersonName: hospitalInfo.contactPersonName || '',
-        contactPersonPhone: hospitalInfo.contactPersonPhone || '',
-        contactPersonEmail: hospitalInfo.contactPersonEmail || '',
-        licenseDocumentUrl: hospitalInfo.licenseDocumentUrl || '',
-        licenseDocumentName: hospitalInfo.licenseDocumentName || '',
-        accreditationDocumentUrl: hospitalInfo.accreditationDocumentUrl || '',
-        accreditationDocumentName: hospitalInfo.accreditationDocumentName || '',
-        comments: ''
-      });
+  // Reply form
+  const [message, setMessage] = useState('');
+  const [attachment, setAttachment] = useState(null);
+  const [showCorrections, setShowCorrections] = useState(false);
+  const [corrections, setCorrections] = useState(correctionsFrom(null));
+  const [documents, setDocuments] = useState({ license: null, accreditation: null });
+  const [formError, setFormError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
 
-      if (hospitalInfo.isVerified || hospitalInfo.approvalStatus === 'Approved') {
-        setIsApproved(true);
-      }
-    }
-  }, [hospitalInfo]);
-
-  // Fetch latest hospital status
-  const fetchHospitalStatus = async () => {
+  const loadHospital = useCallback(async () => {
+    if (!signedIn) return;
+    setLoadError('');
     try {
-      const hospitals = await hospitalApi.getHospitals();
-      if (Array.isArray(hospitals)) {
-        const userEmail = user?.email?.toLowerCase();
-        const match = hospitals.find(
-          (h) => h.email?.toLowerCase() === userEmail || h.name?.toLowerCase() === hospitalInfo?.name?.toLowerCase()
-        );
-        if (match) {
-          setHospitalInfo(match);
-          if (match.isVerified || match.approvalStatus === 'Approved') {
-            setIsApproved(true);
-          }
-        }
-      }
+      setHospital(await hospitalApi.getMyHospital());
     } catch (err) {
-      console.error('Error fetching hospital status:', err);
-    }
-  };
-
-  useEffect(() => {
-    fetchHospitalStatus();
-  }, [user]);
-
-  const handleCheckStatus = async () => {
-    setChecking(true);
-    setCheckError('');
-    try {
-      const hospitals = await hospitalApi.getHospitals();
-      if (Array.isArray(hospitals)) {
-        const userEmail = user?.email?.toLowerCase() || hospitalInfo?.email?.toLowerCase();
-        const match = hospitals.find(
-          (h) => h.email?.toLowerCase() === userEmail || h.name?.toLowerCase() === hospitalInfo?.name?.toLowerCase()
-        );
-
-        if (match) {
-          setHospitalInfo(match);
-          if (match.isVerified || match.approvalStatus === 'Approved') {
-            setIsApproved(true);
-            setTimeout(() => {
-              navigate('/hospital/dashboard', { replace: true });
-            }, 1200);
-            return;
-          }
-          setCheckError(`Status updated: Currently ${match.approvalStatus}.`);
-          return;
-        }
-      }
-      setCheckError('Status checked: Waiting for administrator review.');
-    } catch (err) {
-      setCheckError('Unable to refresh status. Please try again.');
+      setLoadError(getApiErrorMessage(err));
     } finally {
-      setChecking(false);
+      setLoading(false);
     }
+  }, [signedIn]);
+
+  useEffect(() => {
+    loadHospital();
+  }, [loadHospital]);
+
+  useEffect(() => {
+    setCorrections(correctionsFrom(hospital));
+  }, [hospital]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadHospital();
+    setRefreshing(false);
   };
 
-  const handleInputChange = (e) => {
+  const handleCorrectionChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const clean = PHONE_FIELDS.includes(name) ? value.replace(/\D/g, '').slice(0, 10) : value;
+    setCorrections((prev) => ({ ...prev, [name]: clean }));
   };
 
-  const handleFileUpload = (e, fieldPrefix) => {
+  const handleFile = async (e, target) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setFormData((prev) => ({
-        ...prev,
-        [`${fieldPrefix}Url`]: reader.result,
-        [`${fieldPrefix}Name`]: file.name
-      }));
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleResubmit = async (e) => {
-    e.preventDefault();
-    if (!hospitalInfo?.hospitalId) return;
-
-    setResubmitLoading(true);
-    setResubmitError('');
-    setResubmitSuccess(false);
-
     try {
-      const payload = {
-        name: formData.name.trim(),
-        licenseNumber: formData.licenseNumber.trim(),
-        registrationNumber: formData.registrationNumber.trim(),
-        contactNumber: formData.contactNumber.trim(),
-        address: formData.address.trim(),
-        city: formData.city.trim() || undefined,
-        contactPersonName: formData.contactPersonName.trim() || undefined,
-        contactPersonPhone: formData.contactPersonPhone.trim() || undefined,
-        contactPersonEmail: formData.contactPersonEmail.trim() || undefined,
-        licenseDocumentUrl: formData.licenseDocumentUrl || undefined,
-        licenseDocumentName: formData.licenseDocumentName || undefined,
-        accreditationDocumentUrl: formData.accreditationDocumentUrl || undefined,
-        accreditationDocumentName: formData.accreditationDocumentName || undefined,
-        comments: formData.comments.trim() || undefined
-      };
-
-      const updated = await hospitalApi.resubmitHospital(hospitalInfo.hospitalId, payload);
-      setHospitalInfo(updated);
-      setResubmitSuccess(true);
-      setShowEditForm(false);
+      const picked = await readFileAsAttachment(file);
+      if (target === 'attachment') {
+        setAttachment(picked);
+      } else {
+        setDocuments((prev) => ({ ...prev, [target]: picked }));
+      }
+      setFormError('');
     } catch (err) {
-      console.error('Failed to resubmit hospital application:', err);
-      setResubmitError(err.response?.data?.message || 'Failed to resubmit application. Please try again.');
-    } finally {
-      setResubmitLoading(false);
+      setFormError(err.message);
     }
   };
 
-  const isRejected = hospitalInfo?.approvalStatus === 'Rejected';
-  const isResubmitted = hospitalInfo?.approvalStatus === 'Resubmitted';
+  const correctionError = () => {
+    if (!showCorrections) return '';
+    if (!corrections.contactPersonName.trim()) return 'Authorized person name is required.';
+    if (!TEN_DIGITS.test(corrections.contactPersonPhone.trim())) return 'Authorized person phone number must be exactly 10 digits.';
+    if (!TEN_DIGITS.test(corrections.contactNumber.trim())) return 'Hospital contact number must be exactly 10 digits.';
+    return '';
+  };
+
+  const handleReply = async (e) => {
+    e.preventDefault();
+    if (message.trim().length < 3) {
+      setFormError('Please write a message of at least 3 characters.');
+      return;
+    }
+    const invalid = correctionError();
+    if (invalid) {
+      setFormError(invalid);
+      return;
+    }
+
+    setSending(true);
+    setFormError('');
+    setSent(false);
+    try {
+      const payload = { message: message.trim(), attachmentUrl: attachment?.url, attachmentName: attachment?.name };
+      if (showCorrections) {
+        // Unchanged values are ignored by the server; only real corrections are recorded in the conversation
+        Object.entries(corrections).forEach(([key, value]) => {
+          payload[key] = value.trim() || undefined;
+        });
+        if (documents.license) {
+          payload.licenseDocumentUrl = documents.license.url;
+          payload.licenseDocumentName = documents.license.name;
+        }
+        if (documents.accreditation) {
+          payload.accreditationDocumentUrl = documents.accreditation.url;
+          payload.accreditationDocumentName = documents.accreditation.name;
+        }
+      }
+      setHospital(await hospitalApi.replyToRegistration(hospital.hospitalId, payload));
+      setMessage('');
+      setAttachment(null);
+      setDocuments({ license: null, accreditation: null });
+      setShowCorrections(false);
+      setSent(true);
+    } catch (err) {
+      setFormError(getApiErrorMessage(err));
+      if (err.response?.status === 409) loadHospital();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const status = hospital?.approvalStatus;
+  const isApproved = status === 'Approved';
+  const isRejected = status === 'Rejected';
+  const awaitingAdmin = isRejected && hospital?.awaitingAdminReview;
+
+  const statusBadge = isApproved
+    ? { text: 'Registration Approved', icon: CheckCircle2, className: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' }
+    : awaitingAdmin
+    ? { text: 'Rejected · Your Reply Is With the Administrator', icon: Clock, className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' }
+    : isRejected
+    ? { text: 'Rejected · Please Reply or Send Corrections', icon: XCircle, className: 'bg-rose-500/20 text-rose-400 border-rose-500/30' }
+    : { text: 'Pending Administrator Review', icon: Clock, className: 'bg-amber-500/20 text-amber-400 border-amber-500/30' };
+  const StatusIcon = statusBadge.icon;
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden text-slate-100">
-      {/* Background Glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[750px] bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-2xl w-full relative z-10 space-y-6">
-        {/* Top Brand Nav */}
         <div className="text-center">
           <Link to="/" className="inline-flex items-center gap-2 mb-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-cyan-500 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-cyan-600/30">
@@ -222,437 +212,231 @@ export const WaitingForApprovalPage = () => {
             </span>
           </Link>
           <h1 className="text-xl font-bold text-slate-100">Healthcare Facility Portal</h1>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Official Hospital Onboarding & Verification Status
-          </p>
+          <p className="text-xs text-slate-400 mt-0.5">Hospital registration status and review conversation</p>
         </div>
 
-        {/* Main Status Container */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl backdrop-blur-md space-y-6">
-          {/* Status Header */}
-          <div className="text-center space-y-3">
-            {isApproved ? (
-              <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10 animate-bounce">
-                <CheckCircle2 className="w-8 h-8" />
-              </div>
-            ) : isRejected ? (
-              <div className="w-16 h-16 rounded-2xl bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/10">
-                <XCircle className="w-8 h-8" />
-              </div>
-            ) : isResubmitted ? (
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center mx-auto shadow-lg shadow-blue-500/10">
-                <Sparkles className="w-8 h-8 animate-pulse" />
-              </div>
-            ) : (
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/10">
-                <Clock className="w-8 h-8 animate-pulse" />
-              </div>
-            )}
-
-            <div>
-              {isApproved ? (
-                <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
-                  Status: Registration Approved & Active
-                </span>
-              ) : isRejected ? (
-                <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 uppercase tracking-wider">
-                  Status: Registration Rejected / Revision Required
-                </span>
-              ) : isResubmitted ? (
-                <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30 uppercase tracking-wider">
-                  Status: Resubmission Under Review
-                </span>
-              ) : (
-                <span className="px-3.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
-                  Status: Pending Administrator Review
-                </span>
-              )}
-
-              <h2 className="text-xl font-bold text-white mt-3">
-                {hospitalInfo?.name || 'Healthcare Facility'}
-              </h2>
-              <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400 mt-1">
-                <span>Email: <strong className="text-slate-300">{hospitalInfo?.email || user?.email}</strong></span>
-                {hospitalInfo?.licenseNumber && (
-                  <span>
-                    License: <strong className="font-mono text-cyan-400">{hospitalInfo.licenseNumber}</strong>
-                  </span>
-                )}
-              </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6">
+          {loading ? (
+            <div className="py-10 flex flex-col items-center gap-2 text-xs text-slate-400">
+              <RotateCw className="w-6 h-6 animate-spin text-cyan-500" />
+              Loading your registration...
             </div>
-          </div>
-
-          {/* REJECTION CARD: Reason & Attached Report */}
-          {isRejected && (
-            <div className="p-4 bg-rose-950/40 border border-rose-900/60 rounded-xl space-y-3 animate-in fade-in">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-                <div className="space-y-1 flex-1">
-                  <h4 className="font-bold text-sm text-rose-200">Rejection Reason from LifeLink Admin</h4>
-                  <p className="text-xs text-rose-100 bg-rose-900/30 p-3 rounded-lg border border-rose-800/40 leading-relaxed font-medium">
-                    {hospitalInfo.rejectionReason || 'No specific rejection details provided.'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Attached Review Report Button */}
-              {hospitalInfo.rejectionReportUrl && (
-                <div className="pt-2 border-t border-rose-900/40 flex items-center justify-between">
-                  <span className="text-xs text-rose-300 font-medium flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-rose-400" />
-                    Admin Attached Review / Audit Report:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPreviewDoc({
-                        title: 'Admin Review Report',
-                        url: hospitalInfo.rejectionReportUrl,
-                        name: hospitalInfo.rejectionReportName || 'Admin_Review_Report.pdf'
-                      })
-                    }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs rounded-lg shadow-sm transition-colors"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View / Download Attached Report</span>
-                  </button>
-                </div>
+          ) : !hospital ? (
+            <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700 text-xs text-slate-300 text-center space-y-3">
+              <p>{loadError || 'Sign in with your hospital account to see your registration.'}</p>
+              {!signedIn && (
+                <Link to="/login" className="inline-flex items-center gap-1.5 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl">
+                  <LogIn className="w-3.5 h-3.5" /> Sign In
+                </Link>
               )}
             </div>
-          )}
-
-          {/* RESUBMITTED INFO BANNER */}
-          {isResubmitted && (
-            <div className="p-4 bg-blue-950/40 border border-blue-900/60 rounded-xl space-y-2">
-              <div className="flex items-start gap-2.5 text-xs text-blue-200">
-                <Sparkles className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-bold text-sm text-blue-100">Updated Registration Submitted</h4>
-                  <p className="text-blue-300 mt-0.5">
-                    Your updated information has been submitted and is currently in the Administrator Queue for review.
-                  </p>
-                  {hospitalInfo.updatedFields && (
-                    <p className="mt-1 text-[11px] text-blue-200">
-                      <strong>Submitted Changes:</strong> {hospitalInfo.updatedFields}
-                    </p>
+          ) : (
+            <>
+              {/* Status */}
+              <div className="text-center space-y-3">
+                <span className={`inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold border uppercase tracking-wider ${statusBadge.className}`}>
+                  <StatusIcon className="w-3.5 h-3.5" /> {statusBadge.text}
+                </span>
+                <h2 className="text-xl font-bold text-white">{hospital.name}</h2>
+                <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
+                  <span>Email: <strong className="text-slate-300">{hospital.email}</strong></span>
+                  {hospital.licenseNumber && (
+                    <span>License: <strong className="font-mono text-cyan-400">{hospital.licenseNumber}</strong></span>
                   )}
                 </div>
               </div>
-            </div>
-          )}
 
-          {/* PENDING INFO BANNER */}
-          {!isApproved && !isRejected && !isResubmitted && (
-            <div className="p-4 bg-slate-800/60 rounded-xl border border-slate-700/60 text-xs text-slate-300 text-left leading-relaxed">
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <h4 className="font-semibold text-slate-100">Verification Under Administrative Review</h4>
-                  <p className="text-slate-400 text-[11px] mt-0.5">
-                    Your hospital registration is currently being verified by a LifeLink Administrator. Once accredited, your clinical personnel can log in.
+              {!signedIn && (
+                <div className="p-3.5 bg-cyan-950/40 border border-cyan-900/60 rounded-xl text-xs text-cyan-100 flex items-start gap-2.5">
+                  <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                  <span>
+                    Your registration was submitted. Sign in with your hospital account to check its latest status, read the
+                    administrator's messages and reply.
+                  </span>
+                </div>
+              )}
+
+              {loadError && (
+                <div className="p-3 bg-red-950/60 border border-red-900 rounded-xl text-xs text-red-200 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400" /> {loadError}
+                </div>
+              )}
+
+              {/* Submitted details */}
+              <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-3 text-xs">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Registration Details</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-300">
+                  <div><span className="text-slate-500">Hospital Contact Number:</span> {hospital.contactNumber || 'Not provided'}</div>
+                  <div><span className="text-slate-500">Registration Code:</span> {hospital.registrationNumber || 'Not provided'}</div>
+                  <div><span className="text-slate-500">Authorized Person:</span> {hospital.contactPersonName || 'Not provided'}</div>
+                  <div><span className="text-slate-500">Authorized Person Phone:</span> {hospital.contactPersonPhone || 'Not provided'}</div>
+                  <div className="sm:col-span-2">
+                    <span className="text-slate-500">Address:</span> {hospital.address || 'Not provided'}
+                    {hospital.city ? `, ${hospital.city}` : ''}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <AttachmentLink label="License" url={hospital.licenseDocumentUrl} name={hospital.licenseDocumentName} onPreview={setPreviewDoc} />
+                  <AttachmentLink label="Accreditation" url={hospital.accreditationDocumentUrl} name={hospital.accreditationDocumentName} onPreview={setPreviewDoc} />
+                </div>
+              </div>
+
+              {/* Registration conversation */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <MessageSquare className="w-3.5 h-3.5 text-cyan-400" /> Registration Conversation
+                </span>
+                <RegistrationThread entries={hospital.approvalHistory} onPreview={setPreviewDoc} />
+              </div>
+
+              {/* Reply form: only while rejected */}
+              {signedIn && isRejected && (
+                <form onSubmit={handleReply} className="pt-4 border-t border-slate-800 space-y-3 text-xs">
+                  <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
+                    <Send className="w-4 h-4 text-cyan-400" /> Reply to the Administrator
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Your registration stays in this conversation until the administrator approves it. Explain your changes
+                    and, if needed, correct your details or upload new documents.
                   </p>
-                </div>
-              </div>
-            </div>
-          )}
 
-          {/* APPROVAL AUDIT TIMELINE */}
-          {hospitalInfo?.approvalHistory && hospitalInfo.approvalHistory.length > 0 && (
-            <div className="p-4 bg-slate-800/40 rounded-xl border border-slate-800 space-y-2">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-                Approval Lifecycle History
-              </span>
-              <div className="space-y-1.5">
-                {hospitalInfo.approvalHistory.map((step, idx) => (
-                  <div
-                    key={step.id || idx}
-                    className="flex items-center justify-between text-xs p-2 rounded-lg bg-slate-800/70 border border-slate-700/50"
+                  {sent && (
+                    <div className="p-3 bg-emerald-950/60 border border-emerald-900 rounded-xl text-emerald-200 flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Your reply was sent to the administrator.
+                    </div>
+                  )}
+                  {formError && (
+                    <div className="p-3 bg-red-950/60 border border-red-900 rounded-xl text-red-200 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-400" /> {formError}
+                    </div>
+                  )}
+
+                  <textarea
+                    rows={3}
+                    maxLength={1000}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    placeholder="Write your reply to the administrator..."
+                    className={inputClass}
+                  />
+
+                  <label className="flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-slate-600 text-slate-300 cursor-pointer hover:bg-slate-800">
+                    <Paperclip className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="truncate">{attachment ? attachment.name : 'Attach a file (optional, max 2 MB)'}</span>
+                    <input type="file" className="hidden" onChange={(e) => handleFile(e, 'attachment')} />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCorrections((v) => !v)}
+                    className="text-cyan-400 hover:underline flex items-center gap-1"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-200">{step.status}</span>
-                      {step.comments && (
-                        <span className="text-slate-400 text-[11px] truncate max-w-xs">• {step.comments}</span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {step.timestamp ? new Date(step.timestamp).toLocaleDateString() : ''}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+                    {showCorrections ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    {showCorrections ? 'Hide registration details' : 'Also correct registration details or documents'}
+                  </button>
 
-          {/* RESUBMIT / UPDATE REGISTRATION FORM (Visible when rejected or user toggles) */}
-          {isRejected && (
-            <div className="pt-2 border-t border-slate-800">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-cyan-400" />
-                  Update Registration Information & Resubmit
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setShowEditForm(!showEditForm)}
-                  className="text-xs text-cyan-400 hover:underline flex items-center gap-1"
-                >
-                  <span>{showEditForm ? 'Hide Form' : 'Show Form'}</span>
-                  {showEditForm ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-
-              {resubmitSuccess && (
-                <div className="mb-4 p-3.5 bg-emerald-950/60 border border-emerald-900 rounded-xl text-xs text-emerald-200 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                  <span>Your changes were saved and resubmitted to the Admin Queue successfully!</span>
-                </div>
-              )}
-
-              {resubmitError && (
-                <div className="mb-4 p-3.5 bg-red-950/60 border border-red-900 rounded-xl text-xs text-red-200 flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400" />
-                  <span>{resubmitError}</span>
-                </div>
-              )}
-
-              {showEditForm && (
-                <form onSubmit={handleResubmit} className="space-y-4 text-xs">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                        Hospital Name
-                      </label>
-                      <input
-                        type="text"
-                        name="name"
-                        value={formData.name}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                        License Number / PHSRC Code
-                      </label>
-                      <input
-                        type="text"
-                        name="licenseNumber"
-                        value={formData.licenseNumber}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                        Registration / Facility Code
-                      </label>
-                      <input
-                        type="text"
-                        name="registrationNumber"
-                        value={formData.registrationNumber}
-                        onChange={handleInputChange}
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white font-mono placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                        Emergency Contact Phone
-                      </label>
-                      <input
-                        type="tel"
-                        name="contactNumber"
-                        value={formData.contactNumber}
-                        onChange={handleInputChange}
-                        required
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                        City / District / Region
-                      </label>
-                      <input
-                        type="text"
-                        name="city"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        placeholder="e.g. Colombo, Kandy"
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                        Authorized Contact Person
-                      </label>
-                      <input
-                        type="text"
-                        name="contactPersonName"
-                        value={formData.contactPersonName}
-                        onChange={handleInputChange}
-                        placeholder="e.g. Dr. Silva"
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                      Physical Hospital Address
-                    </label>
-                    <input
-                      type="text"
-                      name="address"
-                      value={formData.address}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-
-                  {/* Re-upload Document Section */}
-                  <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-3">
-                    <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
-                      Re-Upload Supporting Documents
-                    </span>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-slate-400 text-[10px] uppercase font-semibold mb-1">
-                          PHSRC / MOH License File
-                        </label>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                          onChange={(e) => handleFileUpload(e, 'licenseDocument')}
-                          className="hidden"
-                          id="resubmit-license-file"
-                        />
-                        <label
-                          htmlFor="resubmit-license-file"
-                          className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-lg text-slate-300 text-xs cursor-pointer transition-colors"
-                        >
-                          <Upload className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                          <span className="truncate">
-                            {formData.licenseDocumentName || 'Choose License File (PDF/Image)'}
-                          </span>
-                        </label>
+                  {showCorrections && (
+                    <div className="p-3 bg-slate-800/50 rounded-xl border border-slate-700/60 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {CORRECTION_FIELDS.map((f) => (
+                          <div key={f.name} className={f.wide ? 'md:col-span-2' : ''}>
+                            <label className="block text-slate-400 text-[10px] uppercase font-semibold mb-1">{f.label}</label>
+                            <input
+                              type={f.type || 'text'}
+                              name={f.name}
+                              value={corrections[f.name]}
+                              onChange={handleCorrectionChange}
+                              placeholder={f.placeholder}
+                              inputMode={PHONE_FIELDS.includes(f.name) ? 'numeric' : undefined}
+                              className={`${inputClass} ${f.mono ? 'font-mono' : ''}`}
+                            />
+                          </div>
+                        ))}
                       </div>
-
-                      <div>
-                        <label className="block text-slate-400 text-[10px] uppercase font-semibold mb-1">
-                          Accreditation Certificate File
-                        </label>
-                        <input
-                          type="file"
-                          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
-                          onChange={(e) => handleFileUpload(e, 'accreditationDocument')}
-                          className="hidden"
-                          id="resubmit-accred-file"
-                        />
-                        <label
-                          htmlFor="resubmit-accred-file"
-                          className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-lg text-slate-300 text-xs cursor-pointer transition-colors"
-                        >
-                          <Upload className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                          <span className="truncate">
-                            {formData.accreditationDocumentName || 'Choose Accreditation Certificate'}
-                          </span>
-                        </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[
+                          { key: 'license', label: 'New PHSRC / MOH License File' },
+                          { key: 'accreditation', label: 'New Accreditation Certificate File' }
+                        ].map((doc) => (
+                          <label
+                            key={doc.key}
+                            className="flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-dashed border-slate-600 rounded-lg text-slate-300 cursor-pointer"
+                          >
+                            <Upload className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                            <span className="truncate">{documents[doc.key] ? documents[doc.key].name : doc.label}</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                              className="hidden"
+                              onChange={(e) => handleFile(e, doc.key)}
+                            />
+                          </label>
+                        ))}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Resubmission Comments */}
-                  <div>
-                    <label className="block text-slate-300 font-semibold mb-1 text-[11px] uppercase">
-                      Notes / Explanation for Administrator (Optional)
-                    </label>
-                    <textarea
-                      rows={2}
-                      name="comments"
-                      value={formData.comments}
-                      onChange={handleInputChange}
-                      placeholder="Explain the changes made or provide clarifications addressing the rejection reason..."
-                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
+                  )}
 
                   <button
                     type="submit"
-                    disabled={resubmitLoading}
-                    className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-cyan-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                    disabled={sending}
+                    className="w-full py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-xl shadow-lg shadow-cyan-600/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    {resubmitLoading ? (
-                      <>
-                        <RotateCw className="w-4 h-4 animate-spin" />
-                        <span>Submitting Updated Registration...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Resubmit Application for Approval</span>
-                      </>
-                    )}
+                    {sending ? <RotateCw className="w-4 h-4 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    {sending ? 'Sending...' : 'Send Reply'}
                   </button>
                 </form>
               )}
-            </div>
+            </>
           )}
 
-          {/* Feedback messages */}
-          {checkError && (
-            <div className="p-3 bg-amber-950/50 border border-amber-800/60 rounded-xl text-amber-200 text-xs text-center font-medium">
-              {checkError}
-            </div>
-          )}
-
-          {/* Footer Action Buttons */}
+          {/* Footer actions */}
           <div className="pt-2 flex flex-col sm:flex-row gap-3">
-            {isApproved ? (
-              <Link
-                to="/hospital/dashboard"
+            {isApproved && signedIn ? (
+              <button
+                type="button"
+                onClick={() => navigate('/hospital/dashboard', { replace: true })}
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
               >
                 <span>Go to Hospital Dashboard</span>
                 <ArrowRight className="w-4 h-4" />
-              </Link>
+              </button>
+            ) : signedIn ? (
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                <span>{refreshing ? 'Checking Status...' : 'Check Approval Status'}</span>
+              </button>
             ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handleCheckStatus}
-                  disabled={checking}
-                  className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs rounded-xl border border-slate-700 shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <RotateCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
-                  <span>{checking ? 'Checking Status...' : 'Check Approval Status'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="w-full py-2.5 bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white font-semibold text-xs rounded-xl border border-slate-800 transition-colors flex items-center justify-center gap-2"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>Sign Out</span>
-                </button>
-              </>
+              <Link
+                to="/login"
+                className="w-full py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs rounded-xl transition-all flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-3.5 h-3.5" /> <span>Sign In to Check Status</span>
+              </Link>
+            )}
+            {signedIn && (
+              <button
+                type="button"
+                onClick={logout}
+                className="w-full py-2.5 bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white font-semibold text-xs rounded-xl border border-slate-800 transition-colors flex items-center justify-center gap-2"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Document Preview Modal */}
       {previewDoc && (
         <DocumentPreviewModal
           isOpen={!!previewDoc}
           onClose={() => setPreviewDoc(null)}
-          title={previewDoc.title}
+          title={previewDoc.title || 'Document'}
           documentUrl={previewDoc.url}
           documentName={previewDoc.name}
         />

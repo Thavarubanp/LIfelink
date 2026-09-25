@@ -3,13 +3,12 @@ import { governanceApi, appealApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
+import { readFileAsAttachment } from '../../utils/fileUtils';
 import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import {
   ShieldAlert, CheckCircle2, XCircle, Clock, Send, Loader2, LogOut, MessageSquare, RefreshCw, User, Paperclip, Lock
 } from 'lucide-react';
-
-const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 
 const statusConfig = {
   PENDING: { label: 'Awaiting Admin', color: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800', icon: Clock },
@@ -58,17 +57,17 @@ export const SuspendedGovernancePage = () => {
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
-  const handleFile = (e) => {
+  // Empty files and files over 2 MB are refused (the backend enforces the same rules)
+  const handleFile = async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      addToast({ title: 'Attachment Too Large', message: 'Attachment cannot exceed 2 MB.', type: 'error' });
-      e.target.value = '';
-      return;
+    try {
+      setAttachment(await readFileAsAttachment(file));
+    } catch (err) {
+      setAttachment(null);
+      addToast({ title: 'Attachment Not Added', message: err.message, type: 'error' });
     }
-    const reader = new FileReader();
-    reader.onload = () => setAttachment({ url: reader.result, name: file.name });
-    reader.readAsDataURL(file);
   };
 
   const handleSubmitAppeal = async (e) => {
