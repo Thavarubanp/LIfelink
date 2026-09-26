@@ -24,7 +24,13 @@ namespace LifeLink.Services.Admin
 
         public async Task<AdminDashboardStatsDto> GetDashboardStatsAsync()
         {
-            var totalUsers = await _context.Users.CountAsync();
+            // Count only donors/patients: users whose sole registered role is "User" (RoleId = 1).
+            // This intentionally excludes HospitalStaff (RoleId=2), Doctor (RoleId=3), and Admin (RoleId=4)
+            // accounts, which are counted separately by their own cards.
+            var totalDonorPatients = await _context.Users
+                .Where(u => u.UserRoles.Any(ur => ur.RoleId == 1)
+                         && !u.UserRoles.Any(ur => ur.RoleId == 2 || ur.RoleId == 3 || ur.RoleId == 4))
+                .CountAsync();
             var totalHospitals = await _context.Hospitals.CountAsync();
             var totalDoctors = await _context.Doctors.CountAsync();
 
@@ -45,7 +51,7 @@ namespace LifeLink.Services.Admin
 
             return new AdminDashboardStatsDto
             {
-                TotalUsers = totalUsers,
+                TotalDonorPatients = totalDonorPatients,
                 TotalHospitals = totalHospitals,
                 TotalDoctors = totalDoctors,
                 ActiveRequests = activeRequests,
@@ -327,10 +333,16 @@ namespace LifeLink.Services.Admin
 
         public async Task<List<AdminUserResponseDto>> GetUsersAsync()
         {
-            // Deleted accounts no longer exist for operations; blocked accounts stay listed with their status
+            // Deleted accounts no longer exist for operations; blocked accounts stay listed with their status.
+            // Only donor/patient accounts (RoleId = 1) are returned — the same filter used by the dashboard
+            // metric — so the directory record count always matches the card count.
+            // HospitalStaff (RoleId=2), Doctor (RoleId=3), and Admin (RoleId=4) accounts are managed
+            // via their own dedicated cards and are intentionally excluded here.
             var users = await _context.Users
                 .Include(u => u.UserRoles).ThenInclude(ur => ur.Role)
-                .Where(u => u.AccountStatus != AccountStatus.Deleted)
+                .Where(u => u.AccountStatus != AccountStatus.Deleted
+                         && u.UserRoles.Any(ur => ur.RoleId == 1)
+                         && !u.UserRoles.Any(ur => ur.RoleId == 2 || ur.RoleId == 3 || ur.RoleId == 4))
                 .OrderByDescending(u => u.CreatedAt)
                 .ToListAsync();
 

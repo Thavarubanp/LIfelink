@@ -42,7 +42,6 @@ export const AdminDashboard = () => {
   const [usersList, setUsersList] = useState([]);
   const [hospitalsList, setHospitalsList] = useState([]);
   const [doctorsList, setDoctorsList] = useState([]);
-  const [doctorUserIds, setDoctorUserIds] = useState(new Set());
   const [loadingList, setLoadingList] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
 
@@ -82,10 +81,9 @@ export const AdminDashboard = () => {
     setFilterQuery('');
     try {
       if (category === 'users') {
-        // Doctor logins appear in the user directory; they are managed by their hospital, not suspendable here
-        const [res, doctorsRes] = await Promise.all([adminApi.getUsers(), doctorApi.getDoctors().catch(() => [])]);
+        // The backend already filters to donor/patient accounts only; no secondary fetch needed
+        const res = await adminApi.getUsers();
         setUsersList(extractArray(res));
-        setDoctorUserIds(new Set(extractArray(doctorsRes).map((d) => d.userId).filter(Boolean)));
       } else if (category === 'hospitals') {
         // Reuse existing hospitalApi.getHospitals() endpoint
         const res = await hospitalApi.getHospitals();
@@ -338,13 +336,13 @@ export const AdminDashboard = () => {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Registered Users</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Registered Donors/Patients</span>
             <div className="w-9 h-9 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-300 flex items-center justify-center">
               <Users className="w-5 h-5" />
             </div>
           </div>
           <div className="text-3xl font-extrabold text-slate-900 dark:text-slate-100 mt-2">
-            {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : stats?.totalUsers ?? 0}
+            {loadingStats ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : stats?.totalDonorPatients ?? 0}
           </div>
           <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px]">
             <span className="text-slate-500 font-medium">
@@ -421,7 +419,7 @@ export const AdminDashboard = () => {
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-slate-900 dark:text-slate-100 capitalize">
-                  {selectedCategory === 'users' && 'Registered Users Directory'}
+                  {selectedCategory === 'users' && 'Registered Donors/Patients Directory'}
                   {selectedCategory === 'hospitals' && 'Registered Hospitals Directory'}
                   {selectedCategory === 'doctors' && 'Registered Medical Doctors Directory'}
                 </span>
@@ -540,7 +538,7 @@ export const AdminDashboard = () => {
                               <span className="text-[11px] font-semibold text-slate-400 italic">Permanently blocked</span>
                             ) : u.roles?.includes('Admin') ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">{u.userId === currentUser?.userId ? 'You (Admin)' : 'Admin'}</span>
-                            ) : doctorUserIds.has(u.userId) || u.roles?.includes('Doctor') ? (
+                            ) : u.roles?.includes('Doctor') ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">Doctor (managed by hospital)</span>
                             ) : u.roles?.includes('HospitalStaff') ? (
                               <span className="text-[11px] font-semibold text-slate-400 italic">Hospital account (suspend via Hospitals)</span>

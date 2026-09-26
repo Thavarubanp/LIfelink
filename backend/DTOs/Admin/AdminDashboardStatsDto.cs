@@ -2,7 +2,7 @@ namespace LifeLink.DTOs.Admin
 {
     public class AdminDashboardStatsDto
     {
-        public int TotalUsers { get; set; }
+        public int TotalDonorPatients { get; set; }
         public int TotalHospitals { get; set; }
         public int TotalDoctors { get; set; }
         public int ActiveRequests { get; set; }
