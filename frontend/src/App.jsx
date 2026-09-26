@@ -89,7 +89,7 @@ export function App() {
           <Routes>
             {/* Public Auth Routes */}
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/admin/login" element={<LoginPage initialRole="admin" />} />
+            <Route path="/admin/login" element={<LoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/register-hospital" element={<RegisterHospitalPage />} />
