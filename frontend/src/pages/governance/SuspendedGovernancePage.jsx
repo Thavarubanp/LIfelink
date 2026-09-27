@@ -6,6 +6,8 @@ import { getApiErrorMessage } from '../../utils/errorUtils';
 import { readFileAsAttachment } from '../../utils/fileUtils';
 import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
+import BrandLogo from '../../components/common/BrandLogo';
+import { useSystemThemePage } from '../../context/useSystemThemePage';
 import {
   ShieldAlert, CheckCircle2, XCircle, Clock, Send, Loader2, LogOut, MessageSquare, RefreshCw, User, Paperclip, Lock
 } from 'lucide-react';
@@ -35,6 +37,7 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
  * Sign out. Doctors can only view.
  */
 export const SuspendedGovernancePage = () => {
+  useSystemThemePage();
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [appealReason, setAppealReason] = useState('');
@@ -112,9 +115,10 @@ export const SuspendedGovernancePage = () => {
       <div className="max-w-2xl mx-auto space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 [&>div:first-of-type]:hidden">
+            <BrandLogo size="sm" tagline="Governance portal" />
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-red-600 to-red-500 flex items-center justify-center text-xl shadow-lg shadow-red-600/30">💉</div>
-            <div>
+            <div className="sr-only">
               <h1 className="text-lg font-bold">Life<span className="text-red-500">Link</span></h1>
               <p className="text-[11px] text-slate-500">Governance Portal</p>
             </div>

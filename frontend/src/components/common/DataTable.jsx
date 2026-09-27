@@ -49,11 +49,11 @@ export const DataTable = ({
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-950/5 dark:border-slate-800 dark:bg-slate-900">
       {/* Search Header */}
       {searchable && (
-        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-xs">
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+          <div className="relative w-full flex-1 sm:max-w-sm">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -63,7 +63,7 @@ export const DataTable = ({
                 setCurrentPage(1);
               }}
               placeholder={searchPlaceholder}
-              className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-lg text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-red-500"
+              className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 placeholder-slate-400 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/10 dark:border-slate-700/60 dark:bg-slate-800/80 dark:text-slate-100"
             />
           </div>
           <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -72,8 +72,31 @@ export const DataTable = ({
         </div>
       )}
 
-      {/* Table Canvas */}
-      <div className="overflow-x-auto">
+      {/* Mobile record cards */}
+      <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+        {paginatedData.length > 0 ? paginatedData.map((row, idx) => (
+          <div
+            key={row.id || row.bloodRequestId || row.inventoryId || idx}
+            onClick={() => onRowClick && onRowClick(row)}
+            className={`space-y-3 p-4 ${onRowClick ? 'cursor-pointer active:bg-slate-50 dark:active:bg-slate-800/50' : ''}`}
+          >
+            {columns.map((col) => (
+              <div key={col.accessor} className="grid grid-cols-[minmax(6.5rem,0.8fr)_minmax(0,1.2fr)] items-start gap-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">{col.header}</span>
+                <div className="min-w-0 text-right text-sm text-slate-800 dark:text-slate-200">{col.cell ? col.cell(row) : row[col.accessor]}</div>
+              </div>
+            ))}
+          </div>
+        )) : (
+          <div className="flex flex-col items-center justify-center px-4 py-12 text-center text-slate-400">
+            <Inbox className="mb-2 h-10 w-10 stroke-1" />
+            <p className="text-sm font-medium">{emptyMessage}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table canvas */}
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
@@ -82,6 +105,7 @@ export const DataTable = ({
                   key={col.accessor}
                   onClick={() => col.sortable !== false && handleSort(col.accessor)}
                   className={`px-4 py-3 ${col.sortable !== false ? 'cursor-pointer select-none hover:text-slate-900 dark:hover:text-slate-200' : ''}`}
+                  aria-sort={sortColumn === col.accessor ? (sortDirection === 'asc' ? 'ascending' : 'descending') : undefined}
                 >
                   <div className="flex items-center gap-1.5">
                     <span>{col.header}</span>
@@ -123,7 +147,7 @@ export const DataTable = ({
       </div>
 
       {/* Pagination Footer */}
-      <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+      <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:text-slate-400">
         <span>
           Showing {paginatedData.length > 0 ? (currentPage - 1) * pageSize + 1 : 0} to{' '}
           {Math.min(currentPage * pageSize, filteredData.length)} of {filteredData.length} entries
@@ -133,6 +157,7 @@ export const DataTable = ({
             onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
             disabled={currentPage === 1}
             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Previous page"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -143,6 +168,7 @@ export const DataTable = ({
             onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
             disabled={currentPage === totalPages}
             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-label="Next page"
           >
             <ChevronRight className="w-4 h-4" />
           </button>

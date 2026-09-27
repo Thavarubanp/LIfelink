@@ -509,7 +509,7 @@ export const AdminDashboard = () => {
                           </td>
                           <td className="p-3">
                             {u.isPermanentlyBlocked ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-white border border-slate-700">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700">
                                 <AlertTriangle className="w-3 h-3" /> Permanently Blocked
                               </span>
                             ) : u.isSuspended ? (

@@ -7,7 +7,7 @@ export const Badge = ({ children, variant = 'default', size = 'md', className = 
     success: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900/50',
     warning: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-900/50',
     info: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-900/50',
-    danger: 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-900 animate-pulse',
+    danger: 'bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border-rose-300 dark:border-rose-900',
     blood: 'bg-red-600 text-white font-bold border-red-700 shadow-sm'
   };
 
@@ -30,7 +30,7 @@ const REQUEST_STATUS_VARIANTS = {
   Verified: 'info',
   Approved: 'success',
   Completed: 'success',
-  Rejected: 'primary',
+  Rejected: 'danger',
   Cancelled: 'default',
   Deleted: 'default'
 };

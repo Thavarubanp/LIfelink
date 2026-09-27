@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { hospitalApi } from '../../api';
 import { getApiErrorMessage, getApiFieldErrors } from '../../utils/errorUtils';
 import { readFileAsAttachment } from '../../utils/fileUtils';
+import BrandLogo from '../../components/common/BrandLogo';
 import {
   Building2,
   ShieldCheck,
@@ -193,7 +194,7 @@ export const RegisterHospitalPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden">
+    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden">
       {/* Background Cyan Glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[750px] bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
 
@@ -201,10 +202,11 @@ export const RegisterHospitalPage = () => {
         {/* Top Brand Nav */}
         <div className="text-center mb-8">
           <Link to="/" className="inline-flex items-center gap-2 mb-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-cyan-500 flex items-center justify-center text-white text-xl font-bold shadow-lg shadow-cyan-600/30">
+            <BrandLogo size="sm" tagline={null} />
+            <div className="hidden w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 to-cyan-500 items-center justify-center text-white text-xl font-bold shadow-lg shadow-cyan-600/30">
               🏥
             </div>
-            <span className="text-2xl font-bold text-white tracking-tight">
+            <span className="sr-only">
               Life<span className="text-cyan-500">Link</span>
             </span>
           </Link>

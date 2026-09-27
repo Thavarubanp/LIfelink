@@ -18,7 +18,7 @@ export const Toast = () => {
   };
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+    <div className="fixed bottom-3 left-3 right-3 z-50 flex flex-col gap-3 pointer-events-none sm:bottom-5 sm:left-auto sm:right-5 sm:max-w-sm sm:w-full" aria-live="polite" aria-atomic="true">
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -43,6 +43,7 @@ export const Toast = () => {
           <button
             onClick={() => removeToast(t.id)}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            aria-label="Dismiss notification"
           >
             <X className="w-4 h-4" />
           </button>

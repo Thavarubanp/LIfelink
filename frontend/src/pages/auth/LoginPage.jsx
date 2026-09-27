@@ -3,6 +3,8 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { getDashboardPath, isUnapprovedHospitalStaff, HOSPITAL_WAITING_PATH } from '../../utils/roleUtils';
+import BrandLogo from '../../components/common/BrandLogo';
+import { useSystemThemePage } from '../../context/useSystemThemePage';
 import {
   Mail,
   Lock,
@@ -21,6 +23,7 @@ import {
 } from 'lucide-react';
 
 export const LoginPage = () => {
+  useSystemThemePage();
   const location = useLocation();
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -81,7 +84,7 @@ export const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden">
+    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden">
       {/* Background Ambient Glows */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-red-600/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-10 right-1/4 w-[350px] h-[350px] bg-rose-600/5 rounded-full blur-3xl pointer-events-none" />
@@ -89,10 +92,11 @@ export const LoginPage = () => {
       <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 backdrop-blur-md">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-7">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-rose-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-red-600/30 mb-3.5 transition-transform hover:scale-105 duration-300">
+          <BrandLogo size="lg" tagline={null} className="mb-3.5" />
+          <div className="hidden w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-rose-500 items-center justify-center text-white text-2xl font-bold shadow-lg shadow-red-600/30 mb-3.5 transition-transform hover:scale-105 duration-300">
             💉
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
+          <h1 className="sr-only">
             Life<span className="text-red-500">Link</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1 max-w-xs">

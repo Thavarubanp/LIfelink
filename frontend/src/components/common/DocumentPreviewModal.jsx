@@ -22,12 +22,12 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]" role="dialog" aria-modal="true" aria-label={title || 'Document preview'}>
         {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-cyan-400" />
-            <h3 className="font-bold text-slate-100 text-sm">{title || 'Document Preview'}</h3>
+            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">{title || 'Document Preview'}</h3>
             {hasFile && documentName && (
               <span className="text-xs text-slate-400 font-mono">({documentName})</span>
             )}
@@ -37,7 +37,7 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
               <button
                 type="button"
                 onClick={handleDownload}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg border border-slate-700 flex items-center gap-1.5 transition-colors"
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg border border-slate-200 dark:border-slate-700 flex items-center gap-1.5 transition-colors"
                 title="Download Document"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -47,7 +47,8 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 dark:hover:text-white dark:hover:bg-slate-800 transition-colors"
+              aria-label="Close document preview"
             >
               <X className="w-5 h-5" />
             </button>
@@ -55,24 +56,24 @@ export const DocumentPreviewModal = ({ isOpen, onClose, title, documentUrl, docu
         </div>
 
         {/* Content Viewer */}
-        <div className="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-slate-950/50 min-h-[350px]">
+        <div className="p-4 overflow-y-auto flex-1 flex items-center justify-center bg-slate-50 dark:bg-slate-950/50 min-h-[350px]">
           {isPdf ? (
             <iframe
               src={documentUrl}
               title={title}
-              className="w-full h-[550px] rounded-lg border border-slate-800"
+              className="w-full h-[550px] rounded-lg border border-slate-200 dark:border-slate-800"
             />
           ) : isImage ? (
             <img
               src={documentUrl}
               alt={title}
-              className="max-h-[550px] max-w-full rounded-lg object-contain border border-slate-800 shadow-md"
+              className="max-h-[550px] max-w-full rounded-lg object-contain border border-slate-200 dark:border-slate-800 shadow-md"
             />
           ) : hasFile ? (
             <div className="text-center p-8 space-y-4">
               <FileText className="w-16 h-16 text-cyan-400/80 mx-auto animate-pulse" />
               <div>
-                <p className="text-sm font-semibold text-slate-200">{documentName || 'Document File'}</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{documentName || 'Document File'}</p>
                 <p className="text-xs text-slate-400 mt-1">This document can be downloaded and opened locally.</p>
               </div>
               <button

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { authApi } from '../../api/authApi';
 import { getApiErrorMessage } from '../../utils/errorUtils';
+import BrandLogo from '../../components/common/BrandLogo';
 import {
   Lock,
   KeyRound,
@@ -84,17 +85,18 @@ export const DoctorChangePasswordPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden">
+    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden">
       {/* Background emerald glow */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-600/8 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-600/30 mb-3">
+          <BrandLogo size="lg" tagline={null} className="mb-3" />
+          <div className="hidden w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-emerald-500 items-center justify-center shadow-lg shadow-emerald-600/30 mb-3">
             <Stethoscope className="w-6 h-6 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="sr-only">
             Life<span className="text-red-500">Link</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">Emergency Blood Management & Healthcare Network</p>
@@ -214,7 +216,7 @@ export const DoctorChangePasswordPage = () => {
 
           {/* Password strength indicators */}
           {newPassword.length > 0 && (
-            <div className="p-3.5 bg-slate-800/60 border border-slate-700/60 rounded-xl grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5 rounded-xl border border-slate-700/60 bg-slate-800/60 p-3.5 sm:grid-cols-2">
               <StrengthCheck passed={hasMinLen} label="At least 8 characters" />
               <StrengthCheck passed={hasUpper} label="Uppercase letter" />
               <StrengthCheck passed={hasLower} label="Lowercase letter" />

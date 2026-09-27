@@ -58,13 +58,20 @@ import DoctorProfilePage from './pages/profiles/DoctorProfilePage';
 
 // Authenticated Shell Layout with Navbar & Sidebar
 const DashboardLayout = ({ onOpenNotifications }) => {
+  const [navigationOpen, setNavigationOpen] = useState(false);
+
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors">
-      <Navbar onOpenNotifications={onOpenNotifications} />
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
-          <Outlet />
+    <div className="ll-app-shell flex flex-col font-sans">
+      <Navbar
+        onOpenNotifications={onOpenNotifications}
+        onOpenNavigation={() => setNavigationOpen(true)}
+      />
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <Sidebar mobileOpen={navigationOpen} onClose={() => setNavigationOpen(false)} />
+        <main className="ll-main">
+          <div className="ll-content">
+            <Outlet />
+          </div>
         </main>
       </div>
       {/* Universal LifeLink assistant on every signed-in page */}

@@ -43,6 +43,9 @@ export const EditProfileModal = ({ title, fields, initialValues, onSave, onClose
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
       <form
         onSubmit={handleSubmit}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-lg shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -50,7 +53,7 @@ export const EditProfileModal = ({ title, fields, initialValues, onSave, onClose
             <Pencil className="w-4 h-4 text-red-600" />
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{title}</h3>
           </div>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200" aria-label="Close edit profile dialog">
             <X className="w-4 h-4" />
           </button>
         </div>

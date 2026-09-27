@@ -3,7 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="LifeLink blood donation and emergency coordination platform" />
+    <link rel="icon" type="image/png" href="/lifelink-logo.png" />
+    <link rel="apple-touch-icon" href="/lifelink-logo.png" />
+    <title>LifeLink | Blood Donation & Emergency Care</title>
+    <script>
+      (() => {
+        const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', isDark);
+        document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+        document.querySelector('meta[name=theme-color]').content = isDark ? '#020617' : '#ffffff';
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

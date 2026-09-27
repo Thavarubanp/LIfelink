@@ -86,7 +86,7 @@ export const ScreeningInterviewPage = () => {
             </p>
           </div>
           {question?.confidential && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-slate-900 text-white shrink-0">
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-900 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700 shrink-0">
               <Lock className="w-3 h-3" /> Confidential
             </span>
           )}

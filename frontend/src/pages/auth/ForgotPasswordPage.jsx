@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { authApi } from '../../api/authApi';
 import { getApiErrorMessage } from '../../utils/errorUtils';
+import BrandLogo from '../../components/common/BrandLogo';
 import {
   Mail,
   Lock,
@@ -263,17 +264,18 @@ export const ForgotPasswordPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden font-sans">
+    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-10 relative overflow-hidden font-sans">
       {/* Dynamic Background Glow */}
       <div className={`absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[650px] h-[650px] ${currentRole.glowColor} rounded-full blur-3xl pointer-events-none transition-all duration-700`} />
 
       <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 backdrop-blur-md">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-red-600 to-red-500 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-red-600/30 mb-3">
+          <BrandLogo size="lg" tagline={null} className="mb-3" />
+          <div className="hidden w-12 h-12 rounded-2xl bg-gradient-to-tr from-red-600 to-red-500 items-center justify-center text-white text-2xl font-bold shadow-lg shadow-red-600/30 mb-3">
             💉
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">
+          <h1 className="sr-only">
             Life<span className="text-red-500">Link</span>
           </h1>
           <p className="text-xs text-slate-400 mt-1">
@@ -283,7 +285,7 @@ export const ForgotPasswordPage = () => {
 
         {/* Role Selection Tabs (Only on Step 1) */}
         {step === 1 && (
-          <div className="grid grid-cols-4 gap-1 p-1 bg-slate-950/80 border border-slate-800 rounded-xl mb-6">
+          <div className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-slate-800 bg-slate-950/80 p-1 sm:grid-cols-4">
             <button
               type="button"
               onClick={() => { setActiveTab('donor'); setError(''); }}
@@ -562,7 +564,7 @@ export const ForgotPasswordPage = () => {
             {/* Password Validation Checklist */}
             <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-1.5 text-[11px]">
               <p className="font-semibold text-slate-400 mb-1">Password Requirements:</p>
-              <div className="grid grid-cols-2 gap-1">
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                 <div className={`flex items-center gap-1.5 ${hasMinLen ? 'text-emerald-400' : 'text-slate-500'}`}>
                   <CheckCircle2 className="w-3 h-3 shrink-0" />
                   <span>At least 8 characters</span>

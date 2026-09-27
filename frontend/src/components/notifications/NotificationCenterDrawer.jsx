@@ -67,8 +67,8 @@ export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950/40 backdrop-blur-sm flex justify-end animate-in fade-in">
-      <div className="w-full max-w-sm bg-white dark:bg-slate-900 h-full border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col justify-between">
+    <div className="fixed inset-0 z-50 flex justify-end overflow-hidden bg-slate-950/45 backdrop-blur-sm animate-in fade-in" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="flex h-full w-full flex-col justify-between border-l border-slate-200 bg-white shadow-2xl sm:max-w-md dark:border-slate-800 dark:bg-slate-900" role="dialog" aria-modal="true" aria-label="Notifications">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -82,7 +82,8 @@ export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            aria-label="Close notifications"
           >
             <X className="w-4 h-4" />
           </button>

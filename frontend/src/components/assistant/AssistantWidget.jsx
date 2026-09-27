@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MessageCircle, X, Send, Sparkles, Trash2 } from 'lucide-react';
+import { MessageCircle, X, Send, Trash2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { assistantApi } from '../../api';
 import { getUserRoles } from '../../utils/roleUtils';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { ChatThread } from './ChatThread';
+import BrandLogo from '../common/BrandLogo';
 
 const SUGGESTIONS = {
   Admin: ['What needs my attention?', 'How does hospital approval work?'],
@@ -78,7 +79,7 @@ export const AssistantWidget = () => {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Open LifeLink assistant"
-        className="fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/30 flex items-center justify-center transition-all"
+        className="fixed bottom-4 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-red-600 text-white shadow-xl shadow-red-600/30 transition-all hover:-translate-y-0.5 hover:bg-red-700 sm:bottom-5 sm:right-5"
       >
         <MessageCircle className="w-6 h-6" />
       </button>
@@ -86,12 +87,10 @@ export const AssistantWidget = () => {
   }
 
   return (
-    <div className="fixed z-40 inset-0 sm:inset-auto sm:bottom-5 sm:right-5 sm:w-[380px] sm:h-[560px] bg-white dark:bg-slate-900 sm:border border-slate-200 dark:border-slate-800 sm:rounded-2xl shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-40 flex flex-col bg-white shadow-2xl sm:inset-auto sm:bottom-5 sm:right-5 sm:h-[min(620px,calc(100vh-2.5rem))] sm:w-[400px] sm:rounded-2xl sm:border sm:border-slate-200 dark:bg-slate-900 dark:sm:border-slate-800" role="dialog" aria-modal="true" aria-label="LifeLink assistant">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center">
-            <Sparkles className="w-4 h-4" />
-          </div>
+          <BrandLogo size="sm" compact />
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">LifeLink Assistant</h3>
             <p className="text-[10px] text-slate-400">Guidance only. Doctors make all medical decisions.</p>

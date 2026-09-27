@@ -12,11 +12,14 @@ import {
   Stethoscope,
   Users,
   Loader2,
-  X
+  X,
+  Menu
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import searchApi from '../../api/searchApi';
 import notificationApi from '../../api/notificationApi';
+import BrandLogo from './BrandLogo';
+import { useTheme } from '../../context/useTheme';
 
 // Global search result groups (order matches flattenedResults for keyboard navigation).
 // Colors follow the role palette used by the navbar role badge.
@@ -56,10 +59,10 @@ const SEARCH_SECTIONS = [
   }
 ];
 
-export const Navbar = ({ onOpenNotifications }) => {
+export const Navbar = ({ onOpenNotifications, onOpenNavigation }) => {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
-  const [theme, setTheme] = useState('light');
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Search state
@@ -68,6 +71,7 @@ export const Navbar = ({ onOpenNotifications }) => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
+  const [mobileSearchVisible, setMobileSearchVisible] = useState(false);
   const searchInputRef = useRef(null);
   const searchContainerRef = useRef(null);
 
@@ -192,16 +196,6 @@ export const Navbar = ({ onOpenNotifications }) => {
     }
   };
 
-  const toggleTheme = () => {
-    const nextTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(nextTheme);
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
-
   const getRoleInfo = () => {
     if (!user || !user.roles) {
       return {
@@ -237,10 +231,19 @@ export const Navbar = ({ onOpenNotifications }) => {
   const roleInfo = getRoleInfo();
 
   return (
-    <header className="h-16 border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-30 px-4 md:px-6 flex items-center justify-between transition-colors">
+    <header className="sticky top-0 z-30 flex h-17 items-center justify-between border-b border-slate-200/80 bg-white/90 px-3 shadow-sm shadow-slate-950/5 backdrop-blur-xl transition-colors sm:px-4 lg:px-6 dark:border-slate-800 dark:bg-slate-950/90">
       {/* Brand Logo & Search */}
-      <div className="flex items-center gap-6">
-        <Link to="/" className="flex items-center gap-2.5 group">
+      <div className="flex min-w-0 items-center gap-3 lg:gap-6">
+        <button type="button" onClick={onOpenNavigation} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm md:hidden dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200" aria-label="Open navigation" aria-controls="primary-navigation">
+          <Menu className="h-5 w-5" />
+        </button>
+        <Link to="/" className="sm:hidden" aria-label="LifeLink home">
+          <BrandLogo size="sm" compact />
+        </Link>
+        <Link to="/" className="group hidden sm:block" aria-label="LifeLink home">
+          <BrandLogo size="sm" tagline="Emergency blood platform" />
+        </Link>
+        <Link to="/" className="hidden">
           <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center text-white font-bold shadow-md shadow-red-600/20 group-hover:scale-105 transition-transform">
             💉
           </div>
@@ -255,8 +258,8 @@ export const Navbar = ({ onOpenNotifications }) => {
         </Link>
 
         {/* Global Quick Search Input with Suggestions Dropdown */}
-        <div ref={searchContainerRef} className="relative hidden md:block">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 rounded-lg text-slate-400 w-64 focus-within:w-80 focus-within:border-red-500 transition-all">
+        <div ref={searchContainerRef} className={`${mobileSearchVisible ? 'absolute left-3 right-3 top-[4.75rem] block' : 'hidden'} md:relative md:left-auto md:right-auto md:top-auto md:block`}>
+          <div className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-slate-400 shadow-xl focus-within:border-red-500 focus-within:ring-4 focus-within:ring-red-500/10 md:w-64 md:bg-slate-50 md:shadow-none lg:w-80 dark:border-slate-700 dark:bg-slate-900 md:dark:bg-slate-800/80">
             {isSearching ? (
               <Loader2 className="w-4 h-4 text-red-500 animate-spin" />
             ) : (
@@ -275,7 +278,7 @@ export const Navbar = ({ onOpenNotifications }) => {
               }}
               onKeyDown={handleSearchKeyDown}
               placeholder="Search by name or email... (Ctrl+K)"
-              className="bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none w-full"
+              className="w-full bg-transparent text-sm text-slate-900 placeholder-slate-400 focus:outline-none dark:text-slate-100"
             />
             {searchQuery && (
               <button
@@ -293,7 +296,7 @@ export const Navbar = ({ onOpenNotifications }) => {
 
           {/* Search Results Dropdown */}
           {searchOpen && searchQuery.trim().length >= 2 && (
-            <div className="absolute left-0 mt-2 w-80 md:w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
+            <div className="absolute left-0 mt-2 w-full md:w-96 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2">
               {isSearching && !searchResults && (
                 <div className="p-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin text-red-500" />
@@ -358,7 +361,7 @@ export const Navbar = ({ onOpenNotifications }) => {
       </div>
 
       {/* Right Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         {/* Dynamic Role Badge */}
         <span
           className={`hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${roleInfo.classes} transition-all`}
@@ -367,11 +370,25 @@ export const Navbar = ({ onOpenNotifications }) => {
           {roleInfo.label}
         </span>
 
+        <button
+          type="button"
+          onClick={() => {
+            setMobileSearchVisible((value) => !value);
+            window.setTimeout(() => searchInputRef.current?.focus(), 0);
+          }}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 md:hidden dark:text-slate-300 dark:hover:bg-slate-800"
+          aria-label="Search LifeLink"
+        >
+          {mobileSearchVisible ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
+        </button>
+
         {/* Theme Toggle */}
         <button
+          type={'button'}
           onClick={toggleTheme}
-          className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          title="Toggle Theme"
+          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+          title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >
           {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4 text-amber-400" />}
         </button>
@@ -379,7 +396,7 @@ export const Navbar = ({ onOpenNotifications }) => {
         {/* Notifications Trigger with Database-Backed Unread Indicator */}
         <button
           onClick={onOpenNotifications}
-          className="relative p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
           title={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
         >
           <Bell className="w-4 h-4" />

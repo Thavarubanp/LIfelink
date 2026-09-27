@@ -383,7 +383,7 @@ export const DonorComplaintsPage = () => {
             3. Action Taken
           </span>
         </div>
-        <div className="w-full bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
+        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
           <div className={`h-full transition-all duration-500 ${step >= 1 ? 'bg-cyan-500 w-1/3' : 'w-0'}`} />
           <div className={`h-full transition-all duration-500 ${step >= 2 ? 'bg-blue-500 w-1/3' : 'w-0'}`} />
           <div
@@ -637,7 +637,7 @@ export const DonorComplaintsPage = () => {
           <div className="flex items-center gap-2">
             <Inbox className="w-5 h-5 text-cyan-500" />
             <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">My Submitted Complaints</h2>
-            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
+            <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               {myComplaints.length}
             </span>
           </div>
@@ -685,7 +685,7 @@ export const DonorComplaintsPage = () => {
                         #{String(complaintId).substring(0, 8)}
                       </span>
 
-                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 uppercase tracking-wider">
+                      <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase tracking-wider">
                         {item.complaintType || 'Grievance'}
                       </span>
 

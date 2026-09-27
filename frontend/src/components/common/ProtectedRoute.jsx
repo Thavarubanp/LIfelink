@@ -3,6 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getUserRoles, getDashboardPath, isUnapprovedHospitalStaff, HOSPITAL_WAITING_PATH } from '../../utils/roleUtils';
 import { Loader2 } from 'lucide-react';
+import BrandLogo from './BrandLogo';
 
 export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = false }) => {
   const { user, loading } = useAuth();
@@ -11,6 +12,7 @@ export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = f
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400">
+        <BrandLogo size="md" tagline="Securing your session" className="mb-5" />
         <Loader2 className="w-10 h-10 text-red-600 animate-spin mb-3" />
         <p className="text-sm font-medium">Verifying LifeLink Session...</p>
       </div>

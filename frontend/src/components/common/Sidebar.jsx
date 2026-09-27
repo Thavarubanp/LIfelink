@@ -13,10 +13,12 @@ import {
   FileText,
   Users,
   AlertTriangle,
-  UserCheck
+  UserCheck,
+  X
 } from 'lucide-react';
+import BrandLogo from './BrandLogo';
 
-export const Sidebar = () => {
+export const Sidebar = ({ mobileOpen = false, onClose }) => {
   const { user } = useAuth();
   const { pathname } = useLocation();
   const userRoles = user?.roles ? (Array.isArray(user.roles) ? user.roles : [user.roles]) : ['User'];
@@ -77,8 +79,22 @@ export const Sidebar = () => {
     .reduce((best, path) => (best && best.length >= path.length ? best : path), null);
 
   return (
-    <aside className="w-64 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 hidden md:flex flex-col justify-between p-4 transition-colors">
-      <div className="space-y-1">
+    <>
+      {mobileOpen && (
+        <button type="button" aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-40 bg-slate-950/55 backdrop-blur-sm md:hidden" />
+      )}
+      <aside
+        id="primary-navigation"
+        className={`fixed inset-y-0 left-0 z-50 flex w-[min(19rem,88vw)] shrink-0 flex-col justify-between border-r border-slate-200 bg-white p-4 shadow-2xl transition-transform duration-200 md:static md:z-auto md:w-64 md:translate-x-0 md:shadow-none dark:border-slate-800 dark:bg-slate-900 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+      >
+      <div className="min-h-0 overflow-y-auto">
+        <div className="mb-5 flex items-center justify-between md:hidden">
+          <BrandLogo size="sm" tagline="Emergency blood platform" />
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close navigation">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="space-y-1">
         <div className="px-3 py-2 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
           Main Navigation
         </div>
@@ -89,6 +105,7 @@ export const Sidebar = () => {
             <Link
               key={item.path}
               to={item.path}
+              onClick={onClose}
               aria-current={isActive ? 'page' : undefined}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
                 isActive
@@ -101,6 +118,7 @@ export const Sidebar = () => {
             </Link>
           );
         })}
+        </div>
       </div>
 
       {/* Sidebar Footer Info Card */}
@@ -113,7 +131,8 @@ export const Sidebar = () => {
           Secure ASP.NET Core & AI Orchestration System.
         </p>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };
 

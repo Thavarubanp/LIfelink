@@ -18,15 +18,15 @@ export const AgentStatusCard = ({ type = 'matching', title, description, metrics
   };
 
   return (
-    <div className="bg-slate-900 text-white rounded-xl p-5 shadow-lg border border-slate-800 relative overflow-hidden my-3">
+    <div className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-xl p-5 shadow-lg border border-slate-200 dark:border-slate-800 relative overflow-hidden my-3">
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-red-600/20 via-blue-600/10 to-transparent rounded-full blur-2xl pointer-events-none" />
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2.5">
-          <div className="p-2 bg-slate-800 rounded-lg border border-slate-700">
+          <div className="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
             {getIcon()}
           </div>
           <div>
-            <h4 className="text-sm font-semibold tracking-wide text-slate-100">{title}</h4>
+            <h4 className="text-sm font-semibold tracking-wide text-slate-900 dark:text-slate-100">{title}</h4>
             <span className="text-[11px] text-slate-400 font-medium">Smart Orchestration Engine</span>
           </div>
         </div>
@@ -35,13 +35,13 @@ export const AgentStatusCard = ({ type = 'matching', title, description, metrics
           {status.toUpperCase()}
         </span>
       </div>
-      <p className="text-xs text-slate-300 mb-4 leading-relaxed">{description}</p>
+      <p className="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">{description}</p>
       {metrics.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 pt-3 border-t border-slate-800">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
           {metrics.map((m, idx) => (
-            <div key={idx} className="bg-slate-800/60 p-2.5 rounded-lg border border-slate-700/50">
+            <div key={idx} className="bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700/50">
               <div className="text-[10px] text-slate-400 uppercase tracking-wider">{m.label}</div>
-              <div className="text-sm font-bold text-white mt-0.5">{m.value}</div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{m.value}</div>
             </div>
           ))}
         </div>

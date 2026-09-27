@@ -3,8 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { authApi } from '../../api';
 import { getApiErrorMessage, getApiFieldErrors } from '../../utils/errorUtils';
 import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
+import BrandLogo from '../../components/common/BrandLogo';
+import { useSystemThemePage } from '../../context/useSystemThemePage';
 
 export const RegisterPage = () => {
+  useSystemThemePage();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -112,9 +115,10 @@ export const RegisterPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden">
+    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden">
       <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl relative z-10">
         <div className="text-center mb-6">
+          <BrandLogo size="md" tagline={null} className="mb-4 justify-center" />
           <h1 className="text-2xl font-bold text-white tracking-tight">
             Create Life<span className="text-red-500">Link</span> Account
           </h1>
@@ -136,7 +140,7 @@ export const RegisterPage = () => {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-slate-300 font-semibold mb-1">First Name</label>
               <input
@@ -221,7 +225,7 @@ export const RegisterPage = () => {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label className="block text-slate-300 font-semibold mb-1">Phone Number</label>
               <input

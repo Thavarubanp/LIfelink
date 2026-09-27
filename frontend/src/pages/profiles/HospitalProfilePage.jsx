@@ -110,7 +110,7 @@ export const HospitalProfilePage = () => {
         <p className="text-xs text-slate-600 dark:text-slate-300">{error || 'Hospital record not found.'}</p>
         <button
           onClick={() => navigate(-1)}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-semibold hover:bg-slate-800"
+          className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-900 text-slate-700 dark:text-white border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800"
         >
           <ArrowLeft className="w-4 h-4" /> Go Back
         </button>
