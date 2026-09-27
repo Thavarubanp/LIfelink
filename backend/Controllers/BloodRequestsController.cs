@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Acceptances;
 using LifeLink.DTOs.BloodRequests;
@@ -82,6 +83,46 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// The patient who created a request edits its blood group and units while it is still Pending. Only donor/patient
+        /// accounts can use this; hospitals, doctors and admins cannot.
+        /// </summary>
+        [HttpPut("{id:guid}")]
+        [Authorize(Roles = "User")]
+        [ProducesResponseType(typeof(BloodRequestResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateRequest(Guid id, [FromBody] UpdateBloodRequestDto dto)
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue || userId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            try
+            {
+                return Ok(await _bloodRequestService.UpdatePendingRequestAsync(id, userId.Value, dto));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
         /// Returns blood requests created by the current user.
         /// </summary>
         [HttpGet("my")]
@@ -146,8 +187,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Creator deletes their own request (any status except Completed). It leaves every active list but all history
-        /// (acceptances, screening reports, doctor decisions, donations) is kept. Affected parties are notified.
+        /// Creator permanently deletes their own request (any status) when no donor or hospital donation is active, no
+        /// donor was screened (cancel instead) and nothing was donated. Others get 403; a concurrent acceptance gives 409.
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize]
@@ -175,6 +216,10 @@ namespace LifeLink.Controllers
             catch (UnauthorizedAccessException ex)
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {

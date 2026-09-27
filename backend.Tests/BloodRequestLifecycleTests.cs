@@ -168,7 +168,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Only_Creator_Can_Delete_Completed_Is_Refused_And_History_Is_Kept()
+        public async Task Only_Creator_Can_Delete_And_Screened_Or_Completed_Requests_Are_Refused()
         {
             var s = await SeedAsync();
             var service = new BloodRequestService(s.Context);
@@ -176,29 +176,30 @@ namespace LifeLink.Tests
             var completed = await AddRequestAsync(s.Context, s.Patient.UserId, s.Hospital.HospitalId, BloodRequestStatus.Completed);
 
             var acceptanceId = Guid.NewGuid();
-            await s.Context.Acceptances.AddAsync(new Acceptance { AcceptanceId = acceptanceId, BloodRequestId = request.BloodRequestId, DonorUserId = s.HospitalStaff.UserId });
+            // The donor was screened and later withdrew: no active acceptance, but a screening report exists
+            await s.Context.Acceptances.AddAsync(new Acceptance { AcceptanceId = acceptanceId, BloodRequestId = request.BloodRequestId, DonorUserId = s.HospitalStaff.UserId, Status = AcceptanceStatus.Cancelled });
             await s.Context.DonorVerifications.AddAsync(new DonorVerification { AcceptanceId = acceptanceId, DoctorId = s.Doctor.DoctorId });
             await s.Context.BloodRequestVerifications.AddAsync(new BloodRequestVerification { BloodRequestId = request.BloodRequestId, DoctorId = s.Doctor.DoctorId, Status = VerificationStatus.Rejected });
-            await s.Context.DonorPatientMatches.AddAsync(new DonorPatientMatch { BloodRequestId = request.BloodRequestId, DonorUserId = s.HospitalStaff.UserId, DoctorId = s.Doctor.DoctorId });
+            await s.Context.DonorPatientMatches.AddAsync(new DonorPatientMatch { BloodRequestId = request.BloodRequestId, DonorUserId = s.HospitalStaff.UserId, DoctorId = s.Doctor.DoctorId, Status = MatchStatus.Cancelled });
             await s.Context.RequestFulfillmentHistories.AddAsync(new RequestFulfillmentHistory { BloodRequestId = request.BloodRequestId, AcceptanceId = acceptanceId, DonorUserId = s.HospitalStaff.UserId });
             await s.Context.SaveChangesAsync();
 
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteRequestAsync(request.BloodRequestId, s.HospitalStaff.UserId));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteRequestAsync(completed.BloodRequestId, s.Patient.UserId));
+            var donated = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteRequestAsync(completed.BloodRequestId, s.Patient.UserId));
+            Assert.Equal(BloodRequestService.DeleteBlockedByDonationMessage, donated.Message);
 
-            await service.DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId);
+            // The acceptance has a screening report (reports can never be deleted): the creator cancels instead
+            var screened = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId));
+            Assert.Equal(BloodRequestService.DeleteBlockedByScreeningMessage, screened.Message);
 
-            // Soft delete: out of every active list, but acceptances, reports, decisions, matches and donations stay
-            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
-            var acceptance = Assert.Single(s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId));
-            Assert.Equal(AcceptanceStatus.Cancelled, acceptance.Status);
-            Assert.Equal(VerificationStatus.Closed, Assert.Single(s.Context.DonorVerifications.Where(v => v.AcceptanceId == acceptanceId)).Status);
-            Assert.Equal(VerificationStatus.Rejected, Assert.Single(s.Context.BloodRequestVerifications.Where(v => v.BloodRequestId == request.BloodRequestId)).Status);
-            Assert.Single(s.Context.DonorPatientMatches.Where(m => m.BloodRequestId == request.BloodRequestId));
+            // Nothing was removed or changed
+            Assert.Equal(BloodRequestStatus.Rejected, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
+            Assert.Single(s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId));
+            Assert.Single(s.Context.DonorVerifications.Where(v => v.AcceptanceId == acceptanceId));
+            Assert.Single(s.Context.BloodRequestVerifications.Where(v => v.BloodRequestId == request.BloodRequestId));
             Assert.Single(s.Context.RequestFulfillmentHistories.Where(h => h.BloodRequestId == request.BloodRequestId));
-            Assert.Empty(await service.GetPublicRequestsAsync());
-            Assert.Contains(await service.GetMyRequestsAsync(s.Patient.UserId), r => r.BloodRequestId == request.BloodRequestId && r.Status == "Deleted");
             Assert.Equal(BloodRequestStatus.Completed, (await s.Context.BloodRequests.FindAsync(completed.BloodRequestId))!.Status);
+            Assert.Empty(s.Context.Notifications.Where(n => n.NotificationType == "BloodRequestDeleted"));
         }
 
         [Theory]
@@ -214,26 +215,24 @@ namespace LifeLink.Tests
 
             await new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId);
 
-            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
+            // Hard delete: the request row is gone
+            Assert.False(await s.Context.BloodRequests.AnyAsync(r => r.BloodRequestId == request.BloodRequestId));
         }
 
         [Fact]
-        public async Task Deleting_Request_Notifies_Doctor_Hospital_And_Active_Donors_And_Keeps_Inventory()
+        public async Task Deleting_Request_Notifies_Doctor_Hospital_And_Removed_Donors_And_Keeps_Inventory()
         {
             var s = await SeedAsync();
             var doctorLogin = await AddDoctorLoginAsync(s, mustChangePassword: false);
             var request = await AddRequestAsync(s.Context, s.Patient.UserId, s.Hospital.HospitalId, BloodRequestStatus.Approved, units: 3);
             await s.Context.BloodRequestVerifications.AddAsync(new BloodRequestVerification { BloodRequestId = request.BloodRequestId, DoctorId = s.Doctor.DoctorId, Status = VerificationStatus.Approved });
 
-            // Donors: active, matched, cancelled, rejected; only the first two are notified
-            var donors = Enumerable.Range(1, 4).Select(i => new User { UserId = Guid.NewGuid(), FirstName = $"D{i}", LastName = "X", Email = $"d{i}@lifelink.org" }).ToArray();
+            // Donors who withdrew or were turned down before any screening report: their acceptances go with the request
+            var donors = Enumerable.Range(1, 2).Select(i => new User { UserId = Guid.NewGuid(), FirstName = $"D{i}", LastName = "X", Email = $"d{i}@lifelink.org" }).ToArray();
             await s.Context.Users.AddRangeAsync(donors);
-            var statuses = new[] { AcceptanceStatus.Accepted, AcceptanceStatus.Matched, AcceptanceStatus.Cancelled, AcceptanceStatus.Rejected };
-            for (var i = 0; i < 4; i++)
-            {
-                await s.Context.Acceptances.AddAsync(new Acceptance { BloodRequestId = request.BloodRequestId, DonorUserId = donors[i].UserId, Status = statuses[i] });
-            }
-            await s.Context.DonorPatientMatches.AddAsync(new DonorPatientMatch { BloodRequestId = request.BloodRequestId, DonorUserId = donors[1].UserId, DoctorId = s.Doctor.DoctorId });
+            await s.Context.Acceptances.AddAsync(new Acceptance { BloodRequestId = request.BloodRequestId, DonorUserId = donors[0].UserId, Status = AcceptanceStatus.Cancelled });
+            await s.Context.Acceptances.AddAsync(new Acceptance { BloodRequestId = request.BloodRequestId, DonorUserId = donors[1].UserId, Status = AcceptanceStatus.Rejected });
+            await s.Context.DonorPatientMatches.AddAsync(new DonorPatientMatch { BloodRequestId = request.BloodRequestId, DonorUserId = donors[1].UserId, DoctorId = s.Doctor.DoctorId, Status = MatchStatus.Cancelled });
 
             // Existing stock + transaction at the hospital must survive the delete
             var inventory = new BloodInventory { InventoryId = Guid.NewGuid(), HospitalId = s.Hospital.HospitalId, BloodGroup = "A+", UnitsAvailable = 5, MaximumCapacity = 100 };
@@ -248,14 +247,15 @@ namespace LifeLink.Tests
             Assert.Single(sent, n => n.UserId == doctorLogin.UserId && n.RecipientRole == "Doctor");
             Assert.Single(sent, n => n.HospitalId == s.Hospital.HospitalId && n.UserId == null && n.RecipientRole == "HospitalStaff");
             Assert.Single(sent, n => n.UserId == donors[0].UserId);
-            Assert.Single(sent, n => n.UserId == donors[1].UserId); // accepted + matched -> one notification
-            Assert.DoesNotContain(sent, n => n.UserId == donors[2].UserId || n.UserId == donors[3].UserId);
+            Assert.Single(sent, n => n.UserId == donors[1].UserId);
+            Assert.DoesNotContain(sent, n => n.UserId == s.Patient.UserId); // the creator is not notified
+            Assert.All(sent, n => Assert.Contains("Blood request for A+, 3 unit(s) at Venus Hospital", n.Message));
 
-            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
-            var kept = s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId).ToList();
-            Assert.Equal(4, kept.Count);
-            Assert.Equal(AcceptanceStatus.Cancelled, kept.Single(a => a.DonorUserId == donors[0].UserId).Status);
-            Assert.Equal(AcceptanceStatus.Matched, kept.Single(a => a.DonorUserId == donors[1].UserId).Status);
+            // The request, its doctor assignment, the inactive acceptances and the cancelled match are gone
+            Assert.False(await s.Context.BloodRequests.AnyAsync(r => r.BloodRequestId == request.BloodRequestId));
+            Assert.Empty(s.Context.Acceptances.Where(a => a.BloodRequestId == request.BloodRequestId));
+            Assert.Empty(s.Context.BloodRequestVerifications.Where(v => v.BloodRequestId == request.BloodRequestId));
+            Assert.Empty(s.Context.DonorPatientMatches.Where(m => m.BloodRequestId == request.BloodRequestId));
             Assert.Equal(5, (await s.Context.BloodInventories.FindAsync(inventory.InventoryId))!.UnitsAvailable);
             Assert.Equal(1, await s.Context.InventoryTransactions.CountAsync());
         }
@@ -268,7 +268,7 @@ namespace LifeLink.Tests
 
             await new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.HospitalStaff.UserId);
 
-            Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
+            Assert.False(await s.Context.BloodRequests.AnyAsync(r => r.BloodRequestId == request.BloodRequestId));
             Assert.Empty(s.Context.Notifications.Where(n => n.NotificationType == "BloodRequestDeleted"));
         }
 

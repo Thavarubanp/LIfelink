@@ -11,7 +11,7 @@ import {
 const StatusBadge = ({ status }) => {
   const cfg = {
     PENDING: { label: 'Pending', cls: 'text-amber-400 bg-amber-950/60 border-amber-700', Icon: Clock },
-    APPROVED: { label: 'Approved', cls: 'text-emerald-400 bg-emerald-950/60 border-emerald-700', Icon: CheckCircle2 },
+    APPROVED: { label: 'Approved', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800', Icon: CheckCircle2 },
     REJECTED: { label: 'Rejected (open)', cls: 'text-rose-400 bg-rose-950/60 border-rose-700', Icon: XCircle },
     CLOSED: { label: 'Closed', cls: 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600', Icon: Lock },
   }[status] || { label: status, cls: 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700', Icon: Clock };

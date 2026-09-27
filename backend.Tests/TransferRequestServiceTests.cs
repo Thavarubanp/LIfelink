@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
@@ -35,8 +36,15 @@ namespace LifeLink.Tests
             await context.SaveChangesAsync();
         }
 
-        private static TransferRequestCreateDto Dto(string type, Guid counterpart, string group = "O+", int units = 2) =>
-            new() { TransferType = type, CounterpartHospitalId = counterpart, BloodGroup = group, UnitsRequested = units, Notes = "test" };
+        private static TransferRequestCreateDto Dto(string type, Guid counterpart, string group = "O+", int units = 2, List<Guid>? packetIds = null) =>
+            new() { TransferType = type, CounterpartHospitalId = counterpart, BloodGroup = group, UnitsRequested = units, Notes = "test", PacketIds = packetIds };
+
+        private static Task<List<Guid>> PacketIdsAsync(AppDbContext context, Guid hospitalId, int take, string group = "O+") =>
+            context.BloodPackets.Where(p => p.HospitalId == hospitalId && p.BloodGroup == group && p.Status == BloodPacketStatus.Available)
+                .OrderBy(p => p.TrackingNumber).Take(take).Select(p => p.PacketId).ToListAsync();
+
+        private static async Task<int> UnitsAsync(AppDbContext context, Guid hospitalId, string group = "O+") =>
+            (await context.BloodInventories.SingleOrDefaultAsync(i => i.HospitalId == hospitalId && i.BloodGroup == group))?.UnitsAvailable ?? 0;
 
         [Fact]
         public async Task CreateTransferRequestAsync_SameSenderAndReceiver_ThrowsInvalidOperationException()
@@ -68,20 +76,98 @@ namespace LifeLink.Tests
             Assert.Equal(a.HospitalId, request.CreatedByHospitalId);
             Assert.Equal("Pending", request.Status);
 
-            var offer = await service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId), a.HospitalId);
+            var offer = await service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId, packetIds: await PacketIdsAsync(context, a.HospitalId, 2)), a.HospitalId);
             Assert.Equal(a.HospitalId, offer.SenderHospitalId);
             Assert.Equal(b.HospitalId, offer.ReceiverHospitalId);
             Assert.Equal(1, await context.Notifications.CountAsync(n => n.HospitalId == b.HospitalId && n.NotificationType == "TransferOffered"));
         }
 
         [Fact]
-        public async Task Offer_Requires_Enough_Available_Stock()
+        public async Task Offer_Holds_The_Selected_Packets_Until_Rejected_Or_Withdrawn()
         {
             var (context, a, b) = await SeedAsync();
-            await AddStockAsync(context, a.HospitalId, "O+", 1);
+            var service = new TransferRequestService(context);
+            await AddStockAsync(context, a.HospitalId, "O+", 3);
+            await AddStockAsync(context, b.HospitalId, "O+", 1);
+
+            // Packets must be chosen, and must be the offering hospital's own
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId), a.HospitalId));
+            var foreignPackets = await PacketIdsAsync(context, b.HospitalId, 1);
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId, packetIds: foreignPackets), a.HospitalId));
+
+            var chosen = await PacketIdsAsync(context, a.HospitalId, 2);
+            var offer = await service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId, units: 99, packetIds: chosen), a.HospitalId);
+            Assert.Equal(2, offer.UnitsRequested); // units = packets selected
+            Assert.Equal(1, await UnitsAsync(context, a.HospitalId));
+            Assert.All(chosen, id => Assert.Equal(BloodPacketStatus.Reserved, context.BloodPackets.Find(id)!.Status));
+            Assert.Equal(2, (await service.GetTransferRequestAsync(offer.TransferRequestId))!.PacketTrackingNumbers.Count);
+
+            // Held packets cannot be offered again
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId, packetIds: chosen), a.HospitalId));
+
+            await service.RejectTransferRequestAsync(offer.TransferRequestId, b.HospitalId, "Not needed");
+            Assert.Equal(3, await UnitsAsync(context, a.HospitalId));
+            Assert.All(chosen, id => Assert.Equal(BloodPacketStatus.Available, context.BloodPackets.Find(id)!.Status));
+
+            var second = await service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId, packetIds: chosen), a.HospitalId);
+            Assert.Equal(1, await UnitsAsync(context, a.HospitalId));
+            await service.DeleteTransferRequestAsync(second.TransferRequestId, a.HospitalId);
+            Assert.Equal(3, await UnitsAsync(context, a.HospitalId));
+        }
+
+        [Fact]
+        public async Task Accepting_An_Offer_Moves_The_Held_Packets_With_All_Their_Details()
+        {
+            var (context, a, b) = await SeedAsync();
+            var service = new TransferRequestService(context);
+            await AddStockAsync(context, a.HospitalId, "O+", 3);
+            var chosen = await PacketIdsAsync(context, a.HospitalId, 2);
+            var before = await context.BloodPackets.AsNoTracking().Where(p => chosen.Contains(p.PacketId)).ToListAsync();
+
+            var offer = await service.CreateTransferRequestAsync(Dto("Offer", b.HospitalId, packetIds: chosen), a.HospitalId);
+            var completed = await service.ApproveTransferRequestAsync(offer.TransferRequestId, b.HospitalId);
+
+            Assert.Equal("Completed", completed.Status);
+            Assert.Equal(before.Select(p => p.TrackingNumber).OrderBy(n => n), completed.PacketTrackingNumbers);
+            foreach (var old in before)
+            {
+                var now = await context.BloodPackets.FindAsync(old.PacketId);
+                Assert.Equal(b.HospitalId, now!.HospitalId);                  // receiver owns it
+                Assert.Equal(BloodPacketStatus.Available, now.Status);
+                Assert.Equal(old.TrackingNumber, now.TrackingNumber);          // everything else unchanged
+                Assert.Equal(a.HospitalId, now.CreatedByHospitalId);
+                Assert.Equal(old.BloodGroup, now.BloodGroup);
+                Assert.Equal(old.CollectionDate, now.CollectionDate);
+                Assert.Equal(old.CreatedAt, now.CreatedAt);
+            }
+
+            Assert.Equal(1, await UnitsAsync(context, a.HospitalId));
+            Assert.Equal(2, await UnitsAsync(context, b.HospitalId));
+            // The sender no longer lists them; the receiver lists them as its own Available packets
+            var inventory = new BloodInventoryService(context);
+            Assert.DoesNotContain(await inventory.GetPacketsAsync(a.HospitalId, null, null, null, a.HospitalId), p => chosen.Contains(p.PacketId));
+            Assert.Equal(2, (await inventory.GetPacketsAsync(b.HospitalId, null, BloodPacketStatus.Available, null, b.HospitalId)).Count());
+        }
+
+        [Fact]
+        public async Task An_Offer_Created_Before_Packet_Selection_Cannot_Be_Accepted()
+        {
+            var (context, a, b) = await SeedAsync();
+            await AddStockAsync(context, a.HospitalId, "O+", 3);
+            var legacy = new HospitalTransferRequest
+            {
+                TransferRequestId = Guid.NewGuid(), SenderHospitalId = a.HospitalId, ReceiverHospitalId = b.HospitalId, BloodGroup = "O+",
+                UnitsRequested = 2, TransferType = TransferTypes.Offer, Status = TransferRequestStatus.Pending.ToString()
+            };
+            await context.HospitalTransferRequests.AddAsync(legacy);
+            await context.SaveChangesAsync();
+
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                new TransferRequestService(context).CreateTransferRequestAsync(Dto("Offer", b.HospitalId, units: 2), a.HospitalId));
-            Assert.Contains("only 1", ex.Message);
+                new TransferRequestService(context).ApproveTransferRequestAsync(legacy.TransferRequestId, b.HospitalId));
+            Assert.Contains("no reserved packets", ex.Message);
+            Assert.Equal(3, await UnitsAsync(context, a.HospitalId));
         }
 
         [Fact]
@@ -106,14 +192,19 @@ namespace LifeLink.Tests
             await AddStockAsync(context, b.HospitalId, "O+", 5);
             var packetIdsBefore = await context.BloodPackets.Where(p => p.HospitalId == b.HospitalId).Select(p => p.PacketId).ToListAsync();
 
-            // A requests 2 units from B; only B (the counterpart) can accept
+            // A requests 2 units from B; only B (the counterpart) can accept, choosing exactly 2 of its packets
             var created = await service.CreateTransferRequestAsync(Dto("Request", b.HospitalId), a.HospitalId);
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ApproveTransferRequestAsync(created.TransferRequestId, a.HospitalId));
+            var chosen = await context.BloodPackets.Where(p => p.HospitalId == b.HospitalId)
+                .OrderByDescending(p => p.TrackingNumber).Take(2).Select(p => p.PacketId).ToListAsync();
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ApproveTransferRequestAsync(created.TransferRequestId, a.HospitalId, null, chosen));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApproveTransferRequestAsync(created.TransferRequestId, b.HospitalId));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApproveTransferRequestAsync(created.TransferRequestId, b.HospitalId, null, chosen.Take(1).ToList()));
 
-            var completed = await service.ApproveTransferRequestAsync(created.TransferRequestId, b.HospitalId);
+            var completed = await service.ApproveTransferRequestAsync(created.TransferRequestId, b.HospitalId, null, chosen);
 
             Assert.Equal("Completed", completed.Status);
             Assert.Equal(2, completed.PacketIds.Count);
+            Assert.Equal(chosen.OrderBy(x => x), completed.PacketIds.OrderBy(x => x)); // exactly the packets the sender chose
             Assert.All(completed.PacketIds, id => Assert.Contains(id, packetIdsBefore)); // packet IDs unchanged
             Assert.Equal(2, await context.BloodPackets.CountAsync(p => p.HospitalId == a.HospitalId && completed.PacketIds.Contains(p.PacketId)));
 
@@ -137,7 +228,10 @@ namespace LifeLink.Tests
             await AddStockAsync(context, b.HospitalId, "O+", 1);
             var created = await service.CreateTransferRequestAsync(Dto("Request", b.HospitalId, units: 3), a.HospitalId);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApproveTransferRequestAsync(created.TransferRequestId, b.HospitalId));
+            var onePacket = await PacketIdsAsync(context, b.HospitalId, 1);
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.ApproveTransferRequestAsync(created.TransferRequestId, b.HospitalId, null, onePacket));
+            Assert.Contains("exactly 3", ex.Message);
             Assert.Equal("Pending", (await context.HospitalTransferRequests.FindAsync(created.TransferRequestId))!.Status);
             Assert.Equal(1, await context.BloodPackets.CountAsync(p => p.HospitalId == b.HospitalId));
         }
@@ -182,7 +276,7 @@ namespace LifeLink.Tests
 
             var pending = await service.CreateTransferRequestAsync(Dto("Request", b.HospitalId, "O+", 10), a.HospitalId);
             var toAccept = await service.CreateTransferRequestAsync(Dto("Request", b.HospitalId, "B-", 4), a.HospitalId);
-            await service.ApproveTransferRequestAsync(toAccept.TransferRequestId, b.HospitalId);
+            await service.ApproveTransferRequestAsync(toAccept.TransferRequestId, b.HospitalId, null, await PacketIdsAsync(context, b.HospitalId, 4, "B-"));
 
             var pendingList = (await service.GetPendingTransferRequestsAsync(a.HospitalId)).ToList();
             Assert.Single(pendingList);

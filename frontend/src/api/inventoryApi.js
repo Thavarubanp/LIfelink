@@ -41,6 +41,18 @@ export const inventoryApi = {
     return response.data;
   },
 
+  // Hospital staff enter collected blood: { bloodGroup, collectionDate: 'yyyy-MM-dd', quantity }
+  createPackets: async (dto) => {
+    const response = await client.post('/Inventory/packets', dto);
+    return response.data;
+  },
+
+  // Only the hospital that created the packet (while it owns it and it is Available): { bloodGroup, collectionDate }
+  updatePacket: async (packetId, dto) => {
+    const response = await client.put(`/Inventory/packets/${packetId}`, dto);
+    return response.data;
+  },
+
   // Packets of the signed-in hospital; pass packetId to get one packet with its full history
   getPackets: async (params = {}) => {
     const response = await client.get('/Inventory/packets', { params });

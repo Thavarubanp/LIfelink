@@ -13,6 +13,11 @@ namespace LifeLink.DTOs.Acceptances
         public DateTime? CancelledAt { get; set; }
         public string? RejectionReason { get; set; }
 
+        // Hospital donation (instead of a donor): the donating hospital and the packets it offered
+        public Guid? DonorHospitalId { get; set; }
+        public string? DonorHospitalName { get; set; }
+        public List<DonatedPacketDto> Packets { get; set; } = new();
+
         // Request context (filled for the donor's own list)
         public Guid? HospitalId { get; set; }
         public string? HospitalName { get; set; }

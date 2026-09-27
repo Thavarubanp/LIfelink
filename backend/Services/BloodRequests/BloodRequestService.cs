@@ -7,6 +7,7 @@ using LifeLink.Data;
 using LifeLink.DTOs.BloodRequests;
 using LifeLink.Entities;
 using LifeLink.Services.Acceptances;
+using LifeLink.Services.Common;
 using LifeLink.Services.Notification;
 using Microsoft.EntityFrameworkCore;
 
@@ -79,6 +80,14 @@ namespace LifeLink.Services.BloodRequests
                 throw new InvalidOperationException("This account can no longer create blood requests.");
             }
 
+            // A hospital's own request names one of its doctors, who approves it (and any hospital donation to it)
+            Doctor? assignedDoctor = null;
+            if (await _context.UserRoles.AnyAsync(ur => ur.UserId == patientUserId && ur.Role.Name == "HospitalStaff"))
+            {
+                assignedDoctor = await DoctorAssignmentRules.RequireAssignableDoctorAsync(_context, dto.DoctorId, dto.HospitalId,
+                    "Select the doctor who will approve this request.");
+            }
+
             var normalizedBloodGroup = BloodValidationHelper.NormalizeBloodGroup(dto.BloodGroup);
             var normalizedPriority = BloodValidationHelper.NormalizePriority(dto.Priority);
 
@@ -105,7 +114,8 @@ namespace LifeLink.Services.BloodRequests
                 FulfilledUnits = 0,
                 Reason = dto.Reason.Trim(),
                 Priority = normalizedPriority,
-                Status = BloodRequestStatus.Pending,
+                // Hospital requests skip self-verification: they go straight to the chosen doctor
+                Status = assignedDoctor != null ? BloodRequestStatus.Verified : BloodRequestStatus.Pending,
                 CreatedAt = now,
                 UpdatedAt = now,
                 ExpiryDate = now.AddDays(7),
@@ -113,6 +123,82 @@ namespace LifeLink.Services.BloodRequests
             };
 
             await _context.BloodRequests.AddAsync(request);
+            if (assignedDoctor != null)
+            {
+                await _context.BloodRequestVerifications.AddAsync(new BloodRequestVerification
+                {
+                    VerificationId = Guid.NewGuid(),
+                    BloodRequestId = request.BloodRequestId,
+                    DoctorId = assignedDoctor.DoctorId,
+                    Status = VerificationStatus.Pending,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+            await _context.SaveChangesAsync();
+
+            return (await MapManyAsync(new[] { request })).First();
+        }
+
+        /// <summary>
+        /// The patient who created a request changes its blood group and units while it is still Pending (before the
+        /// hospital verifies or rejects it). Only those two fields change, with the same validation as creation.
+        /// </summary>
+        public async Task<BloodRequestResponseDto> UpdatePendingRequestAsync(Guid requestId, Guid patientUserId, UpdateBloodRequestDto dto)
+        {
+            var request = await _context.BloodRequests.FindAsync(requestId)
+                          ?? throw new KeyNotFoundException($"Blood request with ID {requestId} was not found.");
+
+            if (request.PatientUserId != patientUserId)
+            {
+                throw new UnauthorizedAccessException("Only the patient who created this request can edit it.");
+            }
+
+            if (request.Status != BloodRequestStatus.Pending)
+            {
+                throw new InvalidOperationException($"Only pending requests can be edited. This request is {request.Status}.");
+            }
+
+            if (request.ExpiryDate <= DateTime.UtcNow)
+            {
+                throw new InvalidOperationException("This request has expired and can no longer be edited.");
+            }
+
+            if (!BloodValidationHelper.IsValidBloodGroup(dto.BloodGroup))
+            {
+                throw new ArgumentException($"Invalid blood group: '{dto.BloodGroup}'. Allowed values are O-, O+, A-, A+, B-, B+, AB-, AB+.");
+            }
+
+            if (!BloodValidationHelper.IsValidUnits(dto.UnitsRequired))
+            {
+                throw new ArgumentException("UnitsRequired must be between 1 and 10.");
+            }
+
+            if (await _context.Users.AnyAsync(u => u.UserId == patientUserId &&
+                    (u.AccountStatus == AccountStatus.Blocked || u.AccountStatus == AccountStatus.Deleted)))
+            {
+                throw new InvalidOperationException("This account can no longer change blood requests.");
+            }
+
+            var normalizedBloodGroup = BloodValidationHelper.NormalizeBloodGroup(dto.BloodGroup);
+
+            // Same duplicate rule as creation, ignoring the request being edited
+            var hasActiveDuplicate = await _context.BloodRequests.AnyAsync(r =>
+                r.BloodRequestId != requestId &&
+                r.PatientUserId == patientUserId &&
+                r.HospitalId == request.HospitalId &&
+                r.BloodGroup == normalizedBloodGroup &&
+                (r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Verified || r.Status == BloodRequestStatus.Approved));
+            if (hasActiveDuplicate)
+            {
+                throw new InvalidOperationException("An active request already exists for this hospital and blood group.");
+            }
+
+            request.BloodGroup = normalizedBloodGroup;
+            request.UnitsRequired = dto.UnitsRequired;
+            request.UpdatedAt = DateTime.UtcNow;
+
+            // A hospital verifying or rejecting at the same moment changes the concurrency token: one save fails (409)
             await _context.SaveChangesAsync();
 
             return (await MapManyAsync(new[] { request })).First();
@@ -151,8 +237,10 @@ namespace LifeLink.Services.BloodRequests
                 .Where(v => v.DoctorId == doctor.DoctorId)
                 .Select(v => v.BloodRequestId);
 
+            var fallbackRequestIds = doctor.IsActive ? await GetFallbackDonationRequestIdsAsync(doctor.HospitalId) : new List<Guid>();
+
             var requests = await _context.BloodRequests
-                .Where(r => assignedRequestIds.Contains(r.BloodRequestId))
+                .Where(r => assignedRequestIds.Contains(r.BloodRequestId) || fallbackRequestIds.Contains(r.BloodRequestId))
                 .OrderByDescending(r => r.Status == BloodRequestStatus.Verified)
                 .ThenByDescending(r => r.CreatedAt)
                 .ToListAsync();
@@ -161,10 +249,56 @@ namespace LifeLink.Services.BloodRequests
         }
 
         /// <summary>
-        /// Creator deletes their request (any status except Completed). Nothing is removed: the request becomes
-        /// Deleted and leaves every active list, donors still in progress are closed (a reserved slot is released),
-        /// a pending doctor assignment is closed, and every acceptance, screening report, decision and recorded
-        /// donation stays visible in history. The assigned doctor, the hospital and active donors are notified.
+        /// Requests of a hospital with hospital donations waiting for a decision whose assigned doctor was removed (or is
+        /// no longer active). Any active doctor of that hospital may decide on them, so they show on those doctors' lists.
+        /// </summary>
+        private async Task<List<Guid>> GetFallbackDonationRequestIdsAsync(Guid hospitalId)
+        {
+            var candidateIds = await _context.BloodRequests
+                .Where(r => r.HospitalId == hospitalId && _context.Acceptances.Any(a =>
+                    a.BloodRequestId == r.BloodRequestId && a.DonorHospitalId != null && a.Status == AcceptanceStatus.Accepted))
+                .Select(r => r.BloodRequestId)
+                .ToListAsync();
+            if (candidateIds.Count == 0) return candidateIds;
+
+            // The assigned doctor is the latest verification's doctor (as for the approval rule)
+            var latestDoctorByRequest = (await _context.BloodRequestVerifications
+                    .Where(v => candidateIds.Contains(v.BloodRequestId))
+                    .ToListAsync())
+                .GroupBy(v => v.BloodRequestId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.UpdatedAt).First().DoctorId);
+            var activeDoctorIds = await _context.Doctors
+                .Where(d => d.HospitalId == hospitalId && d.IsActive)
+                .Select(d => d.DoctorId)
+                .ToListAsync();
+
+            return candidateIds
+                .Where(id => !(latestDoctorByRequest.GetValueOrDefault(id) is Guid assigned && activeDoctorIds.Contains(assigned)))
+                .ToList();
+        }
+
+        public const string DeleteBlockedByAcceptanceMessage = "This request can't be deleted because a donor has accepted it.";
+        public const string DeleteBlockedByScreeningMessage = "This request can't be deleted because a donor has already been screened. You can cancel it instead.";
+        public const string DeleteBlockedByDonationMessage = "This request can't be deleted because blood has already been donated to it.";
+
+        /// <summary>Acceptance statuses that block deleting a request (a donor or hospital donation still in progress or done).</summary>
+        public static readonly AcceptanceStatus[] DeleteBlockingStatuses =
+        {
+            AcceptanceStatus.Accepted,
+            AcceptanceStatus.ScreeningPending,
+            AcceptanceStatus.ScreeningCompleted,
+            AcceptanceStatus.Verified,
+            AcceptanceStatus.Matched
+        };
+
+        /// <summary>
+        /// The creator permanently deletes their request, in any status, when nobody is still taking part: no active
+        /// acceptance (or active match), no donated units, and no acceptance with a screening report (screening reports
+        /// can never be deleted, so a screened request is cancelled instead). The request, its doctor assignment, its
+        /// inactive acceptances and cancelled matches are removed in one transaction together with the notifications to
+        /// the hospital, the assigned doctor and the donors/hospitals whose acceptances are removed. The notifications
+        /// carry the details in their text and do not link to the request. No AI agent is involved. A donor or hospital
+        /// accepting at the same moment makes one of the two fail (acceptances reference the request with a foreign key).
         /// </summary>
         public async Task DeleteRequestAsync(Guid requestId, Guid creatorUserId)
         {
@@ -179,106 +313,108 @@ namespace LifeLink.Services.BloodRequests
                 throw new UnauthorizedAccessException("Only the request creator can delete this blood request.");
             }
 
-            if (request.Status == BloodRequestStatus.Completed)
-            {
-                // Completed requests represent fulfilled donations (and stock already added to inventory)
-                throw new InvalidOperationException("Completed blood requests cannot be deleted.");
-            }
-
             if (request.Status == BloodRequestStatus.Deleted)
             {
                 throw new InvalidOperationException("This blood request has already been deleted.");
             }
 
+            if (request.FulfilledUnits > 0 || request.Status == BloodRequestStatus.Completed)
+            {
+                throw new InvalidOperationException(DeleteBlockedByDonationMessage);
+            }
+
             var acceptances = await _context.Acceptances
                 .Where(a => a.BloodRequestId == requestId)
                 .ToListAsync();
+            var matches = await _context.DonorPatientMatches
+                .Where(m => m.BloodRequestId == requestId)
+                .ToListAsync();
+
+            if (acceptances.Any(a => DeleteBlockingStatuses.Contains(a.Status)) || matches.Any(m => m.Status != MatchStatus.Cancelled))
+            {
+                throw new InvalidOperationException(DeleteBlockedByAcceptanceMessage);
+            }
+
+            var acceptanceIds = acceptances.Select(a => a.AcceptanceId).ToList();
+            if (acceptanceIds.Count > 0 && await _context.DonorVerifications.AnyAsync(v => acceptanceIds.Contains(v.AcceptanceId)))
+            {
+                throw new InvalidOperationException(DeleteBlockedByScreeningMessage);
+            }
 
             await AddDeletionNotificationsAsync(request, acceptances);
 
-            const string reason = "The request was deleted by its creator.";
-            await AcceptanceClosure.CloseAllAsync(_context, request, AcceptanceClosure.ActiveStatuses,
-                AcceptanceStatus.Cancelled, reason, "Request deleted by its creator.");
-
-            var now = DateTime.UtcNow;
-            var pendingAssignments = await _context.BloodRequestVerifications
-                .Where(v => v.BloodRequestId == requestId && v.Status == VerificationStatus.Pending)
+            var assignments = await _context.BloodRequestVerifications
+                .Where(v => v.BloodRequestId == requestId)
                 .ToListAsync();
-            foreach (var assignment in pendingAssignments)
+            _context.BloodRequestVerifications.RemoveRange(assignments);
+            _context.DonorPatientMatches.RemoveRange(matches);
+            _context.Acceptances.RemoveRange(acceptances);
+            _context.BloodRequests.Remove(request);
+
+            try
             {
-                assignment.Status = VerificationStatus.Closed;
-                assignment.Notes = "Request deleted by its creator.";
-                assignment.UpdatedAt = now;
+                // One SaveChanges = one transaction: the deletes and the notifications commit together or not at all
+                await _context.SaveChangesAsync();
             }
-
-            request.Status = BloodRequestStatus.Deleted;
-            request.CancelledAt = now;
-            request.UpdatedAt = now;
-
-            await _context.SaveChangesAsync();
+            catch (DbUpdateException)
+            {
+                // e.g. a donor or hospital accepted at the same moment (foreign key) or the request just changed
+                throw new ConflictException("This request changed while it was being deleted (for example, a donor has just accepted it). Refresh and try again.");
+            }
         }
 
-        // Staged on the same context as the delete so both commit (or fail) together
+        // Staged on the same context as the delete so both commit (or fail) together. The request will no longer exist,
+        // so each message carries the blood group, units, hospital and creation date, and nothing links to the request.
         private async Task AddDeletionNotificationsAsync(BloodRequest request, List<Acceptance> acceptances)
         {
-            var now = DateTime.UtcNow;
             var hospitalName = await _context.Hospitals
                 .Where(h => h.HospitalId == request.HospitalId)
                 .Select(h => h.Name)
                 .FirstOrDefaultAsync() ?? "the hospital";
-            var summary = $"Blood request #{request.BloodRequestId.ToString()[..8]} ({request.BloodGroup}, {request.UnitsRequired} unit(s)) at {hospitalName}";
-
-            LifeLink.Entities.Notification Build(Guid? userId, Guid? hospitalId, string role, string message) => new()
-            {
-                NotificationId = Guid.NewGuid(),
-                UserId = userId,
-                HospitalId = hospitalId,
-                Title = "Blood Request Deleted",
-                Message = message,
-                NotificationType = "BloodRequestDeleted",
-                RecipientRole = role,
-                IsRead = false,
-                CreatedAt = now
-            };
+            // Creation date as the Sri Lanka calendar date (same rule as packet dates), not the UTC date
+            var created = LifeLink.Services.Inventory.PacketDateRules.Today(request.CreatedAt);
+            var summary = $"Blood request for {request.BloodGroup}, {request.UnitsRequired} unit(s) at {hospitalName} (created {created:d MMM yyyy}) was deleted by the requester.";
+            const string type = "BloodRequestDeleted";
+            const string title = "Blood Request Deleted";
 
             var notifications = new List<LifeLink.Entities.Notification>();
 
-            // Assigned doctor (pending or decided), if the doctor still exists
-            var assignedDoctorUserId = await _context.BloodRequestVerifications
-                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null)
-                .OrderByDescending(v => v.UpdatedAt)
-                .Select(v => v.Doctor!.UserId)
-                .FirstOrDefaultAsync();
-            if (assignedDoctorUserId.HasValue)
-            {
-                notifications.Add(Build(assignedDoctorUserId, null, "Doctor",
-                    $"{summary} assigned to you was deleted by its creator."));
-            }
-
-            // Hospital, unless the hospital itself created (and is now deleting) the request
+            // The hospital the request was sent to, unless the hospital itself created (and is now deleting) it
             var createdByHospital = await _context.UserRoles
                 .AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
             if (!createdByHospital)
             {
-                notifications.Add(Build(null, request.HospitalId, "HospitalStaff",
-                    $"{summary} sent to your hospital was deleted by its creator."));
+                notifications.Add(NotificationFactory.ForHospital(request.HospitalId, type, title, summary));
             }
 
-            // Donors with active acceptances (not cancelled/rejected) or active matches
-            var matchedDonorIds = await _context.DonorPatientMatches
-                .Where(m => m.BloodRequestId == request.BloodRequestId && m.Status != MatchStatus.Cancelled)
-                .Select(m => m.DonorUserId)
-                .ToListAsync();
-            var donorIds = acceptances
-                .Where(a => a.Status != AcceptanceStatus.Cancelled && a.Status != AcceptanceStatus.Rejected)
-                .Select(a => a.DonorUserId)
-                .Concat(matchedDonorIds)
-                .Where(id => id != request.PatientUserId)
-                .Distinct();
-            foreach (var donorId in donorIds)
+            // The assigned doctor (latest assignment), if the doctor still has an active login
+            var assignedDoctorId = await _context.BloodRequestVerifications
+                .Where(v => v.BloodRequestId == request.BloodRequestId)
+                .OrderByDescending(v => v.UpdatedAt)
+                .Select(v => v.DoctorId)
+                .FirstOrDefaultAsync();
+            if (assignedDoctorId.HasValue)
             {
-                notifications.Add(Build(donorId, null, "Donor",
-                    $"{summary} that you accepted was deleted by its creator. No further action is needed."));
+                var doctorUserId = await _context.Doctors
+                    .Where(d => d.DoctorId == assignedDoctorId.Value && d.IsActive && d.UserId != null)
+                    .Select(d => d.UserId)
+                    .FirstOrDefaultAsync();
+                if (doctorUserId.HasValue && doctorUserId.Value != request.PatientUserId)
+                {
+                    notifications.Add(NotificationFactory.ForUser(doctorUserId.Value, "Doctor", type, title, summary));
+                }
+            }
+
+            // Donors and hospitals whose (inactive) acceptances are removed with the request
+            foreach (var donorId in acceptances.Where(a => a.DonorHospitalId == null).Select(a => a.DonorUserId)
+                         .Where(id => id != request.PatientUserId).Distinct())
+            {
+                notifications.Add(NotificationFactory.ForUser(donorId, "Donor", type, title, $"{summary} No further action is needed."));
+            }
+            foreach (var hospitalId in acceptances.Where(a => a.DonorHospitalId != null).Select(a => a.DonorHospitalId!.Value)
+                         .Where(id => id != request.HospitalId).Distinct())
+            {
+                notifications.Add(NotificationFactory.ForHospital(hospitalId, type, title, $"{summary} No further action is needed."));
             }
 
             await _context.Notifications.AddRangeAsync(notifications);
@@ -324,9 +460,12 @@ namespace LifeLink.Services.BloodRequests
                 AcceptanceStatus.Cancelled, "The request expired before it was fulfilled.", "Request expired.");
             foreach (var acceptance in closed)
             {
-                await context.Notifications.AddAsync(NotificationFactory.ForUser(acceptance.DonorUserId, "Donor", "RequestExpired",
-                    "Blood Request Expired",
-                    $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} expired before it was fulfilled. Your acceptance has been closed and you are free to accept other requests."));
+                await context.Notifications.AddAsync(acceptance.DonorHospitalId != null
+                    ? NotificationFactory.ForHospital(acceptance.DonorHospitalId.Value, "RequestExpired", "Blood Request Expired",
+                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} expired before your donation was approved. The reserved packets are back in your inventory.")
+                    : NotificationFactory.ForUser(acceptance.DonorUserId, "Donor", "RequestExpired",
+                        "Blood Request Expired",
+                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} expired before it was fulfilled. Your acceptance has been closed and you are free to accept other requests."));
             }
         }
 
@@ -503,6 +642,23 @@ namespace LifeLink.Services.BloodRequests
                 .GroupBy(v => v.BloodRequestId)
                 .ToDictionary(g => g.Key, g => g.OrderByDescending(v => v.UpdatedAt).First());
 
+            var requestAcceptances = await _context.Acceptances
+                .Where(a => requestIds.Contains(a.BloodRequestId))
+                .Select(a => new { a.AcceptanceId, a.BloodRequestId, a.Status })
+                .ToListAsync();
+            var activeRequestIds = requestAcceptances.Where(a => DeleteBlockingStatuses.Contains(a.Status)).Select(a => a.BloodRequestId).ToHashSet();
+            var allAcceptanceIds = requestAcceptances.Select(a => a.AcceptanceId).ToList();
+            var screenedAcceptanceIds = allAcceptanceIds.Count == 0
+                ? new HashSet<Guid>()
+                : (await _context.DonorVerifications.Where(v => allAcceptanceIds.Contains(v.AcceptanceId)).Select(v => v.AcceptanceId).Distinct().ToListAsync()).ToHashSet();
+            var screenedRequestIds = requestAcceptances.Where(a => screenedAcceptanceIds.Contains(a.AcceptanceId)).Select(a => a.BloodRequestId).ToHashSet();
+
+            var pendingHospitalDonations = await _context.Acceptances
+                .Where(a => requestIds.Contains(a.BloodRequestId) && a.DonorHospitalId != null && a.Status == AcceptanceStatus.Accepted)
+                .GroupBy(a => a.BloodRequestId)
+                .Select(g => new { g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Key, x => x.Count);
+
             return list.Select(r =>
             {
                 var dto = MapToResponseDto(r);
@@ -511,6 +667,9 @@ namespace LifeLink.Services.BloodRequests
                 dto.IsAcceptingDonors = r.Status == BloodRequestStatus.Approved && r.ExpiryDate > now &&
                                         r.FulfilledUnits + r.ReservedUnits < r.UnitsRequired && hospital?.IsSuspended != true;
                 dto.CreatedByName = creatorNames.GetValueOrDefault(r.PatientUserId);
+                dto.PendingHospitalDonations = pendingHospitalDonations.GetValueOrDefault(r.BloodRequestId);
+                dto.HasActiveAcceptances = activeRequestIds.Contains(r.BloodRequestId);
+                dto.HasScreenedDonors = screenedRequestIds.Contains(r.BloodRequestId);
                 if (assignments.TryGetValue(r.BloodRequestId, out var v))
                 {
                     dto.AssignedDoctorId = v.DoctorId;

@@ -31,7 +31,7 @@ namespace LifeLink.Tests
             return hospital.HospitalId;
         }
 
-        // Stock only ever arrives as packets (donations / transfers); tests use the seeder path of the ledger
+        // Stock only ever arrives as packets; tests use the seeder path of the ledger
         private static async Task AddPacketsAsync(AppDbContext context, Guid hospitalId, string group, int count, DateTime? collected = null)
         {
             await InventoryLedger.AddCollectedPacketsAsync(context, hospitalId, group, count, collected ?? DateTime.UtcNow,
@@ -117,11 +117,11 @@ namespace LifeLink.Tests
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateInventoryAsync(inventory.InventoryId,
                 new UpdateInventoryDto { UnitsAvailable = 10, MinimumThreshold = 1, MaximumCapacity = 100, AuditNotes = "Restock" }));
-            Assert.Contains("donations or completed hospital transfers", ex.Message);
+            Assert.Contains("Add blood packets", ex.Message);
         }
 
         [Fact]
-        public async Task UpdateInventoryAsync_Lower_Count_Issues_Earliest_Expiring_Packets_With_A_Reason()
+        public async Task UpdateInventoryAsync_Issues_Only_The_Selected_Packets_With_A_Reason()
         {
             using var context = GetInMemoryDbContext();
             var service = new BloodInventoryService(context);
@@ -129,19 +129,25 @@ namespace LifeLink.Tests
             await AddPacketsAsync(context, hospitalId, "O-", 1, DateTime.UtcNow.AddDays(-20)); // expires first
             await AddPacketsAsync(context, hospitalId, "O-", 2);
             var inventory = await context.BloodInventories.SingleAsync();
-            var oldest = await context.BloodPackets.OrderBy(p => p.ExpiryDate).FirstAsync();
+            var newest = await context.BloodPackets.OrderByDescending(p => p.ExpiryDate).FirstAsync(); // not the earliest-expiring one
 
+            // A lower count is no longer accepted: staff pick the packets
+            var typed = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateInventoryAsync(inventory.InventoryId,
+                new UpdateInventoryDto { UnitsAvailable = 2, MinimumThreshold = 1, MaximumCapacity = 100, AuditNotes = "x" }));
+            Assert.Contains("Select the packets", typed.Message);
+
+            // A reason is required
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateInventoryAsync(inventory.InventoryId,
-                new UpdateInventoryDto { UnitsAvailable = 2, MinimumThreshold = 1, MaximumCapacity = 100 }));
+                new UpdateInventoryDto { MinimumThreshold = 1, MaximumCapacity = 100, IssuePacketIds = new() { newest.PacketId } }));
 
             var updated = await service.UpdateInventoryAsync(inventory.InventoryId,
-                new UpdateInventoryDto { UnitsAvailable = 2, MinimumThreshold = 4, MaximumCapacity = 100, AuditNotes = "Issued to theatre" });
+                new UpdateInventoryDto { MinimumThreshold = 4, MaximumCapacity = 100, AuditNotes = "Issued to theatre", IssuePacketIds = new() { newest.PacketId } });
 
             Assert.Equal(2, updated.UnitsAvailable);
             Assert.Equal(4, updated.MinimumThreshold);
-            Assert.Equal(BloodPacketStatus.Issued, (await context.BloodPackets.FindAsync(oldest.PacketId))!.Status);
+            Assert.Equal(BloodPacketStatus.Issued, (await context.BloodPackets.FindAsync(newest.PacketId))!.Status);
             var issued = await context.InventoryTransactions.SingleAsync(t => t.TransactionType == TransactionType.Issued);
-            Assert.Equal(oldest.PacketId, issued.PacketId);
+            Assert.Equal(newest.PacketId, issued.PacketId);
             Assert.Equal("Issued to theatre", issued.Notes);
         }
 

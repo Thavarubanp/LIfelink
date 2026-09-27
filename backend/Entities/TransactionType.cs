@@ -14,5 +14,9 @@ namespace LifeLink.Entities
         public const string Expired = "EXPIRED";
         public const string LegacyMigrated = "LEGACY_MIGRATED";
         public const string Seeded = "SEEDED";
+        public const string Reserved = "RESERVED";                 // held for a transfer offer or hospital donation
+        public const string Released = "RELEASED";                 // hold ended, packet available again
+        public const string Donated = "DONATED";                   // given by this hospital to a blood request
+        public const string DonationReceived = "DONATION_RECEIVED"; // received from another hospital for own request
     }
 }

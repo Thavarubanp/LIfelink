@@ -14,6 +14,7 @@ import {
   Users,
   AlertTriangle,
   UserCheck,
+  HeartHandshake,
   X
 } from 'lucide-react';
 import BrandLogo from './BrandLogo';
@@ -43,6 +44,7 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
         { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
         { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck },
         { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight },
+        { label: 'Donate Blood', path: '/hospital/donate', icon: HeartHandshake },
         { label: 'Doctor Management', path: '/hospital/doctors', icon: Stethoscope },
         { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle },
         { label: 'My Appeals', path: '/appeals/history', icon: FileText }

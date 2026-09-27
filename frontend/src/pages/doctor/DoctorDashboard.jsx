@@ -5,7 +5,8 @@ import { getApiErrorMessage } from '../../utils/errorUtils';
 import { Badge, RequestStatusBadge } from '../../components/common/Badge';
 import { DataTable } from '../../components/common/DataTable';
 import { AgentStatusCard } from '../../components/workflow/AgentStatusCard';
-import { Stethoscope, CheckCircle2, XCircle, X, Loader2 } from 'lucide-react';
+import { HospitalDonationReview } from '../../components/workflow/HospitalDonationReview';
+import { Stethoscope, CheckCircle2, XCircle, X, Loader2, HeartHandshake } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export const DoctorDashboard = () => {
@@ -19,6 +20,7 @@ export const DoctorDashboard = () => {
   const [decision, setDecision] = useState(null); // { type: 'approve' | 'reject', request }
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [reviewing, setReviewing] = useState(null); // assigned request whose hospital donations are open
 
   useEffect(() => {
     const fetchData = async () => {
@@ -134,7 +136,14 @@ export const DoctorDashboard = () => {
       accessor: 'actions',
       sortable: false,
       cell: (row) =>
-        row.status === 'Verified' ? (
+        row.pendingHospitalDonations > 0 ? (
+          <button
+            onClick={() => setReviewing(row)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-300 dark:hover:bg-red-900 border border-red-200 dark:border-red-900 transition-colors"
+          >
+            <HeartHandshake className="w-3.5 h-3.5" /> Hospital donation ({row.pendingHospitalDonations})
+          </button>
+        ) : row.status === 'Verified' ? (
           <div className="flex items-center gap-2">
             <button
               onClick={() => openDecision('approve', row)}
@@ -212,6 +221,7 @@ export const DoctorDashboard = () => {
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Assigned Blood Requests</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
             Requests your hospital verified and assigned to you. Approve to open them to donors, or reject with a reason.
+            Hospitals donating packets to your requests also wait for your approval here.
             {!loadingAssigned && ` ${awaitingCount} awaiting your decision.`}
           </p>
         </div>
@@ -239,6 +249,14 @@ export const DoctorDashboard = () => {
           { label: 'Agent Status', value: 'ACTIVE' }
         ]}
       />
+
+      {reviewing && (
+        <HospitalDonationReview
+          request={reviewing}
+          onClose={() => setReviewing(null)}
+          onDecided={() => setAssignedReloadKey((k) => k + 1)}
+        />
+      )}
 
       {/* Approve / Reject Modal */}
       {decision && (

@@ -1,13 +1,18 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace LifeLink.Data
 {
     public class AppDbContext : DbContext
     {
+        public const string BloodPacketTrackingSequence = "BloodPacketTrackingNumbers";
+
         public AppDbContext(DbContextOptions<AppDbContext> options)
             : base(options)
         {
@@ -50,6 +55,7 @@ namespace LifeLink.Data
         {
             EnforceScreeningReportImmutability();
             AdvanceBloodRequestConcurrencyTokens();
+            AdvanceAppealConcurrencyTokens();
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
 
@@ -57,6 +63,7 @@ namespace LifeLink.Data
         {
             EnforceScreeningReportImmutability();
             AdvanceBloodRequestConcurrencyTokens();
+            AdvanceAppealConcurrencyTokens();
             return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
@@ -73,6 +80,29 @@ namespace LifeLink.Data
                 {
                     entry.Entity.ConcurrencyToken++;
                 }
+            }
+        }
+
+        /// <summary>
+        /// An appeal's token moves on when the appeal changes or a message is added to its thread, so a reply and an
+        /// admin action (decision, reinstatement) at the same moment conflict: the later save fails with 409.
+        /// </summary>
+        private void AdvanceAppealConcurrencyTokens()
+        {
+            var touched = new HashSet<Appeal>(ChangeTracker.Entries<Appeal>()
+                .Where(e => e.State == EntityState.Modified)
+                .Select(e => e.Entity));
+            foreach (var message in ChangeTracker.Entries<AppealMessage>().Where(e => e.State == EntityState.Added))
+            {
+                var appeal = Appeals.Local.FirstOrDefault(a => a.AppealId == message.Entity.AppealId);
+                if (appeal != null && Entry(appeal).State is EntityState.Unchanged or EntityState.Modified)
+                {
+                    touched.Add(appeal);
+                }
+            }
+            foreach (var appeal in touched)
+            {
+                appeal.ConcurrencyToken++;
             }
         }
 
@@ -287,12 +317,29 @@ namespace LifeLink.Data
                 entity.Property(p => p.VolumeMl).IsRequired().HasDefaultValue(BloodPacket.StandardVolumeMl);
                 entity.Property(p => p.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
 
+                // Tracking number: unique in the database; tracking number, creator and created date can never change
+                entity.Property(p => p.TrackingNumber).IsRequired().HasMaxLength(20);
+                entity.HasIndex(p => p.TrackingNumber).IsUnique();
+                entity.HasIndex(p => p.CreatedByHospitalId);
+                entity.HasIndex(p => p.HeldForReferenceId);
+                entity.Property(p => p.TrackingNumber).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+                entity.Property(p => p.CreatedByHospitalId).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+                entity.Property(p => p.CreatedAt).Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+
                 // Restrict: packets are audit records and must never disappear with a hospital row
                 entity.HasOne(p => p.Hospital)
                       .WithMany()
                       .HasForeignKey(p => p.HospitalId)
                       .OnDelete(DeleteBehavior.Restrict);
+
+                entity.HasOne(p => p.CreatedByHospital)
+                      .WithMany()
+                      .HasForeignKey(p => p.CreatedByHospitalId)
+                      .OnDelete(DeleteBehavior.Restrict);
             });
+
+            // Source of packet tracking numbers: nextval is atomic, so simultaneous creations never share a number
+            modelBuilder.HasSequence<long>(BloodPacketTrackingSequence);
 
             // EmergencyRequest configuration
             modelBuilder.Entity<EmergencyRequest>(entity =>
@@ -492,6 +539,14 @@ namespace LifeLink.Data
                 entity.HasIndex(a => a.DonorUserId);
                 entity.HasIndex(a => a.Status);
                 entity.HasIndex(a => a.AcceptedAt);
+                entity.HasIndex(a => a.DonorHospitalId);
+
+                // Restrict: a request cannot be removed while any acceptance references it, and an acceptance cannot be
+                // created for a request that was just deleted (a concurrent accept + delete: one of them fails)
+                entity.HasOne<BloodRequest>()
+                      .WithMany()
+                      .HasForeignKey(a => a.BloodRequestId)
+                      .OnDelete(DeleteBehavior.Restrict);
 
                 entity.Property(a => a.RejectionReason).HasMaxLength(500);
                 entity.Property(a => a.Status)
@@ -605,6 +660,7 @@ namespace LifeLink.Data
             modelBuilder.Entity<Appeal>(entity =>
             {
                 entity.HasKey(a => a.AppealId);
+                entity.Property(a => a.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
                 entity.HasIndex(a => a.UserId);
                 entity.HasIndex(a => a.HospitalId);
                 entity.HasIndex(a => a.ReviewedByAdminId);

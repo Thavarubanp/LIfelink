@@ -21,6 +21,8 @@ namespace LifeLink.Services.Acceptances
     /// Donor side of a blood request: accept → AI screening (report versions) → doctor approval reserves a slot
     /// → recorded donation fills it. Withdrawal or release frees a reserved slot. FulfilledUnits counts recorded
     /// donations only; ReservedUnits counts approved donors who have not donated yet.
+    /// Hospitals can also donate from inventory: they accept with selected packets (held, no AI screening) and the
+    /// request's assigned doctor approves, which fulfils the units at once, or rejects, which returns the packets.
     /// </summary>
     public class AcceptanceService : IAcceptanceService
     {
@@ -154,7 +156,7 @@ namespace LifeLink.Services.Acceptances
             };
 
             await _context.Acceptances.AddAsync(acceptance);
-            await _context.SaveChangesAsync();
+            await SaveNewAcceptanceAsync(() => _context.SaveChangesAsync());
 
             // Supervisor workflow: DonorAccepted → Request Management agent opens the screening interview
             if (_planningAgent != null)
@@ -259,6 +261,11 @@ namespace LifeLink.Services.Acceptances
                              ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
             await RequireHospitalAuthorityAsync(request, actorUserId, actingHospitalId);
+
+            if (acceptance.DonorHospitalId != null)
+            {
+                throw new InvalidOperationException("Hospital donation offers are approved or rejected by the assigned doctor.");
+            }
 
             if (!AcceptanceClosure.IsActive(acceptance.Status))
             {
@@ -389,9 +396,31 @@ namespace LifeLink.Services.Acceptances
                 .OrderBy(a => a.AcceptedAt)
                 .ToListAsync();
 
+            var packets = await PacketsByAcceptanceAsync(acceptances.Where(a => a.DonorHospitalId != null).Select(a => a.AcceptanceId).ToList());
+
             var result = new List<RequestAcceptanceDetailDto>();
             foreach (var a in acceptances)
             {
+                if (a.DonorHospitalId != null)
+                {
+                    var hospital = await _context.Hospitals.FindAsync(a.DonorHospitalId.Value);
+                    result.Add(new RequestAcceptanceDetailDto
+                    {
+                        AcceptanceId = a.AcceptanceId,
+                        BloodRequestId = a.BloodRequestId,
+                        DonorUserId = a.DonorUserId,
+                        DonorName = hospital?.Name ?? "Hospital",
+                        DonorEmail = hospital?.Email ?? string.Empty,
+                        DonorPhoneNumber = hospital?.ContactNumber ?? string.Empty,
+                        Status = a.Status.ToString(),
+                        AcceptedAt = a.AcceptedAt,
+                        RejectionReason = a.RejectionReason,
+                        DonorHospitalId = a.DonorHospitalId,
+                        Packets = packets.GetValueOrDefault(a.AcceptanceId) ?? new List<DonatedPacketDto>()
+                    });
+                    continue;
+                }
+
                 var user = await _context.Users.FindAsync(a.DonorUserId);
                 result.Add(new RequestAcceptanceDetailDto
                 {
@@ -518,20 +547,7 @@ namespace LifeLink.Services.Acceptances
             request.FulfilledUnits += selected.Count;
             request.UpdatedAt = now;
 
-            var closedCount = 0;
-            if (request.FulfilledUnits >= request.UnitsRequired)
-            {
-                request.Status = BloodRequestStatus.Completed;
-                var closed = await AcceptanceClosure.CloseAllAsync(_context, request, AcceptanceClosure.InScreeningStatuses,
-                    AcceptanceStatus.Rejected, FulfilledByOthersReason, "Request fulfilled before a decision was needed.");
-                closedCount = closed.Count;
-                foreach (var a in closed)
-                {
-                    await _context.Notifications.AddAsync(NotificationFactory.ForUser(a.DonorUserId, "Donor", "RequestFulfilled",
-                        "Blood Request Fulfilled",
-                        $"Blood request #{NotificationFactory.ShortId(bloodRequestId)} has been fulfilled by other donors. Thank you for offering to help."));
-                }
-            }
+            var closedCount = await CompleteIfFulfilledAsync(request);
 
             await _context.SaveChangesAsync();
 
@@ -547,6 +563,361 @@ namespace LifeLink.Services.Acceptances
         }
 
         /// <summary>
+        /// When FulfilledUnits reaches UnitsRequired the request completes and everyone still in screening (donors and
+        /// pending hospital offers, whose packets return to their inventory) is closed and told. Returns how many closed.
+        /// </summary>
+        private async Task<int> CompleteIfFulfilledAsync(BloodRequest request)
+        {
+            if (request.FulfilledUnits < request.UnitsRequired)
+            {
+                return 0;
+            }
+
+            request.Status = BloodRequestStatus.Completed;
+            var closed = await AcceptanceClosure.CloseAllAsync(_context, request, AcceptanceClosure.InScreeningStatuses,
+                AcceptanceStatus.Rejected, FulfilledByOthersReason, "Request fulfilled before a decision was needed.");
+            foreach (var a in closed)
+            {
+                await _context.Notifications.AddAsync(a.DonorHospitalId != null
+                    ? NotificationFactory.ForHospital(a.DonorHospitalId.Value, "RequestFulfilled", "Blood Request Fulfilled",
+                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was fulfilled before your donation was approved. The reserved packets are back in your inventory.")
+                    : NotificationFactory.ForUser(a.DonorUserId, "Donor", "RequestFulfilled",
+                        "Blood Request Fulfilled",
+                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} has been fulfilled by other donors. Thank you for offering to help."));
+            }
+            return closed.Count;
+        }
+
+        /// <summary>
+        /// A hospital accepts a public blood request by donating selected Available packets of the required group from
+        /// its own inventory. The packets are held for this offer. No AI agent runs: the request's assigned doctor
+        /// approves or rejects. A hospital cannot donate to a request sent to itself (it issues from stock instead).
+        /// </summary>
+        public async Task<AcceptanceResponseDto> AcceptAsHospitalAsync(Guid staffUserId, Guid hospitalId, CreateHospitalDonationDto dto)
+        {
+            if (dto.BloodRequestId == Guid.Empty)
+            {
+                throw new ArgumentException("BloodRequestId is required.");
+            }
+
+            var donorHospital = await _context.Hospitals.FindAsync(hospitalId)
+                                ?? throw new InvalidOperationException("Your hospital was not found.");
+            if (!donorHospital.IsVerified || donorHospital.IsSuspended)
+            {
+                throw new InvalidOperationException("Only approved hospitals that are not suspended can donate blood.");
+            }
+
+            var request = await _context.BloodRequests.FindAsync(dto.BloodRequestId)
+                          ?? throw new InvalidOperationException($"Blood request with ID {dto.BloodRequestId} was not found.");
+
+            if (request.HospitalId == hospitalId)
+            {
+                throw new InvalidOperationException("Your hospital cannot donate to a blood request sent to your own hospital. Issue the packets from your inventory instead.");
+            }
+
+            if (request.CancelledAt != null || request.Status == BloodRequestStatus.Cancelled || request.Status == BloodRequestStatus.Deleted)
+            {
+                throw new InvalidOperationException("Cannot accept a cancelled blood request.");
+            }
+
+            if (request.Status != BloodRequestStatus.Approved)
+            {
+                throw new InvalidOperationException("Only approved blood requests can be accepted.");
+            }
+
+            if (request.ExpiryDate <= DateTime.UtcNow)
+            {
+                throw new InvalidOperationException("Cannot accept an expired blood request.");
+            }
+
+            if (await _context.Hospitals.AnyAsync(h => h.HospitalId == request.HospitalId && h.IsSuspended))
+            {
+                throw new InvalidOperationException("The hospital for this request is suspended, so it cannot accept donations.");
+            }
+
+            if (await _context.Acceptances.AnyAsync(a => a.BloodRequestId == request.BloodRequestId && a.DonorHospitalId == hospitalId &&
+                                                         a.Status == AcceptanceStatus.Accepted))
+            {
+                throw new InvalidOperationException("Your hospital already has a donation waiting for the doctor on this request.");
+            }
+
+            var freeSlots = request.UnitsRequired - request.FulfilledUnits - request.ReservedUnits;
+            if (freeSlots <= 0)
+            {
+                throw new InvalidOperationException("All remaining donation slots are reserved. New acceptances are paused until a slot is released.");
+            }
+
+            var packets = await InventoryLedger.RequireSelectablePacketsAsync(_context, hospitalId, dto.PacketIds, request.BloodGroup);
+            if (packets.Count > freeSlots)
+            {
+                throw new InvalidOperationException($"This request needs at most {freeSlots} more unit(s); {packets.Count} packets selected.");
+            }
+
+            var acceptance = new Acceptance
+            {
+                AcceptanceId = Guid.NewGuid(),
+                BloodRequestId = request.BloodRequestId,
+                DonorUserId = staffUserId,
+                DonorHospitalId = hospitalId,
+                Status = AcceptanceStatus.Accepted,
+                AcceptedAt = DateTime.UtcNow
+            };
+            await _context.Acceptances.AddAsync(acceptance);
+            await InventoryLedger.ReservePacketsAsync(_context, packets, acceptance.AcceptanceId,
+                $"Held for donation to blood request #{NotificationFactory.ShortId(request.BloodRequestId)}", staffUserId);
+
+            await NotifyRequestStaffAsync(request, "HospitalDonationOffered", "Hospital Donation Offer",
+                $"{donorHospital.Name} offers {packets.Count} {request.BloodGroup} packet(s) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}. Review and approve or reject the offer.");
+
+            // No Supervisor / agent call: hospital blood is not screened
+            await SaveNewAcceptanceAsync(() => InventoryLedger.SavePacketChangesAsync(_context));
+
+            return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
+        }
+
+        /// <summary>The donating hospital withdraws its offer while it waits for the doctor; the packets return.</summary>
+        public async Task<AcceptanceResponseDto> WithdrawHospitalDonationAsync(Guid acceptanceId, Guid hospitalId)
+        {
+            var acceptance = await _context.Acceptances.FindAsync(acceptanceId)
+                             ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
+            if (acceptance.DonorHospitalId != hospitalId)
+            {
+                throw new UnauthorizedAccessException("Only the hospital that offered this donation can withdraw it.");
+            }
+
+            if (acceptance.Status != AcceptanceStatus.Accepted)
+            {
+                throw new InvalidOperationException($"Only donations waiting for the doctor can be withdrawn. This one is {acceptance.Status}.");
+            }
+
+            var request = await RequireRequestAsync(acceptance.BloodRequestId);
+            await AcceptanceClosure.CloseAsync(_context, acceptance, request, AcceptanceStatus.Cancelled, null, "Hospital withdrew its donation.");
+            await NotifyRequestStaffAsync(request, "HospitalDonationWithdrawn", "Hospital Donation Withdrawn",
+                $"A hospital withdrew its donation offer for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}.");
+
+            await InventoryLedger.SavePacketChangesAsync(_context);
+            return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
+        }
+
+        /// <summary>Donations offered by a hospital (newest first), with the request context and packets.</summary>
+        public async Task<IEnumerable<AcceptanceResponseDto>> GetHospitalDonationsAsync(Guid hospitalId)
+        {
+            var acceptances = await _context.Acceptances
+                .Where(a => a.DonorHospitalId == hospitalId)
+                .OrderByDescending(a => a.AcceptedAt)
+                .ToListAsync();
+            return await MapHospitalDonationsAsync(acceptances);
+        }
+
+        /// <summary>
+        /// The request's assigned doctor approves a hospital donation. The units count as fulfilled at once (the blood
+        /// already exists): packets become Donated for a patient's request, or move into the requesting hospital's
+        /// inventory when the request was created by a hospital. If the assigned doctor was removed, any active doctor
+        /// of the requesting hospital may decide.
+        /// </summary>
+        public async Task<AcceptanceResponseDto> ApproveHospitalDonationAsync(Guid acceptanceId, Guid doctorUserId, string? notes)
+        {
+            var (acceptance, request, doctor) = await GetPendingHospitalDonationForDoctorAsync(acceptanceId, doctorUserId);
+
+            if (request.Status != BloodRequestStatus.Approved)
+            {
+                throw new InvalidOperationException($"The blood request is {request.Status}, so donations can no longer be approved.");
+            }
+
+            if (request.ExpiryDate <= DateTime.UtcNow)
+            {
+                throw new InvalidOperationException("The blood request has expired.");
+            }
+
+            var packets = await InventoryLedger.GetHeldPacketsAsync(_context, acceptance.AcceptanceId);
+            if (packets.Count == 0)
+            {
+                throw new InvalidOperationException("No packets are reserved for this donation.");
+            }
+
+            var expired = packets.FirstOrDefault(p => p.ExpiryDate <= DateTime.UtcNow);
+            if (expired != null)
+            {
+                throw new InvalidOperationException($"Packet {expired.TrackingNumber} expired while waiting. Reject this donation.");
+            }
+
+            var freeSlots = request.UnitsRequired - request.FulfilledUnits - request.ReservedUnits;
+            if (packets.Count > freeSlots)
+            {
+                throw new InvalidOperationException(
+                    $"Only {Math.Max(0, freeSlots)} donation slot(s) are free now; this donation has {packets.Count} packet(s). Reject it or wait for a reserved slot to be released.");
+            }
+
+            var now = DateTime.UtcNow;
+            var donorHospitalName = await _context.Hospitals.Where(h => h.HospitalId == acceptance.DonorHospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "A hospital";
+            var requestHospitalName = await _context.Hospitals.Where(h => h.HospitalId == request.HospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "the hospital";
+            var shortId = NotificationFactory.ShortId(request.BloodRequestId);
+            var createdByHospital = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
+
+            if (createdByHospital)
+            {
+                // A hospital's own request: the donated packets join its inventory (same tracking numbers)
+                await InventoryLedger.MovePacketsAsync(_context, packets, request.HospitalId, acceptance.AcceptanceId,
+                    TransactionType.Donated, TransactionType.DonationReceived,
+                    $"Donated to {requestHospitalName} for blood request #{shortId}",
+                    $"Received from {donorHospitalName} for blood request #{shortId}", doctorUserId);
+            }
+            else
+            {
+                await InventoryLedger.DonateHeldPacketsAsync(_context, packets, acceptance.AcceptanceId,
+                    $"Donated for blood request #{shortId} at {requestHospitalName}", doctorUserId);
+            }
+
+            acceptance.Status = AcceptanceStatus.Matched;
+            acceptance.RejectionReason = null;
+            foreach (var _ in packets)
+            {
+                await _context.RequestFulfillmentHistories.AddAsync(new RequestFulfillmentHistory
+                {
+                    Id = Guid.NewGuid(),
+                    BloodRequestId = request.BloodRequestId,
+                    AcceptanceId = acceptance.AcceptanceId,
+                    DonorUserId = acceptance.DonorUserId,
+                    FulfilledAt = now
+                });
+            }
+
+            request.FulfilledUnits += packets.Count;
+            request.UpdatedAt = now;
+            await CompleteIfFulfilledAsync(request);
+
+            var note = string.IsNullOrWhiteSpace(notes) ? string.Empty : $" Notes: {notes.Trim()}";
+            await _context.Notifications.AddAsync(NotificationFactory.ForHospital(acceptance.DonorHospitalId!.Value, "HospitalDonationApproved",
+                "Donation Approved",
+                $"Dr. {doctor.FirstName} {doctor.LastName} approved your donation of {packets.Count} packet(s) to blood request #{shortId}.{note}"));
+
+            await InventoryLedger.SavePacketChangesAsync(_context);
+            return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
+        }
+
+        /// <summary>The assigned doctor rejects a hospital donation with a reason; the packets return to that hospital.</summary>
+        public async Task<AcceptanceResponseDto> RejectHospitalDonationAsync(Guid acceptanceId, Guid doctorUserId, string? reason)
+        {
+            var message = RequireReason(reason, "A reason is required to reject a hospital donation.");
+            var (acceptance, request, _) = await GetPendingHospitalDonationForDoctorAsync(acceptanceId, doctorUserId);
+
+            await AcceptanceClosure.CloseAsync(_context, acceptance, request, AcceptanceStatus.Rejected, message, message);
+            await _context.Notifications.AddAsync(NotificationFactory.ForHospital(acceptance.DonorHospitalId!.Value, "HospitalDonationRejected",
+                "Donation Not Approved",
+                $"Your donation to blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was not approved. Reason: {message}. The packets are back in your inventory."));
+
+            await InventoryLedger.SavePacketChangesAsync(_context);
+            return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
+        }
+
+        /// <summary>A hospital donation still waiting, and the doctor allowed to decide it (assigned, or fallback).</summary>
+        private async Task<(Acceptance Acceptance, BloodRequest Request, Doctor Doctor)> GetPendingHospitalDonationForDoctorAsync(Guid acceptanceId, Guid doctorUserId)
+        {
+            var doctor = await _context.Doctors.FirstOrDefaultAsync(d => d.UserId == doctorUserId);
+            if (doctor == null || !doctor.IsActive)
+            {
+                throw new UnauthorizedAccessException("Only active doctor accounts can decide on hospital donations.");
+            }
+
+            var acceptance = await _context.Acceptances.FindAsync(acceptanceId)
+                             ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
+            if (acceptance.DonorHospitalId == null)
+            {
+                throw new InvalidOperationException("This is a donor acceptance; review it in the screening queue.");
+            }
+
+            var request = await RequireRequestAsync(acceptance.BloodRequestId);
+
+            var assignedDoctorId = await _context.BloodRequestVerifications
+                .Where(v => v.BloodRequestId == request.BloodRequestId)
+                .OrderByDescending(v => v.UpdatedAt)
+                .Select(v => v.DoctorId)
+                .FirstOrDefaultAsync();
+            var assignedDoctor = assignedDoctorId.HasValue ? await _context.Doctors.FindAsync(assignedDoctorId.Value) : null;
+
+            if (assignedDoctor != null && assignedDoctor.IsActive)
+            {
+                if (assignedDoctor.DoctorId != doctor.DoctorId)
+                {
+                    throw new UnauthorizedAccessException("Only the doctor assigned to this blood request can decide on hospital donations.");
+                }
+            }
+            else if (doctor.HospitalId != request.HospitalId)
+            {
+                // Assigned doctor removed: any active doctor of the requesting hospital may decide
+                throw new UnauthorizedAccessException("Only doctors of the hospital handling this request can decide on hospital donations.");
+            }
+
+            if (acceptance.Status != AcceptanceStatus.Accepted)
+            {
+                throw new InvalidOperationException($"This hospital donation has already been decided ({acceptance.Status}).");
+            }
+
+            return (acceptance, request, doctor);
+        }
+
+        /// <summary>Packets each hospital acceptance held (found through its RESERVED audit rows, so they stay listed after approval).</summary>
+        private async Task<Dictionary<Guid, List<DonatedPacketDto>>> PacketsByAcceptanceAsync(List<Guid> acceptanceIds)
+        {
+            if (acceptanceIds.Count == 0) return new Dictionary<Guid, List<DonatedPacketDto>>();
+
+            var rows = await _context.InventoryTransactions
+                .Where(t => t.ReferenceId != null && acceptanceIds.Contains(t.ReferenceId.Value) &&
+                            t.TransactionType == TransactionType.Reserved && t.PacketId != null)
+                .Select(t => new { AcceptanceId = t.ReferenceId!.Value, PacketId = t.PacketId!.Value })
+                .ToListAsync();
+            var packetIds = rows.Select(r => r.PacketId).Distinct().ToList();
+            var packets = await _context.BloodPackets.Where(p => packetIds.Contains(p.PacketId)).ToDictionaryAsync(p => p.PacketId);
+
+            return rows
+                .Where(r => packets.ContainsKey(r.PacketId))
+                .GroupBy(r => r.AcceptanceId)
+                .ToDictionary(g => g.Key, g => g.Select(r => packets[r.PacketId]).DistinctBy(p => p.PacketId).OrderBy(p => p.TrackingNumber)
+                    .Select(p => new DonatedPacketDto
+                    {
+                        PacketId = p.PacketId,
+                        TrackingNumber = p.TrackingNumber,
+                        BloodGroup = p.BloodGroup,
+                        CollectionDate = p.CollectionDate,
+                        ExpiryDate = p.ExpiryDate,
+                        Status = p.Status
+                    }).ToList());
+        }
+
+        private async Task<List<AcceptanceResponseDto>> MapHospitalDonationsAsync(List<Acceptance> acceptances)
+        {
+            if (acceptances.Count == 0) return new List<AcceptanceResponseDto>();
+
+            var requestIds = acceptances.Select(a => a.BloodRequestId).Distinct().ToList();
+            var requests = await _context.BloodRequests.Where(r => requestIds.Contains(r.BloodRequestId)).ToDictionaryAsync(r => r.BloodRequestId);
+            var hospitalIds = requests.Values.Select(r => r.HospitalId)
+                .Concat(acceptances.Where(a => a.DonorHospitalId != null).Select(a => a.DonorHospitalId!.Value))
+                .Distinct().ToList();
+            var hospitalNames = await _context.Hospitals.Where(h => hospitalIds.Contains(h.HospitalId)).ToDictionaryAsync(h => h.HospitalId, h => h.Name);
+            var packets = await PacketsByAcceptanceAsync(acceptances.Select(a => a.AcceptanceId).ToList());
+
+            return acceptances.Select(a =>
+            {
+                var dto = MapToResponseDto(a);
+                dto.DonorHospitalName = a.DonorHospitalId.HasValue ? hospitalNames.GetValueOrDefault(a.DonorHospitalId.Value) : null;
+                dto.Packets = packets.GetValueOrDefault(a.AcceptanceId) ?? new List<DonatedPacketDto>();
+                if (requests.TryGetValue(a.BloodRequestId, out var r))
+                {
+                    dto.HospitalId = r.HospitalId;
+                    dto.HospitalName = hospitalNames.GetValueOrDefault(r.HospitalId);
+                    dto.RequestBloodGroup = r.BloodGroup;
+                    dto.RequestPriority = r.Priority;
+                    dto.RequestStatus = r.Status.ToString();
+                    dto.UnitsRequired = r.UnitsRequired;
+                    dto.FulfilledUnits = r.FulfilledUnits;
+                    dto.ReservedUnits = r.ReservedUnits;
+                }
+                return dto;
+            }).ToList();
+        }
+
+        /// <summary>
         /// Screening transitions the Request Management agent may make: opening the interview only.
         /// Completing screening goes through SubmitScreeningReportAsync; decisions belong to doctors.
         /// </summary>
@@ -556,6 +927,11 @@ namespace LifeLink.Services.Acceptances
             if (acceptance == null)
             {
                 throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
+            }
+
+            if (acceptance.DonorHospitalId != null)
+            {
+                throw new InvalidOperationException("Hospital donations are approved by the assigned doctor and are not screened.");
             }
 
             if (!(acceptance.Status == AcceptanceStatus.Accepted && newStatus == AcceptanceStatus.ScreeningPending))
@@ -600,6 +976,10 @@ namespace LifeLink.Services.Acceptances
 
             var acceptance = await _context.Acceptances.FindAsync(acceptanceId)
                              ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
+            if (acceptance.DonorHospitalId != null)
+            {
+                throw new InvalidOperationException("Hospital donations are approved by the assigned doctor and are not screened.");
+            }
             if (acceptance.Status != AcceptanceStatus.Accepted && acceptance.Status != AcceptanceStatus.ScreeningPending)
             {
                 throw new InvalidOperationException($"A screening report cannot be submitted while the acceptance is {acceptance.Status}.");
@@ -644,6 +1024,22 @@ namespace LifeLink.Services.Acceptances
 
             await _context.SaveChangesAsync();
             return report;
+        }
+
+        /// <summary>
+        /// Saves a new acceptance. If its request was deleted at the same moment, the foreign key rejects the insert:
+        /// that becomes a clear 409 instead of a server error. Concurrency conflicts keep their own handling.
+        /// </summary>
+        private static async Task SaveNewAcceptanceAsync(Func<Task> save)
+        {
+            try
+            {
+                await save();
+            }
+            catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException)
+            {
+                throw new ConflictException("This blood request is no longer available (it was just deleted).");
+            }
         }
 
         private async Task<BloodRequest> RequireRequestAsync(Guid requestId) =>
@@ -718,7 +1114,8 @@ namespace LifeLink.Services.Acceptances
                 Status = acceptance.Status.ToString(),
                 AcceptedAt = acceptance.AcceptedAt,
                 CancelledAt = acceptance.CancelledAt,
-                RejectionReason = acceptance.RejectionReason
+                RejectionReason = acceptance.RejectionReason,
+                DonorHospitalId = acceptance.DonorHospitalId
             };
         }
     }

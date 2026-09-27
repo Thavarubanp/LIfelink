@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import { Search, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Inbox } from 'lucide-react';
 
+// Filter controls placed next to the search box (same height, border and text size as the search input)
+export const tableFilterClass =
+  'min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/10 sm:w-48 dark:border-slate-700/60 dark:bg-slate-800/80 dark:text-slate-100';
+
+/**
+ * Card with search, table (cards on mobile) and pagination. Optional: `title` + `icon` + `actions` add a card header
+ * (title left, actions right) and `filters` sit next to the search box. Without them the card renders as before.
+ */
 export const DataTable = ({
   columns = [],
   data = [],
@@ -8,6 +16,10 @@ export const DataTable = ({
   searchPlaceholder = 'Search records...',
   emptyMessage = 'No matching records found.',
   onRowClick,
+  title,
+  icon: TitleIcon,
+  actions,
+  filters,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortColumn, setSortColumn] = useState(null);
@@ -50,9 +62,21 @@ export const DataTable = ({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-950/5 dark:border-slate-800 dark:bg-slate-900">
+      {/* Optional card header: icon + title left, actions right */}
+      {title && (
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+          <h2 className="flex min-w-0 items-center gap-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+            {TitleIcon && <TitleIcon className="h-4 w-4 shrink-0 text-red-600" />}
+            <span className="truncate">{title}</span>
+          </h2>
+          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        </div>
+      )}
+
       {/* Search Header */}
       {searchable && (
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+          <div className={filters ? 'flex w-full flex-1 flex-col gap-2 sm:flex-row sm:items-center' : 'contents'}>
           <div className="relative w-full flex-1 sm:max-w-sm">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -65,6 +89,8 @@ export const DataTable = ({
               placeholder={searchPlaceholder}
               className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm text-slate-900 placeholder-slate-400 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/10 dark:border-slate-700/60 dark:bg-slate-800/80 dark:text-slate-100"
             />
+          </div>
+          {filters}
           </div>
           <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
             Total Records: {filteredData.length}

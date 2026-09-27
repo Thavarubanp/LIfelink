@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Acceptances;
 using LifeLink.Services.Acceptances;
@@ -57,6 +58,10 @@ namespace LifeLink.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, new { message = ex.Message });
+            }
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { message = ex.Message });
@@ -64,7 +69,37 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// A hospital accepts a public blood request by donating selected Available packets of the required blood group
+        /// from its own inventory. No AI agent runs; the request's assigned doctor approves or rejects.
+        /// </summary>
+        [HttpPost("hospital")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(AcceptanceResponseDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        public Task<IActionResult> AcceptAsHospital([FromBody] CreateHospitalDonationDto dto) =>
+            ExecuteAsync(async () =>
+            {
+                var hospitalId = await CallerHospitalIdAsync();
+                var result = await _acceptanceService.AcceptAsHospitalAsync(_currentUserService.UserId!.Value, hospitalId, dto);
+                return CreatedAtAction(nameof(GetAcceptanceById), new { id = result.AcceptanceId }, result);
+            });
+
+        /// <summary>The request's assigned doctor approves a hospital donation; the units are fulfilled at once.</summary>
+        [HttpPut("{id:guid}/hospital-approve")]
+        [Authorize(Roles = "Doctor")]
+        public Task<IActionResult> ApproveHospitalDonation(Guid id, [FromBody] HospitalDonationDecisionDto? dto = null) =>
+            ExecuteAsync(async () => Ok(await _acceptanceService.ApproveHospitalDonationAsync(id, _currentUserService.UserId!.Value, dto?.Notes)));
+
+        /// <summary>The request's assigned doctor rejects a hospital donation with a reason; the packets return.</summary>
+        [HttpPut("{id:guid}/hospital-reject")]
+        [Authorize(Roles = "Doctor")]
+        public Task<IActionResult> RejectHospitalDonation(Guid id, [FromBody] HospitalDonationDecisionDto? dto = null) =>
+            ExecuteAsync(async () => Ok(await _acceptanceService.RejectHospitalDonationAsync(id, _currentUserService.UserId!.Value, dto?.Reason)));
+
+        /// <summary>
         /// Returns all acceptances made by the current donor, with request details and the screening decision history.
+        /// For hospital staff: the donations their hospital offered, with the packets.
         /// </summary>
         [HttpGet("my")]
         [ProducesResponseType(typeof(IEnumerable<AcceptanceResponseDto>), StatusCodes.Status200OK)]
@@ -74,6 +109,16 @@ namespace LifeLink.Controllers
             if (!userId.HasValue || userId.Value == Guid.Empty)
             {
                 return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            if (_currentUserService.Roles.Contains("HospitalStaff"))
+            {
+                var hospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
+                if (hospitalId == null)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden, new { message = "Your account is not linked to a hospital." });
+                }
+                return Ok(await _acceptanceService.GetHospitalDonationsAsync(hospitalId.Value));
             }
 
             var result = await _acceptanceService.GetMyAcceptancesAsync(userId.Value);
@@ -110,6 +155,12 @@ namespace LifeLink.Controllers
             if (!userId.HasValue || userId.Value == Guid.Empty)
             {
                 return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            if (_currentUserService.Roles.Contains("HospitalStaff"))
+            {
+                // A hospital withdraws its own donation offer; the held packets return to its inventory
+                return await ExecuteAsync(async () => Ok(await _acceptanceService.WithdrawHospitalDonationAsync(id, await CallerHospitalIdAsync())));
             }
 
             try
@@ -209,6 +260,38 @@ namespace LifeLink.Controllers
             }
         }
 
+        private async Task<Guid> CallerHospitalIdAsync() =>
+            await CallerHospitalResolver.ResolveAsync(_context, _currentUserService)
+            ?? throw new UnauthorizedAccessException("Your account is not linked to a hospital.");
+
+        private async Task<IActionResult> ExecuteAsync(Func<Task<IActionResult>> action)
+        {
+            try
+            {
+                return await action();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         private async Task<bool> CanViewAsync(AcceptanceResponseDto acceptance)
         {
             var roles = _currentUserService.Roles.ToList();
@@ -217,6 +300,7 @@ namespace LifeLink.Controllers
 
             var callerHospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
             if (callerHospitalId == null) return false;
+            if (acceptance.DonorHospitalId == callerHospitalId) return true; // the donating hospital
             return await _context.BloodRequests.AnyAsync(r => r.BloodRequestId == acceptance.BloodRequestId && r.HospitalId == callerHospitalId);
         }
     }

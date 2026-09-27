@@ -197,7 +197,8 @@
 /* Signed-in page rhythm. These selectors intentionally sit outside Tailwind layers so
    legacy page-level utility combinations inherit one consistent visual hierarchy. */
 .ll-content > * {
-  animation: content-enter 220ms ease-out both;
+  /* backwards, not both: a transform kept after the animation would make fixed dialogs position against the page */
+  animation: content-enter 220ms ease-out backwards;
 }
 
 .ll-content h1 {

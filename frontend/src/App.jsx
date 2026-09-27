@@ -40,6 +40,7 @@ import EmergencyHubPage from './pages/hospital/EmergencyHubPage';
 import DoctorManagementPage from './pages/hospital/DoctorManagementPage';
 import VerifyBloodRequestsPage from './pages/hospital/VerifyBloodRequestsPage';
 import TransfersPage from './pages/hospital/TransfersPage';
+import DonateBloodPage from './pages/hospital/DonateBloodPage';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -240,6 +241,14 @@ export function App() {
                 element={
                   <ProtectedRoute allowedRoles={['HospitalStaff']}>
                     <TransfersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/hospital/donate"
+                element={
+                  <ProtectedRoute allowedRoles={['HospitalStaff']}>
+                    <DonateBloodPage />
                   </ProtectedRoute>
                 }
               />

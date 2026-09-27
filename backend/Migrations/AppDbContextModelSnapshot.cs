@@ -22,6 +22,8 @@ namespace backend.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("BloodPacketTrackingNumbers");
+
             modelBuilder.Entity("LifeLink.Entities.Acceptance", b =>
                 {
                     b.Property<Guid>("AcceptanceId")
@@ -36,6 +38,9 @@ namespace backend.Migrations
 
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("DonorHospitalId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("DonorUserId")
                         .HasColumnType("uuid");
@@ -54,6 +59,8 @@ namespace backend.Migrations
 
                     b.HasIndex("BloodRequestId");
 
+                    b.HasIndex("DonorHospitalId");
+
                     b.HasIndex("DonorUserId");
 
                     b.HasIndex("Status");
@@ -70,6 +77,12 @@ namespace backend.Migrations
                     b.Property<string>("AdminResponse")
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<Guid?>("HospitalId")
                         .HasColumnType("uuid");
@@ -220,8 +233,14 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("CreatedByHospitalId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("ExpiryDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("HeldForReferenceId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("HospitalId")
                         .HasColumnType("uuid");
@@ -239,6 +258,11 @@ namespace backend.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("TrackingNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -249,9 +273,16 @@ namespace backend.Migrations
 
                     b.HasKey("PacketId");
 
+                    b.HasIndex("CreatedByHospitalId");
+
                     b.HasIndex("ExpiryDate");
 
+                    b.HasIndex("HeldForReferenceId");
+
                     b.HasIndex("SourceReferenceId");
+
+                    b.HasIndex("TrackingNumber")
+                        .IsUnique();
 
                     b.HasIndex("HospitalId", "BloodGroup", "Status");
 
@@ -1315,6 +1346,15 @@ namespace backend.Migrations
                     b.ToTable("UserRoles");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.Acceptance", b =>
+                {
+                    b.HasOne("LifeLink.Entities.BloodRequest", null)
+                        .WithMany()
+                        .HasForeignKey("BloodRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeLink.Entities.Appeal", b =>
                 {
                     b.HasOne("LifeLink.Entities.Hospital", "Hospital")
@@ -1370,11 +1410,19 @@ namespace backend.Migrations
 
             modelBuilder.Entity("LifeLink.Entities.BloodPacket", b =>
                 {
+                    b.HasOne("LifeLink.Entities.Hospital", "CreatedByHospital")
+                        .WithMany()
+                        .HasForeignKey("CreatedByHospitalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("LifeLink.Entities.Hospital", "Hospital")
                         .WithMany()
                         .HasForeignKey("HospitalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("CreatedByHospital");
 
                     b.Navigation("Hospital");
                 });

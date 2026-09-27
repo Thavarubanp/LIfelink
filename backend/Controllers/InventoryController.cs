@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Inventory;
@@ -137,7 +138,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Updates thresholds of the hospital's own category. A lower unit count issues packets (earliest expiry first).
+        /// Updates thresholds of the hospital's own category and issues the packets listed in IssuePacketIds
+        /// (with AuditNotes as the reason). The unit count cannot be typed in.
         /// </summary>
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "HospitalStaff")]
@@ -164,6 +166,10 @@ namespace LifeLink.Controllers
             catch (KeyNotFoundException ex)
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
             }
             catch (InvalidOperationException ex)
             {
@@ -210,6 +216,7 @@ namespace LifeLink.Controllers
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<BloodPacketResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetPackets([FromQuery] Guid? hospitalId, [FromQuery] string? bloodGroup, [FromQuery] string? status, [FromQuery] Guid? packetId)
         {
+            Guid? viewerHospitalId = null;
             if (_currentUserService.Roles.Contains("HospitalStaff"))
             {
                 hospitalId = await CallerHospitalIdAsync();
@@ -217,10 +224,78 @@ namespace LifeLink.Controllers
                 {
                     return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
                 }
+                viewerHospitalId = hospitalId;
             }
 
-            var result = await _inventoryService.GetPacketsAsync(hospitalId, bloodGroup, status, packetId);
+            var result = await _inventoryService.GetPacketsAsync(hospitalId, bloodGroup, status, packetId, viewerHospitalId);
             return Ok(ApiResponse<IEnumerable<BloodPacketResponseDto>>.Ok(result, "Blood packets retrieved successfully."));
+        }
+
+        /// <summary>
+        /// Hospital staff enter collected blood as packets (blood group, mandatory collected date that is not in the
+        /// future, quantity 1-20). Each packet gets a unique tracking number; the hospital comes from the account.
+        /// </summary>
+        [HttpPost("packets")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<List<BloodPacketResponseDto>>), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> CreatePackets([FromBody] CreateBloodPacketsDto request)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+
+            try
+            {
+                var result = await _inventoryService.CreatePacketsAsync(hospitalId.Value, request, _currentUserService.UserId);
+                return StatusCode(StatusCodes.Status201Created,
+                    ApiResponse<List<BloodPacketResponseDto>>.Ok(result, $"{result.Count} blood packet(s) added."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Edits a packet's blood group and collected date. Only the hospital that created the packet may edit it
+        /// (403 otherwise), and only while it owns the packet and the packet is Available.
+        /// </summary>
+        [HttpPut("packets/{packetId:guid}")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<BloodPacketResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdatePacket(Guid packetId, [FromBody] UpdateBloodPacketDto request)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+
+            try
+            {
+                var result = await _inventoryService.UpdatePacketAsync(packetId, hospitalId.Value, request, _currentUserService.UserId);
+                return Ok(ApiResponse<BloodPacketResponseDto>.Ok(result, "Blood packet updated."));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>

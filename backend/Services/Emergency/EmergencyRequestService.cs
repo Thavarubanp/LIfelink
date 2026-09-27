@@ -229,16 +229,10 @@ namespace LifeLink.Services.Emergency
             }
 
             var now = DateTime.UtcNow;
+            // Completing no longer deducts stock by count: blood used from own stock is issued packet by packet
+            // (selected by staff) from the Blood Inventory page
             request.Status = EmergencyRequestStatus.Completed.ToString();
             request.UpdatedAt = now;
-
-            // Dispatch from own stock when it covers the need (earliest-expiring packets first, each one audited)
-            var available = await InventoryLedger.CountAvailableAsync(_context, request.HospitalId, request.BloodGroup);
-            if (available >= request.UnitsRequired)
-            {
-                await InventoryLedger.IssuePacketsAsync(_context, request.HospitalId, request.BloodGroup, request.UnitsRequired,
-                    request.EmergencyRequestId, $"Emergency request '{id}' completed and dispatched.", performedByUserId);
-            }
 
             await _context.SaveChangesAsync();
             return await MapToResponseDtoAsync(request.EmergencyRequestId);

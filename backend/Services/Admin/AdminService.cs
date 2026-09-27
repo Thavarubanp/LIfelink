@@ -7,6 +7,7 @@ using LifeLink.Data;
 using LifeLink.DTOs.Admin;
 using LifeLink.Entities;
 using LifeLink.Services.Hospitals;
+using LifeLink.Services.Appeals;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Admin
@@ -260,6 +261,10 @@ namespace LifeLink.Services.Admin
             user.AccountStatus = AccountStatus.Active;
             user.UpdatedAt = DateTime.UtcNow;
 
+            // A still-open appeal (PENDING or REJECTED) is resolved like an approved appeal, in the same save as the
+            // reinstatement. The existing reinstatement notification/email is the only message the user gets.
+            await AppealDecisions.ApproveOpenAppealsOnReinstatementAsync(_context, user.UserId, null, actingAdminId, AppealDecisions.UserReinstatedNote);
+
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyUserReinstatedAsync(user);
@@ -311,7 +316,7 @@ namespace LifeLink.Services.Admin
             return MapToHospitalDto(hospital);
         }
 
-        public async Task<AdminHospitalResponseDto> ReinstateHospitalAsync(Guid hospitalId)
+        public async Task<AdminHospitalResponseDto> ReinstateHospitalAsync(Guid hospitalId, Guid? actingAdminId = null)
         {
             var hospital = await _context.Hospitals.FindAsync(hospitalId);
             if (hospital == null)
@@ -323,6 +328,9 @@ namespace LifeLink.Services.Admin
             hospital.SuspendedUntil = null;
             hospital.SuspensionReason = null;
             hospital.UpdatedAt = DateTime.UtcNow;
+
+            // Same rule as for users: the hospital's still-open appeal is resolved in the same save
+            await AppealDecisions.ApproveOpenAppealsOnReinstatementAsync(_context, null, hospital.HospitalId, actingAdminId, AppealDecisions.HospitalReinstatedNote);
 
             await _context.SaveChangesAsync();
 

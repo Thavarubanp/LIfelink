@@ -1,19 +1,57 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, History, Loader2, Package, Plus, Settings, SlidersHorizontal, X } from 'lucide-react';
+import { AlertTriangle, Droplet, History, Loader2, Package, PackagePlus, Pencil, Plus, Send, Settings, SlidersHorizontal, X } from 'lucide-react';
 import { inventoryApi, profileApi } from '../../api';
-import { DataTable } from '../../components/common/DataTable';
+import { DataTable, tableFilterClass } from '../../components/common/DataTable';
 import { Badge } from '../../components/common/Badge';
+import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const PACKET_STATUS_VARIANT = { Available: 'success', Reserved: 'info', Issued: 'default', Donated: 'primary', Expired: 'warning' };
 const fmtDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
 const unwrap = (res) => res?.data || (Array.isArray(res) ? res : []);
+// Local calendar date (yyyy-mm-dd); the server treats "today" as the Sri Lanka date
+const localToday = () => new Date().toLocaleDateString('en-CA');
+const toDateInput = (value) => (value ? String(value).slice(0, 10) : '');
+
+/** Card-header action: icon + short label; icon only (with tooltip and aria-label) on small screens. */
+const HeaderAction = ({ icon: Icon, label, onClick, primary = false }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    title={label}
+    aria-label={label}
+    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+      primary
+        ? 'bg-red-600 text-white shadow-sm hover:bg-red-700'
+        : 'border border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800'
+    }`}
+  >
+    <Icon className="h-4 w-4 shrink-0" />
+    <span className="hidden sm:inline">{label}</span>
+  </button>
+);
+
+/** Mirrors the server rules for the collected date (required, not in the future, not already expired). */
+const collectedDateError = (value, shelfLifeDays) => {
+  if (!value) return 'Collected date is required.';
+  if (value > localToday()) return 'Collected date cannot be in the future.';
+  if (shelfLifeDays) {
+    const expiry = new Date(`${value}T00:00:00`);
+    expiry.setDate(expiry.getDate() + Number(shelfLifeDays));
+    if (expiry.toLocaleDateString('en-CA') <= localToday()) {
+      return `A packet collected on ${value} would already be expired (shelf life ${shelfLifeDays} days).`;
+    }
+  }
+  return '';
+};
 
 /**
- * Packet-level blood inventory for the signed-in hospital. Stock comes only from recorded donations and completed
- * transfers; staff set thresholds and issue blood (earliest-expiring packets first, with a reason).
+ * Packet-level blood inventory for the signed-in hospital. Staff add collected blood as packets (each gets its own
+ * tracking number), set thresholds, and issue blood by selecting the exact packets. Only the hospital that created a
+ * packet can edit it, and only while it holds the packet and it is available.
  */
 export const InventoryManagementPage = () => {
   const { addToast } = useNotification();
@@ -22,8 +60,10 @@ export const InventoryManagementPage = () => {
   const [packets, setPackets] = useState([]);
   const [statusFilter, setStatusFilter] = useState('Available');
   const [loading, setLoading] = useState(true);
-  const [dialog, setDialog] = useState(null); // { type: 'create' } | { type: 'edit', row }
+  // { type: 'category' } | { type: 'thresholds', row } | { type: 'issue', row } | { type: 'addPackets' } | { type: 'editPacket', packet }
+  const [dialog, setDialog] = useState(null);
   const [form, setForm] = useState({});
+  const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState(null);
 
@@ -59,41 +99,85 @@ export const InventoryManagementPage = () => {
     fetchPackets();
   }, [statusFilter, reloadKey, addToast]);
 
-  const openCreate = () => {
-    setForm({ bloodGroup: BLOOD_GROUPS.find((g) => !inventory.some((i) => i.bloodGroup === g)) || 'O+', minimumThreshold: 5, maximumCapacity: 100 });
-    setDialog({ type: 'create' });
+  const open = (next, initialForm) => {
+    setForm(initialForm);
+    setFormError('');
+    setDialog(next);
   };
 
-  const openEdit = (row) => {
-    setForm({ minimumThreshold: row.minimumThreshold, maximumCapacity: row.maximumCapacity, issueUnits: 0, auditNotes: '' });
-    setDialog({ type: 'edit', row });
-  };
+  const openCategory = () => open({ type: 'category' }, {
+    bloodGroup: BLOOD_GROUPS.find((g) => !inventory.some((i) => i.bloodGroup === g)) || 'O+', minimumThreshold: 5, maximumCapacity: 100
+  });
+  const openThresholds = (row) => open({ type: 'thresholds', row }, { minimumThreshold: row.minimumThreshold, maximumCapacity: row.maximumCapacity });
+  const openIssue = (row) => open({ type: 'issue', row }, { packetIds: [], auditNotes: '' });
+  const openAddPackets = () => open({ type: 'addPackets' }, { bloodGroup: 'O+', collectionDate: localToday(), quantity: 1 });
+  const openEditPacket = (packet) => open({ type: 'editPacket', packet }, { bloodGroup: packet.bloodGroup, collectionDate: toDateInput(packet.collectionDate) });
 
   const save = async (e) => {
     e.preventDefault();
+    setFormError('');
+
+    if (dialog.type === 'addPackets' || dialog.type === 'editPacket') {
+      const dateError = collectedDateError(form.collectionDate, hospital?.packetShelfLifeDays);
+      if (dateError) {
+        setFormError(dateError);
+        return;
+      }
+    }
+    if (dialog.type === 'issue') {
+      if (form.packetIds.length === 0) {
+        setFormError('Select at least one packet to issue.');
+        return;
+      }
+      if (!form.auditNotes.trim()) {
+        setFormError('A reason is required when issuing blood.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      if (dialog.type === 'create') {
+      if (dialog.type === 'category') {
         await inventoryApi.createInventory({
           bloodGroup: form.bloodGroup,
           minimumThreshold: Number(form.minimumThreshold),
           maximumCapacity: Number(form.maximumCapacity)
         });
-        addToast({ title: 'Category added', message: `${form.bloodGroup} thresholds saved. Stock arrives from donations and transfers.`, type: 'success' });
-      } else {
-        const issue = Number(form.issueUnits) || 0;
+        addToast({ title: 'Blood group added', message: `${form.bloodGroup} thresholds saved.`, type: 'success' });
+      } else if (dialog.type === 'thresholds') {
         await inventoryApi.updateInventory(dialog.row.inventoryId, {
           minimumThreshold: Number(form.minimumThreshold),
-          maximumCapacity: Number(form.maximumCapacity),
-          unitsAvailable: issue > 0 ? dialog.row.unitsAvailable - issue : null,
-          auditNotes: form.auditNotes
+          maximumCapacity: Number(form.maximumCapacity)
         });
-        addToast({ title: 'Inventory updated', message: issue > 0 ? `${issue} packet(s) issued (earliest expiry first).` : 'Thresholds saved.', type: 'success' });
+        addToast({ title: 'Thresholds saved', message: `${dialog.row.bloodGroup} thresholds updated.`, type: 'success' });
+      } else if (dialog.type === 'issue') {
+        await inventoryApi.updateInventory(dialog.row.inventoryId, {
+          minimumThreshold: dialog.row.minimumThreshold,
+          maximumCapacity: dialog.row.maximumCapacity,
+          issuePacketIds: form.packetIds,
+          auditNotes: form.auditNotes.trim()
+        });
+        addToast({ title: 'Blood issued', message: `${form.packetIds.length} ${dialog.row.bloodGroup} packet(s) issued.`, type: 'success' });
+      } else if (dialog.type === 'addPackets') {
+        const res = await inventoryApi.createPackets({
+          bloodGroup: form.bloodGroup,
+          collectionDate: form.collectionDate,
+          quantity: Number(form.quantity) || 1
+        });
+        const created = unwrap(res);
+        addToast({
+          title: 'Packets added',
+          message: `${created.length} ${form.bloodGroup} packet(s): ${created.map((p) => p.trackingNumber).join(', ')}`,
+          type: 'success'
+        });
+      } else if (dialog.type === 'editPacket') {
+        await inventoryApi.updatePacket(dialog.packet.packetId, { bloodGroup: form.bloodGroup, collectionDate: form.collectionDate });
+        addToast({ title: 'Packet updated', message: `${dialog.packet.trackingNumber} saved.`, type: 'success' });
       }
       setDialog(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
-      addToast({ title: 'Update failed', message: getApiErrorMessage(err), type: 'error' });
+      setFormError(getApiErrorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -109,7 +193,7 @@ export const InventoryManagementPage = () => {
   };
 
   const inventoryColumns = [
-    { header: 'Blood Group', accessor: 'bloodGroup', cell: (row) => <Badge variant="blood">{row.bloodGroup}</Badge> },
+    { header: 'Blood Group', accessor: 'bloodGroup', cell: (row) => <Badge variant="blood" size="sm">{row.bloodGroup}</Badge> },
     { header: 'Available', accessor: 'unitsAvailable', cell: (row) => <span className="font-bold text-slate-900 dark:text-slate-100">{row.unitsAvailable} packet(s)</span> },
     { header: 'Threshold', accessor: 'minimumThreshold', cell: (row) => <span className="text-slate-500">{row.minimumThreshold}</span> },
     { header: 'Capacity', accessor: 'maximumCapacity', cell: (row) => <span className="text-slate-500">{row.maximumCapacity}</span> },
@@ -125,25 +209,29 @@ export const InventoryManagementPage = () => {
       header: 'Stock Health',
       accessor: 'isLowStock',
       cell: (row) => row.unitsAvailable < row.minimumThreshold
-        ? <Badge variant="warning">Below threshold</Badge>
-        : row.isSurplus ? <Badge variant="info">Surplus</Badge> : <Badge variant="success">Healthy</Badge>
+        ? <Badge variant="warning" size="sm">Below threshold</Badge>
+        : row.isSurplus ? <Badge variant="info" size="sm">Surplus</Badge> : <Badge variant="success" size="sm">Healthy</Badge>
     },
     {
       header: 'Action',
       accessor: 'inventoryId',
       sortable: false,
       cell: (row) => (
-        <button type="button" onClick={() => openEdit(row)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
-          <SlidersHorizontal className="w-3 h-3" /> Thresholds / issue
-        </button>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" onClick={() => openThresholds(row)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+            <SlidersHorizontal className="w-3 h-3" /> Thresholds
+          </button>
+          <button type="button" disabled={row.unitsAvailable === 0} onClick={() => openIssue(row)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Send className="w-3 h-3" /> Issue
+          </button>
+        </div>
       )
     }
   ];
 
   const packetColumns = [
-    { header: 'Packet', accessor: 'packetCode', cell: (row) => <span className="font-mono text-slate-600 dark:text-slate-300">{row.packetCode}</span> },
+    { header: 'Tracking No.', accessor: 'trackingNumber', cell: (row) => <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">{row.trackingNumber}</span> },
     { header: 'Group', accessor: 'bloodGroup', cell: (row) => <Badge variant="blood" size="sm">{row.bloodGroup}</Badge> },
-    { header: 'Volume', accessor: 'volumeMl', cell: (row) => <span>{row.volumeMl} ml</span> },
     { header: 'Collected', accessor: 'collectionDate', cell: (row) => <span>{fmtDate(row.collectionDate)}</span> },
     {
       header: 'Expires',
@@ -154,16 +242,32 @@ export const InventoryManagementPage = () => {
         </span>
       )
     },
-    { header: 'Source', accessor: 'source', cell: (row) => <span className="text-slate-500">{row.source}</span> },
-    { header: 'Status', accessor: 'status', cell: (row) => <Badge variant={row.status === 'Available' ? 'success' : 'default'} size="sm">{row.status}</Badge> },
     {
-      header: 'History',
+      header: 'Created By',
+      accessor: 'createdByHospitalName',
+      cell: (row) => (
+        <div>
+          <div className="text-slate-700 dark:text-slate-200">{row.createdByHospitalId === row.hospitalId ? 'Your hospital' : row.createdByHospitalName}</div>
+          <div className="text-[10px] text-slate-400">{fmtDate(row.createdAt)} - {row.source}</div>
+        </div>
+      )
+    },
+    { header: 'Status', accessor: 'status', cell: (row) => <Badge variant={PACKET_STATUS_VARIANT[row.status] || 'default'} size="sm">{row.status}</Badge> },
+    {
+      header: 'Actions',
       accessor: 'packetId',
       sortable: false,
       cell: (row) => (
-        <button type="button" onClick={() => openHistory(row)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline">
-          <History className="w-3 h-3" /> View
-        </button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => openHistory(row)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline">
+            <History className="w-3 h-3" /> History
+          </button>
+          {row.canEdit && (
+            <button type="button" onClick={() => openEditPacket(row)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:underline">
+              <Pencil className="w-3 h-3" /> Edit
+            </button>
+          )}
+        </div>
       )
     }
   ];
@@ -172,23 +276,23 @@ export const InventoryManagementPage = () => {
     return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 text-red-600 animate-spin" /></div>;
   }
 
+  const inputClass = 'w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
+  const dialogTitle = {
+    category: 'Add blood group category',
+    thresholds: `${dialog?.row?.bloodGroup}: thresholds`,
+    issue: `Issue ${dialog?.row?.bloodGroup} blood`,
+    addPackets: 'Add blood packets',
+    editPacket: `Edit packet ${dialog?.packet?.trackingNumber}`
+  }[dialog?.type];
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Blood Inventory</h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            Every unit is tracked as a 440 ml packet. Stock comes only from recorded donations and completed hospital transfers.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link to="/hospital/transfers" className="inline-flex items-center gap-2 px-4 py-2 border border-slate-200 dark:border-slate-700 text-xs font-semibold rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800">
-            Inter-hospital transfers
-          </Link>
-          <button onClick={openCreate} className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-xl shadow-md">
-            <Plus className="w-4 h-4" /> Add blood group
-          </button>
-        </div>
+    // Bottom padding keeps the floating assistant button clear of the last card's pagination
+    <div className="space-y-6 pb-24">
+      <div>
+        <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Blood Inventory</h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Every unit is a 440 ml packet with its own tracking number. Add collected blood as packets and issue blood by choosing the packets.
+        </p>
       </div>
 
       {hospital && (
@@ -210,59 +314,110 @@ export const InventoryManagementPage = () => {
         </div>
       )}
 
-      <DataTable columns={inventoryColumns} data={inventory} searchPlaceholder="Search blood group..." emptyMessage="No blood group categories yet. Add one to set its threshold." />
+      <DataTable
+        title="Blood groups"
+        icon={Droplet}
+        actions={<HeaderAction icon={Plus} label="Add blood group" onClick={openCategory} />}
+        columns={inventoryColumns}
+        data={inventory}
+        searchPlaceholder="Search blood group..."
+        emptyMessage="No blood group categories yet. Add packets or a blood group to start."
+      />
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2"><Package className="w-4 h-4 text-red-600" /> Blood packets</h2>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs">
+      <DataTable
+        title="Blood packets"
+        icon={Package}
+        actions={<HeaderAction icon={PackagePlus} label="Add packets" onClick={openAddPackets} primary />}
+        filters={
+          <select aria-label="Packet status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={tableFilterClass}>
             <option value="Available">Available</option>
+            <option value="Reserved">Reserved (offered, awaiting answer)</option>
             <option value="Issued">Issued</option>
+            <option value="Donated">Donated</option>
             <option value="Expired">Expired</option>
             <option value="">All</option>
           </select>
-        </div>
-        <DataTable columns={packetColumns} data={packets} searchPlaceholder="Search packet code or group..." emptyMessage="No packets with this status." />
-      </div>
+        }
+        columns={packetColumns}
+        data={packets}
+        searchPlaceholder="Search tracking number or group..."
+        emptyMessage="No packets with this status."
+      />
 
       {dialog && (
         <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={save} className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl space-y-3 text-xs">
+          <form onSubmit={save} noValidate className="max-w-md w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                {dialog.type === 'create' ? 'Add blood group category' : `${dialog.row.bloodGroup}: thresholds and issuing`}
-              </h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{dialogTitle}</h3>
               <button type="button" onClick={() => setDialog(null)} className="text-slate-400"><X className="w-4 h-4" /></button>
             </div>
-            {dialog.type === 'create' && (
+
+            {(dialog.type === 'category' || dialog.type === 'addPackets' || dialog.type === 'editPacket') && (
               <div>
                 <label className="block font-semibold mb-1">Blood group</label>
-                <select value={form.bloodGroup} onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
+                <select value={form.bloodGroup} onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })} className={inputClass}>
                   {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block font-semibold mb-1">Minimum threshold</label>
-                <input type="number" min="0" required value={form.minimumThreshold} onChange={(e) => setForm({ ...form, minimumThreshold: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
-              </div>
-              <div>
-                <label className="block font-semibold mb-1">Capacity</label>
-                <input type="number" min="1" required value={form.maximumCapacity} onChange={(e) => setForm({ ...form, maximumCapacity: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
-              </div>
-            </div>
-            {dialog.type === 'edit' && (
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2">
-                <p className="font-semibold">Issue blood from stock (optional)</p>
-                <p className="text-slate-500">The earliest-expiring packets are issued first. {dialog.row.unitsAvailable} available.</p>
-                <input type="number" min="0" max={dialog.row.unitsAvailable} value={form.issueUnits} onChange={(e) => setForm({ ...form, issueUnits: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
-                <input placeholder="Reason, for example: issued to theatre for patient care" required={Number(form.issueUnits) > 0} value={form.auditNotes} onChange={(e) => setForm({ ...form, auditNotes: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+
+            {(dialog.type === 'addPackets' || dialog.type === 'editPacket') && (
+              <>
+                {dialog.type === 'editPacket' && (
+                  <p className="text-slate-500">Tracking number, created-by hospital and created date cannot be changed.</p>
+                )}
+                <div className={dialog.type === 'addPackets' ? 'grid grid-cols-1 sm:grid-cols-2 gap-3' : ''}>
+                  <div>
+                    <label className="block font-semibold mb-1">Collected date <span className="text-red-500">*</span></label>
+                    <input type="date" required max={localToday()} value={form.collectionDate}
+                      onChange={(e) => setForm({ ...form, collectionDate: e.target.value })} className={inputClass} />
+                  </div>
+                  {dialog.type === 'addPackets' && (
+                    <div>
+                      <label className="block font-semibold mb-1">Number of packets</label>
+                      <input type="number" min="1" max="20" required value={form.quantity}
+                        onChange={(e) => setForm({ ...form, quantity: e.target.value })} className={inputClass} />
+                    </div>
+                  )}
+                </div>
+                <p className="text-slate-500">
+                  Expiry is the collected date plus your shelf life ({hospital?.packetShelfLifeDays ?? '-'} days).
+                  {dialog.type === 'addPackets' && ' Each packet gets its own tracking number.'}
+                </p>
+              </>
+            )}
+
+            {(dialog.type === 'category' || dialog.type === 'thresholds') && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Minimum threshold</label>
+                  <input type="number" min="0" required value={form.minimumThreshold} onChange={(e) => setForm({ ...form, minimumThreshold: e.target.value })} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Capacity</label>
+                  <input type="number" min="1" required value={form.maximumCapacity} onChange={(e) => setForm({ ...form, maximumCapacity: e.target.value })} className={inputClass} />
+                </div>
               </div>
             )}
+
+            {dialog.type === 'issue' && (
+              <>
+                <p className="text-slate-500">Choose the packets to issue. They leave your available stock and stay in the packet history as Issued.</p>
+                <PacketPicker bloodGroup={dialog.row.bloodGroup} selected={form.packetIds} onChange={(ids) => setForm({ ...form, packetIds: ids })} />
+                <input placeholder="Reason, for example: issued to theatre for patient care" value={form.auditNotes}
+                  onChange={(e) => setForm({ ...form, auditNotes: e.target.value })} maxLength={500} className={inputClass} />
+              </>
+            )}
+
+            {formError && (
+              <p className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300">{formError}</p>
+            )}
+
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setDialog(null)} className="w-1/2 py-2.5 border rounded-xl font-semibold">Cancel</button>
-              <button type="submit" disabled={saving} className="w-1/2 py-2.5 bg-red-600 text-white rounded-xl font-semibold disabled:opacity-50">{saving ? 'Saving...' : 'Save'}</button>
+              <button type="button" onClick={() => setDialog(null)} className="w-1/2 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold">Cancel</button>
+              <button type="submit" disabled={saving} className="w-1/2 py-2.5 bg-red-600 text-white rounded-xl font-semibold disabled:opacity-50">
+                {saving ? 'Saving...' : dialog.type === 'issue' ? `Issue ${form.packetIds.length || ''} packet(s)` : 'Save'}
+              </button>
             </div>
           </form>
         </div>
@@ -272,12 +427,14 @@ export const InventoryManagementPage = () => {
         <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex justify-end">
           <div className="w-full max-w-md h-full bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-5 overflow-y-auto space-y-4 text-xs">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-mono">{history.packetCode}</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-mono">{history.trackingNumber}</h3>
               <button type="button" onClick={() => setHistory(null)} className="text-slate-400"><X className="w-4 h-4" /></button>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div><span className="text-slate-400">Blood group</span><div className="font-semibold">{history.bloodGroup}</div></div>
               <div><span className="text-slate-400">Current hospital</span><div className="font-semibold">{history.hospitalName}</div></div>
+              <div><span className="text-slate-400">Created by</span><div className="font-semibold">{history.createdByHospitalName}</div></div>
+              <div><span className="text-slate-400">Created</span><div className="font-semibold">{fmtDate(history.createdAt)}</div></div>
               <div><span className="text-slate-400">Collected</span><div className="font-semibold">{fmtDate(history.collectionDate)}</div></div>
               <div><span className="text-slate-400">Expires</span><div className="font-semibold">{fmtDate(history.expiryDate)}</div></div>
               <div><span className="text-slate-400">Source</span><div className="font-semibold">{history.source}</div></div>

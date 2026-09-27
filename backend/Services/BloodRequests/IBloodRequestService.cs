@@ -8,6 +8,7 @@ namespace LifeLink.Services.BloodRequests
     public interface IBloodRequestService
     {
         Task<BloodRequestResponseDto> CreateRequestAsync(Guid patientUserId, CreateBloodRequestDto dto);
+        Task<BloodRequestResponseDto> UpdatePendingRequestAsync(Guid requestId, Guid patientUserId, UpdateBloodRequestDto dto);
         Task<IEnumerable<BloodRequestResponseDto>> GetMyRequestsAsync(Guid patientUserId);
         Task<IEnumerable<BloodRequestResponseDto>> GetHospitalRequestsAsync(Guid hospitalId);
         Task<IEnumerable<BloodRequestResponseDto>> GetAssignedRequestsAsync(Guid doctorUserId);

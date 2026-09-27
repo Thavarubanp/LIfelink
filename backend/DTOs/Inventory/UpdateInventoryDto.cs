@@ -1,10 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
 namespace LifeLink.DTOs.Inventory
 {
     /// <summary>
-    /// Updates thresholds. A lower UnitsAvailable issues that many packets (earliest expiry first) with AuditNotes
-    /// as the reason; stock can never be raised here.
+    /// Updates thresholds and optionally issues the packets listed in IssuePacketIds (AuditNotes is the reason).
+    /// UnitsAvailable is the count of Available packets and cannot be changed directly.
     /// </summary>
     public class UpdateInventoryDto
     {
@@ -18,5 +20,8 @@ namespace LifeLink.DTOs.Inventory
         public int MaximumCapacity { get; set; }
 
         public string? AuditNotes { get; set; }
+
+        // Packets of this blood group to issue (chosen by staff)
+        public List<Guid>? IssuePacketIds { get; set; }
     }
 }

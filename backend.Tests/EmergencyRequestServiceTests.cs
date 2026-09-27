@@ -139,7 +139,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task CompleteEmergencyRequestAsync_ApprovedRequest_MarksCompletedAndDeductsInventory()
+        public async Task CompleteEmergencyRequestAsync_ApprovedRequest_MarksCompleted_Without_Deducting_Stock_By_Count()
         {
             // Arrange
             using var context = GetInMemoryDbContext();
@@ -147,7 +147,7 @@ namespace LifeLink.Tests
             var inventoryService = new BloodInventoryService(context);
             var hospitalId = Guid.NewGuid();
 
-            // 30 packets of stock (packets only come from donations/transfers; the ledger's seed path stands in here)
+            // 30 packets of stock (the ledger's seed path stands in for real packets)
             await context.Hospitals.AddAsync(new Hospital { HospitalId = hospitalId, Name = "Emergency Hospital", Email = "er@h.org", IsVerified = true });
             await context.SaveChangesAsync();
             await InventoryLedger.AddCollectedPacketsAsync(context, hospitalId, "A+", 30, DateTime.UtcNow,
@@ -168,12 +168,11 @@ namespace LifeLink.Tests
             // Act
             var completed = await emergencyService.CompleteEmergencyRequestAsync(created.EmergencyRequestId);
 
-            // Assert
+            // Assert: stock used for an emergency is issued packet by packet from the inventory page, never by count
             Assert.Equal("Completed", completed.Status);
             var hospitalInventory = (await inventoryService.GetHospitalInventoryAsync(hospitalId)).First(i => i.BloodGroup == "A+");
-            Assert.Equal(20, hospitalInventory.UnitsAvailable);
-            Assert.Equal(10, await context.BloodPackets.CountAsync(p => p.Status == BloodPacketStatus.Issued));
-            Assert.Equal(10, await context.InventoryTransactions.CountAsync(t => t.TransactionType == TransactionType.Issued && t.ReferenceId == created.EmergencyRequestId));
+            Assert.Equal(30, hospitalInventory.UnitsAvailable);
+            Assert.Equal(0, await context.BloodPackets.CountAsync(p => p.Status == BloodPacketStatus.Issued));
         }
 
         [Fact]

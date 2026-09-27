@@ -13,9 +13,11 @@ namespace LifeLink.Services.Transfer
 {
     /// <summary>
     /// Direct hospital-to-hospital blood transfers between approved (PHRSC-registered) hospitals. No doctor or AI
-    /// approval: the counterpart hospital accepts or rejects. Accepting moves the earliest-expiring packets from the
-    /// sender to the receiver in one transaction (packet IDs unchanged, ownership changes, every move audited).
-    /// A "Request" is created by the receiver; an "Offer" by the sender. Only the creator may delete a pending one.
+    /// approval: the counterpart hospital accepts or rejects. The sender always chooses the packets: an "Offer"
+    /// (created by the sender) holds the selected packets until the receiver answers; a "Request" (created by the
+    /// receiver) is approved by the sender selecting exactly the requested number of packets. Accepting moves the
+    /// packets in one transaction: every packet field stays the same, only the owner changes, every move is audited.
+    /// Only the creator may delete a pending transfer.
     /// </summary>
     public class TransferRequestService : ITransferRequestService
     {
@@ -26,7 +28,7 @@ namespace LifeLink.Services.Transfer
             _context = context;
         }
 
-        public async Task<TransferRequestResponseDto> CreateTransferRequestAsync(TransferRequestCreateDto dto, Guid actingHospitalId)
+        public async Task<TransferRequestResponseDto> CreateTransferRequestAsync(TransferRequestCreateDto dto, Guid actingHospitalId, Guid? performedByUserId = null)
         {
             var type = NormalizeType(dto.TransferType);
 
@@ -40,7 +42,7 @@ namespace LifeLink.Services.Transfer
                 throw new InvalidOperationException($"Invalid blood group: '{dto.BloodGroup}'.");
             }
 
-            if (dto.UnitsRequested <= 0)
+            if (type == TransferTypes.Request && dto.UnitsRequested <= 0)
             {
                 throw new InvalidOperationException("UnitsRequested must be greater than zero.");
             }
@@ -51,14 +53,12 @@ namespace LifeLink.Services.Transfer
             var senderId = type == TransferTypes.Offer ? creator.HospitalId : counterpart.HospitalId;
             var receiverId = type == TransferTypes.Offer ? counterpart.HospitalId : creator.HospitalId;
 
-            // An offer must be backed by stock the offering hospital actually holds right now
+            // An offer sends specific packets the offering hospital holds right now; they are held for this offer
+            List<BloodPacket>? offered = null;
             if (type == TransferTypes.Offer)
             {
-                var available = await InventoryLedger.CountAvailableAsync(_context, senderId, dto.BloodGroup);
-                if (available < dto.UnitsRequested)
-                {
-                    throw new InvalidOperationException($"You have only {available} unexpired {dto.BloodGroup} packet(s) to offer.");
-                }
+                offered = await InventoryLedger.RequireSelectablePacketsAsync(_context, senderId, dto.PacketIds, dto.BloodGroup);
+                dto.UnitsRequested = offered.Count;
             }
 
             var now = DateTime.UtcNow;
@@ -78,13 +78,18 @@ namespace LifeLink.Services.Transfer
             };
 
             _context.HospitalTransferRequests.Add(request);
+            if (offered != null)
+            {
+                await InventoryLedger.ReservePacketsAsync(_context, offered, request.TransferRequestId,
+                    $"Held for transfer offer to {counterpart.Name}", performedByUserId);
+            }
             await _context.Notifications.AddAsync(NotificationFactory.ForHospital(counterpart.HospitalId,
                 type == TransferTypes.Offer ? "TransferOffered" : "TransferRequested",
                 type == TransferTypes.Offer ? $"Blood Offer: {dto.UnitsRequested} x {dto.BloodGroup}" : $"Blood Transfer Request: {dto.UnitsRequested} x {dto.BloodGroup}",
                 type == TransferTypes.Offer
                     ? $"{creator.Name} offers {dto.UnitsRequested} unit(s) of {dto.BloodGroup} to your hospital. Review it under Inter-Hospital Transfers."
                     : $"{creator.Name} requests {dto.UnitsRequested} unit(s) of {dto.BloodGroup} from your hospital. Review it under Inter-Hospital Transfers."));
-            await _context.SaveChangesAsync();
+            await InventoryLedger.SavePacketChangesAsync(_context);
 
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
@@ -98,7 +103,7 @@ namespace LifeLink.Services.Transfer
 
             if (request == null) return null;
             var dto = MapToResponseDto(request);
-            dto.PacketIds = await MovedPacketIdsAsync(id);
+            await AddPacketDetailsAsync(dto, request);
             return dto;
         }
 
@@ -125,9 +130,11 @@ namespace LifeLink.Services.Transfer
         }
 
         /// <summary>
-        /// The counterpart hospital accepts: packets move from sender to receiver right away and the transfer completes.
+        /// The counterpart hospital accepts and the packets move from sender to receiver right away. For a "Request",
+        /// the accepting sender selects exactly UnitsRequested of its packets (packetIds); for an "Offer", the packets
+        /// the sender selected and held when offering move.
         /// </summary>
-        public async Task<TransferRequestResponseDto> ApproveTransferRequestAsync(Guid id, Guid actingHospitalId, Guid? performedByUserId = null)
+        public async Task<TransferRequestResponseDto> ApproveTransferRequestAsync(Guid id, Guid actingHospitalId, Guid? performedByUserId = null, IReadOnlyCollection<Guid>? packetIds = null)
         {
             var request = await RequirePendingAsync(id);
             RequireCounterpart(request, actingHospitalId);
@@ -135,8 +142,28 @@ namespace LifeLink.Services.Transfer
             var sender = await RequireActiveHospitalAsync(request.SenderHospitalId);
             var receiver = await RequireActiveHospitalAsync(request.ReceiverHospitalId);
 
-            await InventoryLedger.TransferPacketsAsync(_context, sender.HospitalId, receiver.HospitalId, request.BloodGroup,
-                request.UnitsRequested, request.TransferRequestId, sender.Name, receiver.Name, performedByUserId);
+            List<BloodPacket> packets;
+            if (request.TransferType == TransferTypes.Offer)
+            {
+                packets = await InventoryLedger.GetHeldPacketsAsync(_context, request.TransferRequestId);
+                if (packets.Count == 0 || packets.Count != request.UnitsRequested)
+                {
+                    throw new InvalidOperationException(
+                        "This offer has no reserved packets (it was created before packet selection). Reject it and ask the sender to offer the specific packets again.");
+                }
+                var expired = packets.FirstOrDefault(p => p.ExpiryDate <= DateTime.UtcNow);
+                if (expired != null)
+                {
+                    throw new InvalidOperationException($"Packet {expired.TrackingNumber} expired while the offer was pending. Reject this offer and ask for a new one.");
+                }
+            }
+            else
+            {
+                packets = await InventoryLedger.RequireSelectablePacketsAsync(_context, sender.HospitalId, packetIds, request.BloodGroup, request.UnitsRequested);
+            }
+
+            await InventoryLedger.MovePacketsAsync(_context, packets, receiver.HospitalId, request.TransferRequestId,
+                TransactionType.TransferOut, TransactionType.TransferIn, $"Transferred to {receiver.Name}", $"Received from {sender.Name}", performedByUserId);
 
             var now = DateTime.UtcNow;
             request.Status = TransferRequestStatus.Completed.ToString();
@@ -147,11 +174,11 @@ namespace LifeLink.Services.Transfer
                 $"Transfer Accepted: {request.UnitsRequested} x {request.BloodGroup}",
                 $"{(request.TransferType == TransferTypes.Offer ? receiver.Name : sender.Name)} accepted the transfer. {request.UnitsRequested} packet(s) moved from {sender.Name} to {receiver.Name}."));
 
-            await _context.SaveChangesAsync();
+            await InventoryLedger.SavePacketChangesAsync(_context);
             return await GetTransferRequestAsync(id) ?? throw new KeyNotFoundException();
         }
 
-        public async Task<TransferRequestResponseDto> RejectTransferRequestAsync(Guid id, Guid actingHospitalId, string? reason)
+        public async Task<TransferRequestResponseDto> RejectTransferRequestAsync(Guid id, Guid actingHospitalId, string? reason, Guid? performedByUserId = null)
         {
             var message = reason?.Trim();
             if (string.IsNullOrWhiteSpace(message))
@@ -172,17 +199,20 @@ namespace LifeLink.Services.Transfer
             request.RejectedAt = now;
             request.UpdatedAt = now;
 
+            // A rejected offer's held packets return to the sender's available stock
+            await InventoryLedger.ReleaseHeldPacketsAsync(_context, request.TransferRequestId, "Transfer offer rejected; packet available again", performedByUserId);
+
             var rejecterName = await HospitalNameAsync(actingHospitalId);
             await _context.Notifications.AddAsync(NotificationFactory.ForHospital(CreatorHospitalId(request), "TransferRejected",
                 $"Transfer Rejected: {request.UnitsRequested} x {request.BloodGroup}",
                 $"{rejecterName} rejected the transfer. Reason: {message}"));
 
-            await _context.SaveChangesAsync();
+            await InventoryLedger.SavePacketChangesAsync(_context);
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
 
         /// <summary>The creator deletes a pending transfer: it leaves the active lists and stays in history as Cancelled.</summary>
-        public async Task<TransferRequestResponseDto> DeleteTransferRequestAsync(Guid id, Guid actingHospitalId)
+        public async Task<TransferRequestResponseDto> DeleteTransferRequestAsync(Guid id, Guid actingHospitalId, Guid? performedByUserId = null)
         {
             var request = await _context.HospitalTransferRequests.FindAsync(id)
                           ?? throw new KeyNotFoundException($"Transfer request with ID '{id}' was not found.");
@@ -201,12 +231,15 @@ namespace LifeLink.Services.Transfer
             request.Status = TransferRequestStatus.Cancelled.ToString();
             request.UpdatedAt = now;
 
+            // A withdrawn offer's held packets return to the sender's available stock
+            await InventoryLedger.ReleaseHeldPacketsAsync(_context, request.TransferRequestId, "Transfer offer withdrawn; packet available again", performedByUserId);
+
             var creatorName = await HospitalNameAsync(actingHospitalId);
             await _context.Notifications.AddAsync(NotificationFactory.ForHospital(CounterpartHospitalId(request), "TransferCancelled",
                 $"Transfer Withdrawn: {request.UnitsRequested} x {request.BloodGroup}",
                 $"{creatorName} withdrew its transfer {(request.TransferType == TransferTypes.Offer ? "offer" : "request")}."));
 
-            await _context.SaveChangesAsync();
+            await InventoryLedger.SavePacketChangesAsync(_context);
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
 
@@ -261,11 +294,32 @@ namespace LifeLink.Services.Transfer
         private async Task<string> HospitalNameAsync(Guid hospitalId) =>
             await _context.Hospitals.Where(h => h.HospitalId == hospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "A hospital";
 
-        private Task<List<Guid>> MovedPacketIdsAsync(Guid transferId) =>
-            _context.InventoryTransactions
-                .Where(t => t.ReferenceId == transferId && t.TransactionType == TransactionType.TransferOut && t.PacketId != null)
-                .Select(t => t.PacketId!.Value)
-                .ToListAsync();
+        /// <summary>Packets moved by a completed transfer, or held by a pending offer, with their tracking numbers.</summary>
+        private async Task AddPacketDetailsAsync(TransferRequestResponseDto dto, HospitalTransferRequest request)
+        {
+            var transferId = request.TransferRequestId;
+            List<Guid> packetIds;
+            if (request.Status == TransferRequestStatus.Pending.ToString())
+            {
+                packetIds = await _context.BloodPackets
+                    .Where(p => p.HeldForReferenceId == transferId && p.Status == BloodPacketStatus.Reserved)
+                    .Select(p => p.PacketId)
+                    .ToListAsync();
+            }
+            else
+            {
+                packetIds = await _context.InventoryTransactions
+                    .Where(t => t.ReferenceId == transferId && t.TransactionType == TransactionType.TransferOut && t.PacketId != null)
+                    .Select(t => t.PacketId!.Value)
+                    .ToListAsync();
+            }
+
+            var numbers = await _context.BloodPackets
+                .Where(p => packetIds.Contains(p.PacketId))
+                .ToDictionaryAsync(p => p.PacketId, p => p.TrackingNumber);
+            dto.PacketIds = packetIds;
+            dto.PacketTrackingNumbers = packetIds.Select(id => numbers.GetValueOrDefault(id) ?? string.Empty).OrderBy(n => n).ToList();
+        }
 
         private async Task<TransferRequestResponseDto> MapToResponseDtoAsync(Guid id)
         {

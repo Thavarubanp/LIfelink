@@ -18,5 +18,12 @@ namespace LifeLink.Services.Acceptances
         Task<FinalizeDonorSelectionResponseDto> FinalizeDonorSelectionAsync(Guid bloodRequestId, List<Guid> selectedAcceptanceIds, Guid actorUserId, Guid? actingHospitalId = null, Dictionary<Guid, string>? testedBloodGroups = null);
         Task<AcceptanceResponseDto> UpdateScreeningStatusAsync(Guid acceptanceId, AcceptanceStatus newStatus);
         Task<DonorVerification> SubmitScreeningReportAsync(ScreeningReportNotificationDto dto);
+
+        // Hospital donations from inventory (no screening; the request's assigned doctor decides)
+        Task<AcceptanceResponseDto> AcceptAsHospitalAsync(Guid staffUserId, Guid hospitalId, CreateHospitalDonationDto dto);
+        Task<AcceptanceResponseDto> WithdrawHospitalDonationAsync(Guid acceptanceId, Guid hospitalId);
+        Task<IEnumerable<AcceptanceResponseDto>> GetHospitalDonationsAsync(Guid hospitalId);
+        Task<AcceptanceResponseDto> ApproveHospitalDonationAsync(Guid acceptanceId, Guid doctorUserId, string? notes);
+        Task<AcceptanceResponseDto> RejectHospitalDonationAsync(Guid acceptanceId, Guid doctorUserId, string? reason);
     }
 }

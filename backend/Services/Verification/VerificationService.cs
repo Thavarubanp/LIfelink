@@ -42,21 +42,8 @@ namespace LifeLink.Services.Verification
                 throw new InvalidOperationException($"Only pending requests can be verified. This request is {request.Status}.");
             }
 
-            if (doctorId == Guid.Empty)
-            {
-                throw new InvalidOperationException("A doctor must be assigned before the request can be verified.");
-            }
-
-            var doctor = await _context.Doctors.FindAsync(doctorId);
-            if (doctor == null || doctor.HospitalId != hospitalId)
-            {
-                throw new InvalidOperationException("The selected doctor does not belong to your hospital.");
-            }
-
-            if (!doctor.IsActive || doctor.UserId == null)
-            {
-                throw new InvalidOperationException("The selected doctor does not have an active account.");
-            }
+            var doctor = await DoctorAssignmentRules.RequireAssignableDoctorAsync(_context, doctorId, hospitalId,
+                "A doctor must be assigned before the request can be verified.");
 
             var now = DateTime.UtcNow;
             var verification = await _context.BloodRequestVerifications

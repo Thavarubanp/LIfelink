@@ -254,7 +254,7 @@ namespace LifeLink.Controllers
         {
             try
             {
-                var result = await _adminService.ReinstateHospitalAsync(id);
+                var result = await _adminService.ReinstateHospitalAsync(id, GetAdminId());
                 return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Hospital reinstated successfully."));
             }
             catch (KeyNotFoundException ex)

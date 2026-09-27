@@ -28,5 +28,12 @@ namespace LifeLink.DTOs.BloodRequests
         public string? CreatedByName { get; set; }
         public Guid? AssignedDoctorId { get; set; }
         public string? AssignedDoctorName { get; set; }
+
+        // Hospital donation offers waiting for the assigned doctor's decision
+        public int PendingHospitalDonations { get; set; }
+
+        // Delete rules: blocked while a donor/hospital donation is active, and for good once a donor was screened
+        public bool HasActiveAcceptances { get; set; }
+        public bool HasScreenedDonors { get; set; }
     }
 }

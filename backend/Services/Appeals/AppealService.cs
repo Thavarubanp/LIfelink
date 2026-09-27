@@ -309,11 +309,11 @@ namespace LifeLink.Services.Appeals
 
         private void RecordDecision(Appeal appeal, AppealStatus status, Guid adminId, string response)
         {
-            appeal.Status = status;
-            appeal.ReviewedByAdminId = adminId;
-            appeal.ReviewedAt = DateTime.UtcNow;
-            appeal.AdminResponse = response.Trim();
-            _context.AppealMessages.Add(NewMessage(appeal.AppealId, adminId, $"[{status}] {response}", null, null));
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                throw new InvalidOperationException("A message is required.");
+            }
+            AppealDecisions.Record(_context, appeal, status, adminId, response);
         }
 
         private static AppealMessage NewMessage(Guid appealId, Guid? adminId, string? text, string? attachmentUrl, string? attachmentName)
