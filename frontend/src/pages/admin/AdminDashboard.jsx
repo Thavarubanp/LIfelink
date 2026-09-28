@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { adminApi, doctorApi, hospitalApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
+import { isConflictError } from '../../utils/errorUtils';
 import { Badge } from '../../components/common/Badge';
 import {
   ShieldAlert,
@@ -195,6 +196,11 @@ export const AdminDashboard = () => {
         message: err.response?.data?.message || err.message || 'Suspension could not be executed.',
         type: 'error'
       });
+      // Changed at the same moment (for example reinstated from another tab): show the current list
+      if (isConflictError(err)) {
+        setSuspendModal({ isOpen: false, type: '', id: null, name: '', email: '' });
+        fetchCategoryData(selectedCategory);
+      }
     } finally {
       setSubmittingAction(false);
     }
@@ -213,6 +219,7 @@ export const AdminDashboard = () => {
       fetchStats();
     } catch (err) {
       addToast({ title: 'Action Failed', message: err.response?.data?.message || err.message, type: 'error' });
+      if (isConflictError(err)) fetchCategoryData(selectedCategory);
     }
   };
 
@@ -273,6 +280,7 @@ export const AdminDashboard = () => {
         message: err.response?.data?.message || err.message || 'Unable to reinstate account.',
         type: 'error'
       });
+      if (isConflictError(err)) fetchCategoryData(selectedCategory);
     }
   };
 

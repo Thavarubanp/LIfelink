@@ -21,6 +21,8 @@ namespace LifeLink.Services.Transfer
     /// </summary>
     public class TransferRequestService : ITransferRequestService
     {
+        public const string TransferConflictMessage = "This transfer or its packets were just changed by someone else. Please refresh and try again.";
+
         private readonly AppDbContext _context;
 
         public TransferRequestService(AppDbContext context)
@@ -174,7 +176,8 @@ namespace LifeLink.Services.Transfer
                 $"Transfer Accepted: {request.UnitsRequested} x {request.BloodGroup}",
                 $"{(request.TransferType == TransferTypes.Offer ? receiver.Name : sender.Name)} accepted the transfer. {request.UnitsRequested} packet(s) moved from {sender.Name} to {receiver.Name}."));
 
-            await InventoryLedger.SavePacketChangesAsync(_context);
+            // Transfer token: accept, reject and withdraw at the same moment cannot both succeed
+            await InventoryLedger.SavePacketChangesAsync(_context, TransferConflictMessage);
             return await GetTransferRequestAsync(id) ?? throw new KeyNotFoundException();
         }
 
@@ -207,7 +210,8 @@ namespace LifeLink.Services.Transfer
                 $"Transfer Rejected: {request.UnitsRequested} x {request.BloodGroup}",
                 $"{rejecterName} rejected the transfer. Reason: {message}"));
 
-            await InventoryLedger.SavePacketChangesAsync(_context);
+            // Transfer token: accept, reject and withdraw at the same moment cannot both succeed
+            await InventoryLedger.SavePacketChangesAsync(_context, TransferConflictMessage);
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
 
@@ -239,7 +243,8 @@ namespace LifeLink.Services.Transfer
                 $"Transfer Withdrawn: {request.UnitsRequested} x {request.BloodGroup}",
                 $"{creatorName} withdrew its transfer {(request.TransferType == TransferTypes.Offer ? "offer" : "request")}."));
 
-            await InventoryLedger.SavePacketChangesAsync(_context);
+            // Transfer token: accept, reject and withdraw at the same moment cannot both succeed
+            await InventoryLedger.SavePacketChangesAsync(_context, TransferConflictMessage);
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
 

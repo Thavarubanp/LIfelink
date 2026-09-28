@@ -2,7 +2,7 @@ using System;
 
 namespace LifeLink.Entities
 {
-    public class Appeal
+    public class Appeal : IConcurrencyVersioned
     {
         public Guid AppealId { get; set; } = Guid.NewGuid();
         public Guid? UserId { get; set; }

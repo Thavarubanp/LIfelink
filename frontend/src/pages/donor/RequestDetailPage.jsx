@@ -6,7 +6,7 @@ import { Badge, RequestStatusBadge } from '../../components/common/Badge';
 import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingProgress';
 import { useNotification } from '../../context/NotificationContext';
 import { getUserRoles } from '../../utils/roleUtils';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { MapPin, Heart, Loader2, Lock } from 'lucide-react';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -20,6 +20,7 @@ export const RequestDetailPage = () => {
   const [bloodGroup, setBloodGroup] = useState('');
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const { addToast } = useNotification();
   const navigate = useNavigate();
 
@@ -40,7 +41,7 @@ export const RequestDetailPage = () => {
       }
     };
     fetchDetail();
-  }, [id, isDonorAccount, user?.userId]);
+  }, [id, isDonorAccount, user?.userId, reloadKey]);
 
   const handleAccept = async () => {
     if (!bloodGroup) {
@@ -54,6 +55,8 @@ export const RequestDetailPage = () => {
       navigate(`/donor/acceptances/${acceptance.acceptanceId}/screening`);
     } catch (err) {
       addToast({ title: 'Could not accept request', message: getApiErrorMessage(err), type: 'error' });
+      // The request changed at the same moment (cancelled, expired, filled): show its current state
+      if (isConflictError(err)) setReloadKey((k) => k + 1);
     } finally {
       setAccepting(false);
     }

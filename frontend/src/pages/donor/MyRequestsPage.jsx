@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { bloodRequestApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { getUserRoles } from '../../utils/roleUtils';
 import { DataTable } from '../../components/common/DataTable';
 import { Badge, RequestStatusBadge } from '../../components/common/Badge';
@@ -82,6 +82,8 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       setReloadKey((k) => k + 1);
     } catch (err) {
       setEditError(getApiErrorMessage(err));
+      // Changed by someone else at the same moment (for example the hospital verified it): show the current list
+      if (isConflictError(err)) setReloadKey((k) => k + 1);
     } finally {
       setSaving(false);
     }
@@ -97,6 +99,10 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       setReloadKey((k) => k + 1);
     } catch (err) {
       addToast({ title: 'Cancel Failed', message: getApiErrorMessage(err), type: 'error' });
+      if (isConflictError(err)) {
+        setCancelTarget(null);
+        setReloadKey((k) => k + 1);
+      }
     } finally {
       setCancelling(false);
     }
@@ -116,6 +122,10 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       setReloadKey((k) => k + 1);
     } catch (err) {
       addToast({ title: 'Delete Failed', message: getApiErrorMessage(err), type: 'error' });
+      if (isConflictError(err)) {
+        setDeleteTarget(null);
+        setReloadKey((k) => k + 1);
+      }
     } finally {
       setDeleting(false);
     }

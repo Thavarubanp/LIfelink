@@ -42,8 +42,9 @@ export const inventoryApi = {
   },
 
   // Hospital staff enter collected blood: { bloodGroup, collectionDate: 'yyyy-MM-dd', quantity }
-  createPackets: async (dto) => {
-    const response = await client.post('/Inventory/packets', dto);
+  // idempotencyKey: one per "Add packets" form, so a double submit never adds the packets twice
+  createPackets: async (dto, { idempotencyKey } = {}) => {
+    const response = await client.post('/Inventory/packets', dto, { idempotencyKey });
     return response.data;
   },
 

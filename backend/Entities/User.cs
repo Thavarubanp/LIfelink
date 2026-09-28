@@ -3,9 +3,10 @@ using System.Collections.Generic;
 
 namespace LifeLink.Entities
 {
-    public class User
+    public class User : IConcurrencyVersioned
     {
         public Guid UserId { get; set; } = Guid.NewGuid();
+        public int ConcurrencyToken { get; set; } // optimistic concurrency (see AppDbContext)
 
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;

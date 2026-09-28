@@ -16,10 +16,12 @@ This guide describes the whole LifeLink repository as it is in the code today: b
 8. [AI agents](#8-ai-agents)
 9. [Main business flows](#9-main-business-flows)
 10. [Business rules summary](#10-business-rules-summary)
-11. [Local development](#11-local-development)
-12. [Testing](#12-testing)
-13. [Known issues and notes](#13-known-issues-and-notes)
-14. [Glossary](#14-glossary)
+11. [Race condition protection](#11-race-condition-protection)
+12. [Session timeout](#12-session-timeout)
+13. [Local development](#13-local-development)
+14. [Testing](#14-testing)
+15. [Known issues and notes](#15-known-issues-and-notes)
+16. [Glossary](#16-glossary)
 
 ---
 
@@ -138,13 +140,14 @@ flowchart LR
 ### Authentication
 
 - **Login:** `POST /api/Auth/login` ([backend/Services/Auth/AuthService.cs](backend/Services/Auth/AuthService.cs)) checks the password hash and account status (Blocked, Inactive, Deleted and Pending logins are refused), then issues a JWT ([backend/Services/Auth/JwtService.cs](backend/Services/Auth/JwtService.cs)).
-- **Token contents:** `sub` and `nameid` (user id), `email`, `given_name`, `family_name`, `jti`, and one `role` claim per role. HMAC-SHA256 signed; issuer/audience/lifetime from the `Jwt` settings (default lifetime 120 minutes).
-- **Validation** ([backend/Program.cs](backend/Program.cs)): issuer, audience, signing key and lifetime (zero clock skew). `OnTokenValidated` also rejects tokens of Blocked/Deleted accounts and of a former Admin after an ownership transfer.
-- **Frontend session:** the token is stored in `localStorage` as `lifelink_token` ([frontend/src/context/AuthContext.jsx](frontend/src/context/AuthContext.jsx)); on start the app calls `GET /api/Auth/me`. The axios client signs out on 401 ([frontend/src/api/client.js](frontend/src/api/client.js)).
+- **Token contents:** `sub` and `nameid` (user id), `email`, `given_name`, `family_name`, `jti`, `sid` (the server-side session, see [12. Session timeout](#12-session-timeout)) and one `role` claim per role. HMAC-SHA256 signed; issuer/audience/lifetime from the `Jwt` settings (default lifetime 120 minutes, absolute).
+- **Sessions:** every login creates a `UserSessions` row ([backend/Services/Auth/SessionService.cs](backend/Services/Auth/SessionService.cs)); the session ends on sign-out or after `Session:IdleTimeoutMinutes` without user activity.
+- **Validation** ([backend/Program.cs](backend/Program.cs)): issuer, audience, signing key and lifetime (zero clock skew). `OnTokenValidated` also rejects tokens of Blocked/Deleted accounts, of a former Admin after an ownership transfer, and tokens whose session is missing, ended or idle (401 with the header `X-Session-Ended`).
+- **Frontend session:** the token is stored in `localStorage` as `lifelink_token` ([frontend/src/context/AuthContext.jsx](frontend/src/context/AuthContext.jsx)); on start the app calls `GET /api/Auth/me`. The axios client signs out on 401 in every open tab ([frontend/src/api/client.js](frontend/src/api/client.js), [frontend/src/session/sessionActivity.js](frontend/src/session/sessionActivity.js)).
 - **Caller identity:** [backend/Services/Common/CurrentUserService.cs](backend/Services/Common/CurrentUserService.cs) reads user id, email and roles from the token.
 - **Caller's hospital:** [backend/Services/Common/CallerHospitalResolver.cs](backend/Services/Common/CallerHospitalResolver.cs): for `HospitalStaff`, the hospital whose `Email` equals the token email; for `Doctor`, the hospital of the active `Doctors` row with that `UserId`. Some controllers use the equivalent `HospitalService.GetHospitalIdByEmailAsync`. Controllers overwrite any hospital id sent in a request body.
 - **Internal agents:** [backend/Middleware/InternalServiceAuthMiddleware.cs](backend/Middleware/InternalServiceAuthMiddleware.cs) turns a valid `X-Internal-Key` into an `InternalAgent` principal.
-- **Suspended accounts:** [backend/Middleware/RestrictedGovernanceModeMiddleware.cs](backend/Middleware/RestrictedGovernanceModeMiddleware.cs) blocks every endpoint that lacks [`[AllowSuspendedAccess]`](backend/Common/AllowSuspendedAccessAttribute.cs) (Appeals, governance status, `Auth/me`, logout). Doctors of a suspended hospital get read-only access.
+- **Suspended accounts:** [backend/Middleware/RestrictedGovernanceModeMiddleware.cs](backend/Middleware/RestrictedGovernanceModeMiddleware.cs) blocks every endpoint that lacks [`[AllowSuspendedAccess]`](backend/Common/AllowSuspendedAccessAttribute.cs) (Appeals, governance status, `Auth/me`, logout, the activity heartbeat). Doctors of a suspended hospital get read-only access.
 - **No global authorization fallback:** endpoints without `[Authorize]` are anonymous (Auth register/login/password reset, `GET /api/profiles/hospital/{id}`, `GET /api/BloodRequests/public`, `POST /api/Hospitals`).
 
 ---
@@ -231,7 +234,8 @@ Roles: "any signed-in" = `[Authorize]` without roles; "Anonymous" = no auth. Rou
 |---|---|---|---|
 | POST | `/api/Auth/register` | Anonymous | Registers a new LifeLink user account. |
 | POST | `/api/Auth/login` | Anonymous | Authenticates user and returns JWT access token. |
-| POST | `/api/Auth/logout` | Anonymous | Logs out the user session. |
+| POST | `/api/Auth/logout` | Anonymous (suspended accounts allowed) | Ends the caller's server-side session (every tab and any copy of the token stop working). `?reason=idle` records the end as an idle timeout. |
+| POST | `/api/Auth/activity` | any signed-in (suspended accounts allowed) | Heartbeat: the user is active (mouse, keyboard, touch, scroll, "Stay signed in"); moves the session on and returns the idle settings. |
 | GET | `/api/Auth/me` | any signed-in | Gets the current authenticated user's profile information. |
 | DELETE | `/api/Auth/me` | User | Donor/patient deletes their own account: personal data and login removed, history kept (shown as "Deleted User"). The same email can register again. |
 | GET | `/api/Auth/user/{id:guid}` | InternalAgent, Admin, HospitalStaff | Retrieves minimal user profile for AI donor screening (Least Privilege: ID, Name, Gender, DOB only). |
@@ -264,7 +268,7 @@ Roles: "any signed-in" = `[Authorize]` without roles; "Anonymous" = no auth. Rou
 
 | Method | Route | Roles | Purpose |
 |---|---|---|---|
-| POST | `/api/Complaints` | User, HospitalStaff | Submits a complaint or feedback regarding the platform or hospital operations. |
+| POST | `/api/Complaints` | User, HospitalStaff | Submits a complaint or feedback regarding the platform or hospital operations. Accepts an `Idempotency-Key` header. |
 | POST | `/api/Complaints/{id:guid}/reply` | User, HospitalStaff | Creator reply with an optional attachment. Allowed only after an admin reply (replies alternate). |
 | GET | `/api/Complaints/my-complaints` | User, HospitalStaff | Gets all complaints submitted by the currently authenticated user. |
 | PUT | `/api/Complaints/{id:guid}/solve` | User, HospitalStaff | Marks a complaint as solved by its creator. |
@@ -291,7 +295,7 @@ Roles: "any signed-in" = `[Authorize]` without roles; "Anonymous" = no auth. Rou
 
 | Method | Route | Roles | Purpose |
 |---|---|---|---|
-| POST | `/api/emergencyrequests` | HospitalStaff | The signed-in hospital raises an emergency; hospitals holding compatible stock are alerted. |
+| POST | `/api/emergencyrequests` | HospitalStaff | The signed-in hospital raises an emergency; hospitals holding compatible stock are alerted. Accepts an `Idempotency-Key` header. |
 | GET | `/api/emergencyrequests` | HospitalStaff, Admin | Retrieves all emergency blood requests. |
 | GET | `/api/emergencyrequests/critical` | HospitalStaff, Admin | Retrieves critical priority emergency blood requests. |
 | GET | `/api/emergencyrequests/{id:guid}` | HospitalStaff, Admin | Retrieves a specific emergency blood request by ID. |
@@ -335,7 +339,7 @@ Roles: "any signed-in" = `[Authorize]` without roles; "Anonymous" = no auth. Rou
 | PUT | `/api/Inventory/{id:guid}` | HospitalStaff | Updates thresholds of the hospital's own category and issues the packets listed in IssuePacketIds (with AuditNotes as the reason). The unit count can |
 | DELETE | `/api/Inventory/{id:guid}` | HospitalStaff | Deletes a blood inventory record. |
 | GET | `/api/Inventory/packets` | HospitalStaff, Admin, InternalAgent | Blood packets with expiry and source. Hospital staff see their own hospital's packets; with packetId a single packet is returned with its full audit |
-| POST | `/api/Inventory/packets` | HospitalStaff | Hospital staff enter collected blood as packets (blood group, mandatory collected date that is not in the future, quantity 1-20). Each packet gets a |
+| POST | `/api/Inventory/packets` | HospitalStaff | Hospital staff enter collected blood as packets (blood group, mandatory collected date that is not in the future, quantity 1-20). Each packet gets a unique tracking number. Accepts an `Idempotency-Key` header. |
 | PUT | `/api/Inventory/packets/{packetId:guid}` | HospitalStaff | Edits a packet's blood group and collected date. Only the hospital that created the packet may edit it (403 otherwise), and only while it owns the pa |
 | GET | `/api/Inventory/hospital/{hospitalId:guid}` | HospitalStaff, Admin, InternalAgent | Retrieves all blood inventory records for a specific hospital. |
 
@@ -397,7 +401,7 @@ Roles: "any signed-in" = `[Authorize]` without roles; "Anonymous" = no auth. Rou
 
 | Method | Route | Roles | Purpose |
 |---|---|---|---|
-| POST | `/api/transfers` | HospitalStaff | Creates a transfer "Request" (ask for blood) or "Offer" (send blood) to another hospital. |
+| POST | `/api/transfers` | HospitalStaff | Creates a transfer "Request" (ask for blood) or "Offer" (send blood) to another hospital. Accepts an `Idempotency-Key` header. |
 | GET | `/api/transfers` | HospitalStaff, Admin | The signed-in hospital's incoming and outgoing transfers (all transfers for the Admin). |
 | GET | `/api/transfers/pending` | HospitalStaff, Admin | GetPendingTransferRequests |
 | GET | `/api/transfers/{id:guid}` | HospitalStaff, Admin | A transfer the signed-in hospital takes part in, with the IDs of the packets it moved. |
@@ -427,13 +431,16 @@ Roles: "any signed-in" = `[Authorize]` without roles; "Anonymous" = no auth. Rou
 | `PlanningAgentService` | [backend/Services/Planning/PlanningAgentService.cs](backend/Services/Planning/PlanningAgentService.cs) | `POST {PlanningAgent:BaseUrl}/plan` to the Supervisor. |
 | `AssistantService` / `AssistantContextBuilder` | [backend/Services/Assistant/](backend/Services/Assistant/) | Chat relay to Supervisor `/chat` with a role-scoped snapshot of the caller's own data. |
 | `AdminService`, `AppealService`, `ComplaintService`, `HospitalService`, `DoctorService`, `AuthService` | [backend/Services/](backend/Services/) | Governance, registration conversation, doctors, auth and password reset (OTP). |
+| `SessionService` | [backend/Services/Auth/SessionService.cs](backend/Services/Auth/SessionService.cs) | Server-side sessions for the idle timeout: started on login, checked (and, for user activity, moved on) on every request, ended on sign-out or idle. See [12. Session timeout](#12-session-timeout). |
+| `DatabaseConflicts` | [backend/Common/DatabaseConflicts.cs](backend/Common/DatabaseConflicts.cs) | Turns race-related save failures (moved concurrency token, unique index, foreign key) into a 409 message. See [11. Race condition protection](#11-race-condition-protection). |
+| `BackgroundJobLeases` | [backend/Services/BloodRequests/BackgroundJobLeases.cs](backend/Services/BloodRequests/BackgroundJobLeases.cs) | Lease row so only one backend instance runs the background sweep. |
 
 ### Error handling and background work
 
-- [backend/Middleware/GlobalExceptionMiddleware.cs](backend/Middleware/GlobalExceptionMiddleware.cs) maps exceptions: `DbUpdateConcurrencyException` and `ConflictException` → **409**, `UnauthorizedAccessException` → 401, `KeyNotFoundException` → 404, `InvalidOperationException` → 400, anything else → 500. Most controllers catch exceptions themselves and return **403** for `UnauthorizedAccessException` (ownership / role checks) and 400/404/409 as appropriate.
-- **Concurrency:** `BloodRequest`, `BloodInventory` and `BloodPacket` have integer concurrency tokens. `AppDbContext.SaveChanges*` bumps every modified request's token automatically ([backend/Data/AppDbcontext.cs](backend/Data/AppDbcontext.cs)); the ledger bumps packet and inventory tokens.
+- [backend/Middleware/GlobalExceptionMiddleware.cs](backend/Middleware/GlobalExceptionMiddleware.cs) maps exceptions: `DbUpdateConcurrencyException`, unique-index and foreign-key violations (through [DatabaseConflicts.cs](backend/Common/DatabaseConflicts.cs)) and `ConflictException` → **409**, `UnauthorizedAccessException` → 401, `KeyNotFoundException` → 404, `InvalidOperationException` → 400, anything else → 500. Most controllers catch exceptions themselves and return **403** for `UnauthorizedAccessException` (ownership / role checks) and 400/404 as appropriate; their `InvalidOperationException` handlers skip `ConflictException`, so conflicts always reach the middleware as 409.
+- **Concurrency:** blood requests, acceptances, appeals, complaints, hospitals, users, transfers and emergencies have integer concurrency tokens that `AppDbContext.SaveChanges*` moves on automatically ([backend/Data/AppDbcontext.cs](backend/Data/AppDbcontext.cs)); the ledger bumps packet and inventory tokens. Details in [11. Race condition protection](#11-race-condition-protection).
 - **Screening report immutability:** `AppDbContext` refuses to delete `DonorVerifications` rows or change a submitted report's content.
-- **Background job:** [backend/Services/BloodRequests/RequestExpiryBackgroundService.cs](backend/Services/BloodRequests/RequestExpiryBackgroundService.cs) runs every 5 minutes: expires requests past `ExpiryDate`, sweeps expired packets, and (if `InventoryMonitoring:Enabled`) runs the inventory check every `InventoryMonitoring:IntervalMinutes` (minimum 5, default 30).
+- **Background job:** [backend/Services/BloodRequests/RequestExpiryBackgroundService.cs](backend/Services/BloodRequests/RequestExpiryBackgroundService.cs) runs every 5 minutes: expires requests past `ExpiryDate` (each request in its own save), sweeps expired packets (each hospital + blood group in its own save), removes idempotency keys older than 24 hours, and (if `InventoryMonitoring:Enabled`) runs the inventory check every `InventoryMonitoring:IntervalMinutes` (minimum 5, default 30). A round runs only on the backend instance that holds the sweep lease (`BackgroundJobLeases`, renewed every round, 7-minute lease). A row that a user changes at the same moment is skipped and retried in the next round.
 - **Rate limit:** policy `assistant`, 20 requests per minute per user ([backend/Program.cs](backend/Program.cs)).
 
 ### Configuration (names only)
@@ -444,6 +451,7 @@ Set in [backend/appsettings.json](backend/appsettings.json), overridden by `back
 |---|---|
 | `ConnectionStrings:DefaultConnection` | EF Core (PostgreSQL) |
 | `Jwt:Key`, `Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpiryMinutes` | JWT issue and validation |
+| `Session:IdleTimeoutMinutes` (default 10), `Session:WarningMinutes` (default 1) | Idle timeout and warning time ([backend/Services/Auth/SessionService.cs](backend/Services/Auth/SessionService.cs)) |
 | `InternalService:ApiKey` | Shared key for agent calls (`X-Internal-Key`) |
 | `PlanningAgent:BaseUrl` | Supervisor URL (default in code `http://localhost:8004` / `http://127.0.0.1:8004`) |
 | `NotificationAgent:BaseUrl` | Notification agent URL (default in code `http://localhost:8000`) |
@@ -461,26 +469,29 @@ PostgreSQL through EF Core ([backend/Data/AppDbcontext.cs](backend/Data/AppDbcon
 
 | Table (entity) | Main fields | Relationships |
 |---|---|---|
-| `Users` ([User.cs](backend/Entities/User.cs)) | name, `Email`, `PasswordHash`, phone, `DateOfBirth`, `Gender`, `BloodGroup`, `LastDonationDate`, `AccountStatus`, `IsSuspended`, `SuspendedUntil`, `IsPermanentlyBlocked` | `UserRoles` |
+| `Users` ([User.cs](backend/Entities/User.cs)) | name, `Email` (unique), `PasswordHash`, phone, `DateOfBirth`, `Gender`, `BloodGroup`, `LastDonationDate`, `AccountStatus`, `IsSuspended`, `SuspendedUntil`, `IsPermanentlyBlocked`, `ConcurrencyToken` | `UserRoles` |
+| `UserSessions` ([UserSession.cs](backend/Entities/UserSession.cs)) | `SessionId` (the token's `sid`), `UserId`, `CreatedAt`, `LastActivityAt`, `EndedAt`, `EndReason` (`SignedOut`, `Idle`) | → `Users` (cascade) |
 | `Roles`, `UserRoles` | role name; user–role pairs | many-to-many users/roles |
 | `PasswordResetTokens` | `TokenHash`, `Otp`, `IsVerified`, `ResetSessionToken`, `ExpiresAt`, `UsedAt` | → `Users` |
-| `Hospitals` ([Hospital.cs](backend/Entities/Hospital.cs)) | `Name`, `Email`, `LicenseNumber`, `RegistrationNumber` (unique), `IsVerified`, `ApprovalStatus`, suspension fields, `PacketShelfLifeDays` (21–35), `ExpiryAlertDays` (1–20), documents | doctors, inventories, transfers, approval history |
+| `Hospitals` ([Hospital.cs](backend/Entities/Hospital.cs)) | `Name`, `Email`, `LicenseNumber`, `RegistrationNumber` (unique), `IsVerified`, `ApprovalStatus`, suspension fields, `PacketShelfLifeDays` (21–35), `ExpiryAlertDays` (1–20), documents, `ConcurrencyToken` | doctors, inventories, transfers, approval history |
 | `HospitalApprovalHistories` | registration conversation entries (`Status` = entry type), admin, comments, documents | → `Hospitals` |
 | `Doctors` ([Doctor.cs](backend/Entities/Doctor.cs)) | name, `Email`, `LicenseNumber` (SLMC, unique), `IsActive`, `MustChangePassword`, `UserId` | → `Hospitals` (cascade), → `Users` (set null) |
-| `BloodRequests` ([BloodRequest.cs](backend/Entities/BloodRequest.cs)) | `PatientUserId` (creator), `HospitalId`, `BloodGroup`, `UnitsRequired` (1–10), `FulfilledUnits`, `ReservedUnits`, `Priority`, `Status`, `ExpiryDate` (+7 days), `RejectionReason`, `ConcurrencyToken` | check constraints on units |
+| `BloodRequests` ([BloodRequest.cs](backend/Entities/BloodRequest.cs)) | `PatientUserId` (creator), `HospitalId`, `BloodGroup`, `UnitsRequired` (1–10), `FulfilledUnits`, `ReservedUnits`, `Priority`, `Status`, `ExpiryDate` (+7 days), `RejectionReason`, `ConcurrencyToken` | check constraints on units; partial unique index: one `Pending`/`Verified`/`Approved` request per creator + hospital + blood group |
 | `BloodRequestVerifications` | `BloodRequestId`, `DoctorId` (assigned doctor), `Status`, `Notes` | → `Doctors` (set null) |
-| `Acceptances` ([Acceptance.cs](backend/Entities/Acceptance.cs)) | `BloodRequestId`, `DonorUserId`, `DonorHospitalId` (hospital donation), `Status`, `RejectionReason` | → `BloodRequests` (foreign key, restrict) |
+| `Acceptances` ([Acceptance.cs](backend/Entities/Acceptance.cs)) | `BloodRequestId`, `DonorUserId`, `DonorHospitalId` (hospital donation), `Status`, `RejectionReason`, `ConcurrencyToken` | → `BloodRequests` (foreign key, restrict) |
 | `DonorVerifications` ([DonorVerification.cs](backend/Entities/DonorVerification.cs)) | screening report versions: `AcceptanceId`, `ReportVersion`, `ReportJson`, `Status`, `DoctorId`, `DecidedByDoctorId`, `Notes` | unique (`AcceptanceId`, `ReportVersion`) |
 | `RequestFulfillmentHistories` | `BloodRequestId`, `AcceptanceId`, `DonorUserId`, `FulfilledAt` | id links |
 | `DonorPatientMatches` | `BloodRequestId`, `DonorUserId`, `DoctorId`, `Status` | → `Doctors` |
 | `BloodInventories` ([BloodInventory.cs](backend/Entities/BloodInventory.cs)) | `HospitalId`, `BloodGroup` (unique pair), `UnitsAvailable`, `MinimumThreshold`, `MaximumCapacity`, `ConcurrencyToken` | → `Hospitals` |
 | `BloodPackets` ([BloodPacket.cs](backend/Entities/BloodPacket.cs)) | `TrackingNumber` (unique, immutable), `CreatedByHospitalId` (immutable), `HospitalId` (owner), `BloodGroup`, `CollectionDate`, `ExpiryDate`, `Status`, `Source`, `SourceReferenceId`, `HeldForReferenceId`, `CreatedAt` (immutable) | → `Hospitals` ×2 (restrict) |
 | `InventoryTransactions` | per-packet audit: `InventoryId`, `TransactionType`, `PacketId`, `ReferenceId`, `PerformedByUserId`, `Notes` | → `BloodInventories` |
-| `HospitalTransferRequests` | `SenderHospitalId`, `ReceiverHospitalId`, `BloodGroup`, `UnitsRequested`, `TransferType`, `Status`, `RejectionReason` | → `Hospitals` ×2 |
-| `EmergencyRequests` | `HospitalId`, `BloodGroup`, `UnitsRequired`, `Priority`, `Status`, `Reason` | → `Hospitals` |
+| `HospitalTransferRequests` | `SenderHospitalId`, `ReceiverHospitalId`, `BloodGroup`, `UnitsRequested`, `TransferType`, `Status`, `RejectionReason`, `ConcurrencyToken` | → `Hospitals` ×2 |
+| `EmergencyRequests` | `HospitalId`, `BloodGroup`, `UnitsRequired`, `Priority`, `Status`, `Reason`, `ConcurrencyToken` | → `Hospitals` |
 | `Notifications` ([Notification.cs](backend/Entities/Notification.cs)) | `UserId` or `HospitalId`, `Title`, `Message`, `NotificationType`, `RecipientRole`, `IsRead` | no link to the object it is about |
-| `Complaints`, `ComplaintAuditLogs`, `HospitalActivityReports` | complaint thread, admin replies (audit log), requested hospital reports | → users / hospitals / complaint |
-| `Appeals`, `AppealMessages` | suspension appeal threads; `Appeals.ConcurrencyToken` | → users / hospitals |
+| `Complaints`, `ComplaintAuditLogs`, `HospitalActivityReports` | complaint thread, admin replies (audit log), requested hospital reports; `Complaints.ConcurrencyToken` | → users / hospitals / complaint |
+| `Appeals`, `AppealMessages` | suspension appeal threads; `Appeals.ConcurrencyToken`; partial unique indexes: one open (`PENDING`/`REJECTED`) appeal per account and per hospital | → users / hospitals |
+| `IdempotencyKeys` ([IdempotencyKey.cs](backend/Entities/IdempotencyKey.cs)) | `Key` (primary key, `{userId}:{client key}`), `UserId`, `Endpoint`, `CreatedAt` (removed after 24 hours) | — |
+| `BackgroundJobLeases` ([BackgroundJobLease.cs](backend/Entities/BackgroundJobLease.cs)) | `Name` (primary key, `BackgroundSweep`), `Holder` (backend instance), `LeasedUntil` | — |
 | Sequence `BloodPacketTrackingNumbers` | source of packet tracking numbers | — |
 
 ```mermaid
@@ -532,7 +543,10 @@ erDiagram
 ### Migrations
 
 - EF Core migrations live in [backend/Migrations/](backend/Migrations/). They are **applied automatically on startup** (`dbContext.Database.Migrate()` in [backend/Program.cs](backend/Program.cs)).
-- Latest migration: **`20260927225230_AppealConcurrencyToken`** ([backend/Migrations/20260927225230_AppealConcurrencyToken.cs](backend/Migrations/20260927225230_AppealConcurrencyToken.cs)) — `Appeals.ConcurrencyToken` (default 0).
+- Latest migration: **`20260928194442_BackgroundJobLeases`** ([backend/Migrations/20260928194442_BackgroundJobLeases.cs](backend/Migrations/20260928194442_BackgroundJobLeases.cs)) — the `BackgroundJobLeases` table for the sweep lease.
+- Before it: `20260928080242_UserSessions` ([backend/Migrations/20260928080242_UserSessions.cs](backend/Migrations/20260928080242_UserSessions.cs)) — the `UserSessions` table for the idle timeout.
+- Before it: `20260928080218_RaceConditionSafety` ([backend/Migrations/20260928080218_RaceConditionSafety.cs](backend/Migrations/20260928080218_RaceConditionSafety.cs)) — `ConcurrencyToken` (default 0) on `Users`, `Hospitals`, `Acceptances`, `HospitalTransferRequests`, `EmergencyRequests` and `Complaints`; the `IdempotencyKeys` table; partial unique indexes `IX_BloodRequests_OneActivePerCreatorHospitalGroup`, `IX_Appeals_OneOpenPerUser` and `IX_Appeals_OneOpenPerHospital`.
+- Before it: `20260927225230_AppealConcurrencyToken` ([backend/Migrations/20260927225230_AppealConcurrencyToken.cs](backend/Migrations/20260927225230_AppealConcurrencyToken.cs)) — `Appeals.ConcurrencyToken` (default 0).
 - Before it: `20260927222159_AcceptanceBloodRequestForeignKey` ([backend/Migrations/20260927222159_AcceptanceBloodRequestForeignKey.cs](backend/Migrations/20260927222159_AcceptanceBloodRequestForeignKey.cs)) — foreign key `Acceptances.BloodRequestId` → `BloodRequests` (restrict), used by hard delete.
 - Before it: `20260927194934_HospitalPacketsAndDonations` ([backend/Migrations/20260927194934_HospitalPacketsAndDonations.cs](backend/Migrations/20260927194934_HospitalPacketsAndDonations.cs)) — packet tracking numbers (sequence + unique index), created-by hospital, held-for reference, `Acceptances.DonorHospitalId`, backfill and a one-time count recount.
 - Two data-only migrations have no Designer file: `20260925180000_RegistrationConversationData` and `20260925210000_RegistrationAwaitingAdminReview`.
@@ -551,7 +565,9 @@ erDiagram
 | [frontend/src/components/](frontend/src/components/) | `inventory/PacketPicker`, `workflow/*` (agent status cards, timelines, `HospitalDonationReview`), `assistant/*` (chat widget), `complaints/*`, `notifications/NotificationCenterDrawer`, `hospital/RegistrationThread` |
 | [frontend/src/api/](frontend/src/api/) | one module per backend area (`bloodRequestApi`, `inventoryApi`, `transferApi`, `acceptanceApi`, …) on top of [client.js](frontend/src/api/client.js) (axios, JWT header) |
 | [frontend/src/context/](frontend/src/context/) | `AuthContext`, `NotificationContext` (toasts), `ThemeContext` + `useTheme`, `useSystemThemePage` |
-| [frontend/src/utils/](frontend/src/utils/) | `roleUtils` (roles, dashboard path, unapproved hospital), `errorUtils` (API error messages), `fileUtils` |
+| [frontend/src/utils/](frontend/src/utils/) | `roleUtils` (roles, dashboard path, unapproved hospital), `errorUtils` (API error messages, `isConflictError`), `fileUtils` |
+| [frontend/src/session/](frontend/src/session/) | `sessionActivity` (idle-timeout bookkeeping shared by all tabs, sign-out in every tab, idempotency keys) |
+| [frontend/src/components/session/](frontend/src/components/session/) | `IdleSessionManager` (idle timer and warning dialog) |
 
 ### Routing
 
@@ -620,6 +636,8 @@ From [frontend/src/components/common/Sidebar.jsx](frontend/src/components/common
 | Dialogs | pages | Fixed overlay + card pattern (`fixed inset-0 z-50 … rounded-2xl`), e.g. in [InventoryManagementPage.jsx](frontend/src/pages/hospital/InventoryManagementPage.jsx), [MyRequestsPage.jsx](frontend/src/pages/donor/MyRequestsPage.jsx). |
 | `Toast` / `NotificationContext` | [frontend/src/components/common/Toast.jsx](frontend/src/components/common/Toast.jsx) | App-wide toasts via `addToast`. |
 | `AssistantWidget` | [frontend/src/components/assistant/AssistantWidget.jsx](frontend/src/components/assistant/AssistantWidget.jsx) | Floating chat button (bottom-right) calling `/api/assistant/chat`. |
+| `IdleSessionManager` (with the idle warning dialog) | [frontend/src/components/session/IdleSessionManager.jsx](frontend/src/components/session/IdleSessionManager.jsx) | Mounted once in [App.jsx](frontend/src/App.jsx) for signed-in users: idle timer, "Are you still there?" dialog with countdown, "Stay signed in" / "Sign out", sign-out in every tab. The warning dialog is part of this file (there is no separate `IdleWarningDialog` component). |
+| `isConflictError` | [frontend/src/utils/errorUtils.js](frontend/src/utils/errorUtils.js) | True for a 409; action pages show the message in a toast and reload their data. |
 
 ---
 
@@ -877,11 +895,130 @@ The Emergency Center ([EmergencyHubPage.jsx](frontend/src/pages/hospital/Emergen
 | Suspended accounts only reach governance endpoints | [RestrictedGovernanceModeMiddleware.cs](backend/Middleware/RestrictedGovernanceModeMiddleware.cs), [ProtectedRoute.jsx](frontend/src/components/common/ProtectedRoute.jsx) | Both |
 | Exactly one Admin | unique filtered index on `UserRoles` (RoleId 4), [AdminService.cs](backend/Services/Admin/AdminService.cs) | Backend |
 | SLMC number and hospital registration number unique (trimmed, upper-cased) | [SlmcUniquenessHelper.cs](backend/Services/Common/SlmcUniquenessHelper.cs), [HospitalService.cs](backend/Services/Hospitals/HospitalService.cs), [AdminService.cs](backend/Services/Admin/AdminService.cs), unique indexes in [AppDbcontext.cs](backend/Data/AppDbcontext.cs) | Backend |
+| Two actions at the same moment never both succeed on the same record: the later one gets 409 and saves nothing | [AppDbcontext.cs](backend/Data/AppDbcontext.cs) (concurrency tokens), [DatabaseConflicts.cs](backend/Common/DatabaseConflicts.cs), [GlobalExceptionMiddleware.cs](backend/Middleware/GlobalExceptionMiddleware.cs) | Both (toast + reload) |
+| One active request per creator + hospital + blood group, one open appeal per account / hospital, also under double submits | partial unique indexes in [AppDbcontext.cs](backend/Data/AppDbcontext.cs) | Backend |
+| A repeated submission with the same `Idempotency-Key` creates nothing twice (packets, transfers, emergencies, complaints) | [IdempotencyKeys.cs](backend/Common/IdempotencyKeys.cs) | Both |
+| Signed out after `Session:IdleTimeoutMinutes` without user activity (warning `Session:WarningMinutes` before), in every tab; an old token is refused | [SessionService.cs](backend/Services/Auth/SessionService.cs), [Program.cs](backend/Program.cs), [IdleSessionManager.jsx](frontend/src/components/session/IdleSessionManager.jsx) | Both |
 | Agents are called only with the internal key; AI never approves or rejects | [InternalServiceAuthMiddleware.cs](backend/Middleware/InternalServiceAuthMiddleware.cs), [Agents/Supervisor/api/security.py](Agents/Supervisor/api/security.py), [Agents/RequestManagement/api/security.py](Agents/RequestManagement/api/security.py), key checks in [Agents/Notification/app.py](Agents/Notification/app.py) and [Agents/InventoryManagement/api/app.py](Agents/InventoryManagement/api/app.py) | Backend / agents |
 
 ---
 
-## 11. Local development
+## 11. Race condition protection
+
+A **race condition** happens when two people (or two tabs, a double click, a background job or an AI agent) change the same data at the same moment, and the result depends on which save lands last. Each action checks the rules on the data it read, but that data is already out of date when it saves.
+
+**LifeLink example:** a donor withdraws from a donation while the doctor approves their screening report. Both read "report waiting for the doctor". Without protection both saves succeed: the donor is shown as withdrawn, but the donation slot stays reserved, so the request stays paused for everyone else. Now the second save fails with **409** and nothing of it is kept: the donor stays withdrawn, and the doctor sees "This was just changed by someone else. Please refresh and try again."
+
+All protection is enforced in the backend and database; the frontend only adds extra safety (disabled buttons, reload on 409).
+
+### Techniques
+
+| Technique | What it protects | Where |
+|---|---|---|
+| **Concurrency tokens** | A row changed by two actions at once: the later save fails (`DbUpdateConcurrencyException` → 409). Entities with a token: `BloodRequest`, `Appeal` (earlier), and new: `Acceptance`, `Hospital`, `User`, `Complaint`, `HospitalTransferRequest`, `EmergencyRequest`. They implement [IConcurrencyVersioned.cs](backend/Entities/IConcurrencyVersioned.cs); one generic save hook (`AdvanceConcurrencyTokens` in [AppDbcontext.cs](backend/Data/AppDbcontext.cs)) moves the token of every changed row. `BloodPacket` and `BloodInventory` have tokens too, moved by [InventoryLedger.cs](backend/Services/Inventory/InventoryLedger.cs). | [AppDbcontext.cs](backend/Data/AppDbcontext.cs) |
+| **"Bump the parent" when a child row is added** | Adding a row whose validity depends on the parent's current state also moves the parent's token: `Acceptance` → `BloodRequest` (an accept cannot slip in while the request is being cancelled, expired or completed), `HospitalApprovalHistory` → `Hospital` (registration reply vs admin decision), `ComplaintAuditLog` → `Complaint` (reply vs solve), `AppealMessage` → `Appeal` (reply vs decision). | same hook in [AppDbcontext.cs](backend/Data/AppDbcontext.cs) |
+| **Partial unique indexes** | Rules that must hold even when two creates arrive together: one `Pending`/`Verified`/`Approved` blood request per creator + hospital + blood group (`IX_BloodRequests_OneActivePerCreatorHospitalGroup`); one open (`PENDING`/`REJECTED`) appeal per account (`IX_Appeals_OneOpenPerUser`) and per hospital (`IX_Appeals_OneOpenPerHospital`). | [AppDbcontext.cs](backend/Data/AppDbcontext.cs), migration [20260928080218_RaceConditionSafety.cs](backend/Migrations/20260928080218_RaceConditionSafety.cs) |
+| **Existing unique indexes** | `Users.Email`, `Doctors.Email`, `Doctors.LicenseNumber` (SLMC), `Hospitals.RegistrationNumber`, `BloodInventories` (hospital + blood group), `BloodPackets.TrackingNumber`, `DonorVerifications` (acceptance + report version), single Admin (`IX_UserRoles_SingleAdmin`). A violation now returns 409 instead of 500. | [AppDbcontext.cs](backend/Data/AppDbcontext.cs) |
+| **Foreign key** | `Acceptances.BloodRequestId` → `BloodRequests` (restrict): an accept and a delete at the same moment cannot both succeed. | [AppDbcontext.cs](backend/Data/AppDbcontext.cs) |
+| **Idempotency keys** | Create actions with no uniqueness rule of their own. The frontend sends an `Idempotency-Key` header, one key per form (reused on a double click or retry, replaced after success). The `[Idempotent]` filter adds the key to the `IdempotencyKeys` table in the same save as the created records; the same key again gets 409 "This was already submitted. Please refresh to see the result." and nothing is created twice. If the action fails, nothing is saved and the key can be used again. Used by `POST /api/Inventory/packets`, `POST /api/transfers`, `POST /api/emergencyrequests` and `POST /api/Complaints`. Keys older than 24 hours are removed by the background sweep. | [IdempotencyKeys.cs](backend/Common/IdempotencyKeys.cs), [IdempotencyKey.cs](backend/Entities/IdempotencyKey.cs), [sessionActivity.js](frontend/src/session/sessionActivity.js) (`newIdempotencyKey`) |
+| **Transactions** | One `SaveChanges` is one database transaction: all rows of an action commit together or not at all. The admin ownership transfer needs two saves; it now runs inside EF's execution strategy (`CreateExecutionStrategy().ExecuteAsync`), because the connection retries transient failures and a transaction started outside the strategy is refused. | [AdminService.cs](backend/Services/Admin/AdminService.cs) (`PromoteToAdminAsync`) |
+| **Background sweeps** | Request expiry saves each request separately and packet expiry each hospital + blood group, so a row changed by a user at the same moment is skipped and retried next round instead of failing the whole batch. Opening a request that the sweep expires at the same moment shows its current state instead of a 409. | [RequestExpiryService.cs](backend/Services/BloodRequests/RequestExpiryService.cs), [BloodInventoryService.cs](backend/Services/Inventory/BloodInventoryService.cs), [BloodRequestService.cs](backend/Services/BloodRequests/BloodRequestService.cs) |
+| **Sweep lease** | Only one backend instance runs the sweep (no duplicate inventory alerts, no colliding sweeps). The holder takes or renews the `BackgroundJobLeases` row in one atomic `INSERT … ON CONFLICT DO UPDATE … WHERE` statement every round (7-minute lease); another instance takes over only after the lease expired. It replaced a PostgreSQL advisory lock: the development database is Neon's **pooled** endpoint (transaction-mode pooling), where session-level locks are not reliable (two instances could both get the lock, or a lock could stay stuck on a pooled connection). | [BackgroundJobLeases.cs](backend/Services/BloodRequests/BackgroundJobLeases.cs), [BackgroundJobLease.cs](backend/Entities/BackgroundJobLease.cs), [RequestExpiryBackgroundService.cs](backend/Services/BloodRequests/RequestExpiryBackgroundService.cs) |
+| **409 handling** | [GlobalExceptionMiddleware.cs](backend/Middleware/GlobalExceptionMiddleware.cs) turns moved tokens, unique-index and foreign-key violations ([DatabaseConflicts.cs](backend/Common/DatabaseConflicts.cs)) and `ConflictException` into 409. Generic message: "This was just changed by someone else. Please refresh and try again." ([ConflictException.cs](backend/Common/ConflictException.cs)); specific messages where they help (duplicate email, active request, open appeal, already submitted, packets used elsewhere, transfer changed, hospital offer changed). Controllers' `catch (InvalidOperationException)` handlers skip `ConflictException`, so a conflict is no longer returned as 400. | backend |
+| **Idempotent agent retries** | The Request Management agent repeating "open the interview" (`PUT /api/Acceptances/{id}/status?status=ScreeningPending`) gets the current state instead of 400; re-sending the same screening report gets the stored version instead of a new one. | [AcceptanceService.cs](backend/Services/Acceptances/AcceptanceService.cs) |
+| **Frontend** | Action buttons are disabled while a request is running; `isConflictError` ([errorUtils.js](frontend/src/utils/errorUtils.js)) detects 409, and the page shows the message in the existing toast/alert and reloads its data. Used on My Requests, request detail, My Acceptances, Screening Reports, Doctor Dashboard, hospital donation review, Verify Blood Requests, Blood Inventory, Transfers, Donate Blood, Emergency Center, Create Blood Request, the appeal and complaint pages, and the Admin dashboard. | [frontend/src/pages/](frontend/src/pages/) |
+
+### Races checked
+
+Risk: **High** = wrong data or blood/slots blocked; **Med** = duplicates or confusing state; **Low** = rare or harmless. "Safe" = already protected before this work.
+
+| ID | Area | What could go wrong | Risk | Fix |
+|---|---|---|---|---|
+| R1 | Blood request create / edit | Double click creates two active requests for the same hospital + group | Med | Partial unique index → 409 |
+| R2 | Patient edit vs hospital verify / reject | — | Safe | Request token |
+| R3 | Delete vs donor / hospital accept | — | Safe | Foreign key + request token |
+| R4 | Cancel vs accept | Acceptance saved on a cancelled request; donor stuck "active", hospital packets stuck Reserved | High | Adding an acceptance bumps the request's token |
+| R5 | Expiry sweep vs accept | Same stranding on an expired request | High | Same as R4 |
+| R6 | Completion vs accept | Same stranding on a completed request | Med | Same as R4 |
+| R7 | Expiry sweep vs any action | One conflict failed the whole batch | Low | One save per request, skip conflicts |
+| R8 | Opening a request while it expires | GET returned 409 | Low | Reload and show the current state |
+| A1 | Same donor accepts twice | Two acceptances | Med | Same as R4 |
+| A2 | Two donors, last free slot | — | Safe | Slot reserved only by doctor approval (request token) |
+| A3 | Donor withdraws vs doctor approves report | Withdrawn donor keeps a reserved slot, or is approved after withdrawing | High | Acceptance token |
+| A4 | Withdraw vs reject, "update my answers" vs decision, release vs record donation, two reports at once | Mixed or lost state; duplicate report version (500) | High | Acceptance token |
+| A5 | Donation recorded twice; reserved + fulfilled over the limit | — | Safe | Request token + check constraints |
+| A6 | Agent retries (status, report) | Retry answered 400 although the first call worked | Low | Idempotent retries |
+| A7 | Report after withdraw / delete | — | Safe | Status checks; concurrent case covered by A3 |
+| D1 | Assigned + fallback doctor decide the same request | — | Safe | Request token |
+| D2 | Two doctors: approve vs reject the same report | Donor rejected but slot left reserved | High | Acceptance token |
+| D3 | Hospital verify vs reject; doctor approve vs hospital reject | — | Safe | Request token |
+| H1 | Two hospitals take the last slots | — | Safe | Approval re-checks free slots under the request token |
+| H2 | Doctor approve vs hospital withdraw | — | Safe | Packet tokens |
+| H3 | Same hospital offers twice | Two pending offers | Med | Same as R4 |
+| H4 | Hospital offer vs cancel / expiry / completion | Packets stuck Reserved | High | Same as R4 |
+| I1 | Same packet used twice; edit vs use; count vs packets; tracking numbers | — | Safe | Packet + inventory tokens, one save, sequence + unique index |
+| I2 | Packet expiry sweep | One conflict failed the whole batch | Low | One save per hospital + group |
+| I3 | First stock row for a group created twice; category created twice | 500 | Low | Unique violation → 409 |
+| I4 | "Add packets" double click | Packets added twice | Med | Idempotency key |
+| T1 | Transfer Request: sender accepts vs receiver withdraws (or a reject in another tab) | Packets moved but transfer shows Cancelled / Rejected | High | Transfer token |
+| T2 | Accept clicked twice with different packets | Twice the units move | High | Transfer token |
+| T3 | Offer accepted twice; accept vs withdraw; packets held by two offers | — | Safe | Packet tokens |
+| T4 | Transfer created twice | Duplicate transfer | Low | Idempotency key |
+| E1 | Emergency approve / reject / complete at once | Last write wins | Low | Emergency token |
+| E2 | Emergency created twice | Two emergencies and two rounds of alerts | Low | Idempotency key |
+| G1 | Two accounts with the same email | 500 instead of a message | Med | Unique violation → 409 "An account with this email address already exists." |
+| G2 | Hospital registration double click | — | Safe | Registration-number unique index |
+| G3 | Hospital approved twice; approve vs reject; hospital reply vs admin decision | Duplicate history rows and emails, mixed state | Med | Hospital token (also bumped by a new registration entry) |
+| G4 | Doctor created twice | Email duplicate → 500 | Low | Unique violation → 409 |
+| S1 | Two appeals at once | Two open threads | Med | Partial unique indexes |
+| S2 | Admin reply vs user reply; reject vs close; reinstate vs reply | — | Safe | Appeal token |
+| S3 | Suspend vs reinstate; suspend vs appeal approval | Mixed state, duplicate emails | Low/Med | User token |
+| S4 | Complaint replies vs solve / cancel | Reply order broken | Low | Complaint token |
+| N1 | Notifications / emails sent twice | Only when the action itself ran twice (all are sent after the save) | — | Covered by the fixes above |
+| N2 | Supervisor dispatch (`DonorAccepted`, `BloodRequestApproved`) | — | Safe | Runs once, after the commit |
+| B1 | Two backend instances run the sweep | Duplicate inventory alerts, colliding sweeps | Low | Sweep lease |
+| C1 | Admin ownership transfer | Explicit transaction refused by the retrying connection | Med | Execution strategy |
+| C2 | Doctor deleted while deciding | Very short window; history kept | Low | Not changed |
+
+---
+
+## 12. Session timeout
+
+A signed-in user who does nothing for **10 minutes** (`Session:IdleTimeoutMinutes`) is signed out and sent to Sign In with "You were signed out after 10 minutes of inactivity." A warning appears **1 minute** (`Session:WarningMinutes`) before. This works for every role, and the backend enforces it, so an old token cannot be used after the timeout.
+
+### How it works
+
+- **Server-side sessions:** each login creates a `UserSessions` row ([UserSession.cs](backend/Entities/UserSession.cs), [SessionService.cs](backend/Services/Auth/SessionService.cs)); the token carries its id in the `sid` claim ([JwtService.cs](backend/Services/Auth/JwtService.cs)).
+- **Check on every request:** `OnTokenValidated` in [Program.cs](backend/Program.cs) refuses a token whose session is missing, ended or idle (no activity for longer than the timeout). An idle session is ended with reason `Idle`, and the 401 carries the header `X-Session-Ended: idle` (`signed-out` for other ended sessions).
+- **Activity:** only requests with the header `X-LifeLink-Activity: 1` move the session's `LastActivityAt` on. The update is conditional (only while the session is still open and not yet idle), so a late request can never revive a timed-out session.
+- **Heartbeat:** `POST /api/Auth/activity` ([AuthController.cs](backend/Controllers/AuthController.cs)) records activity when the user is active without API calls, and for "Stay signed in".
+- **Sign-out:** `POST /api/Auth/logout` ends the session, so the token stops working in every tab and anywhere it was copied (`?reason=idle` when signed out for inactivity).
+- **Frontend:** [client.js](frontend/src/api/client.js) marks user-driven requests with the activity header (at most every 15 seconds) and, on a 401 with `X-Session-Ended: idle`, clears the session and opens `/login?reason=idle`. [LoginPage.jsx](frontend/src/pages/auth/LoginPage.jsx) shows the message with the configured minutes. The settings reach the frontend through the login and `GET /api/Auth/me` responses (`sessionIdleTimeoutMinutes`, `sessionWarningMinutes`).
+
+### What counts as activity
+
+- **Counts:** mouse movement and clicks, keyboard, touch, scroll and wheel ([IdleSessionManager.jsx](frontend/src/components/session/IdleSessionManager.jsx), reported with a heartbeat at most every 30 seconds), and successful API calls made by the user's actions.
+- **Does not count:** background polling and automatic refreshes, for example the Navbar's unread-notification count every 30 seconds ([Navbar.jsx](frontend/src/components/common/Navbar.jsx) calls it with `background: true`).
+- Every tab counts down from the same backend-confirmed activity time ([sessionActivity.js](frontend/src/session/sessionActivity.js)), so the browser never signs out later than the backend.
+
+### Warning dialog and tabs
+
+- The "Are you still there?" dialog (inside [IdleSessionManager.jsx](frontend/src/components/session/IdleSessionManager.jsx), existing dialog style, light/dark and mobile) shows a mm:ss countdown with **Stay signed in** and **Sign out**. While it is open, only these buttons count; moving the mouse does not close it.
+- **Multi-tab:** activity in one tab keeps all tabs alive; the warning shows in every tab and "Stay signed in" in one closes it everywhere; signing out (manually or for inactivity) in one tab signs out all tabs (`localStorage` events).
+- On sign-out the token, cached user data and the activity time are cleared; the full-page redirect stops polling and open requests.
+- **Pages that do not time out:** `/hospital/waiting-approval` and `/governance/status` (suspended accounts). There the idle timer is paused and a quiet heartbeat keeps the session alive. Public pages (sign in, register, forgot password) have no session.
+- **Unsaved forms:** typing counts as activity, so an active user never loses a form; the warning says that unsaved work will be lost. Drafts are not kept in the browser after sign-out (forms hold personal and medical data).
+
+### Settings and testing
+
+- `Session:IdleTimeoutMinutes` (default 10) and `Session:WarningMinutes` (default 1) in [backend/appsettings.json](backend/appsettings.json). The warning must be shorter than the timeout; fractions are allowed.
+- For a quick test, override them with environment variables when starting the backend, for example `Session__IdleTimeoutMinutes=1.5` and `Session__WarningMinutes=0.5`.
+- The **120-minute absolute token lifetime** (`Jwt:ExpiryMinutes`) still applies: an active user signs in again after 2 hours, also on the paused pages.
+- **After upgrading:** tokens issued before this change have no session and are refused, so everyone signs in once.
+
+---
+
+## 13. Local development
 
 ### Prerequisites
 
@@ -911,6 +1048,7 @@ See each agent README for exact steps (Request Management also documents `uvicor
 - Notification ([.env.example](Agents/Notification/.env.example)): `GOOGLE_API_KEY`, `MODEL_NAME`, `INTERNAL_SERVICE_API_KEY`, `HOST`, `PORT`.
 - Inventory ([.env.example](Agents/InventoryManagement/.env.example)): `INTERNAL_SERVICE_API_KEY`, `SCHEDULER_ENABLED`, `SCHEDULE_INTERVAL_MINUTES`, `BACKEND_API_URL`, `INVENTORY_ENDPOINT`, `NOTIFICATION_ENDPOINT`, `REQUEST_TIMEOUT`.
 - The internal key must be the same in the backend (`InternalService:ApiKey`) and every agent.
+- Short idle timeout for testing (environment variables override `appsettings.json`): for example `Session__IdleTimeoutMinutes=1.5` and `Session__WarningMinutes=0.5` (warning after 60 seconds, sign-out after 90). Fractions are allowed; the warning must be shorter than the timeout.
 
 ### Build, lint, test
 
@@ -924,16 +1062,19 @@ See each agent README for exact steps (Request Management also documents `uvicor
 
 ---
 
-## 12. Testing
+## 14. Testing
 
-- **Backend** ([backend.Tests/](backend.Tests/)): xUnit with EF Core InMemory and Moq; 21 source files (20 test classes plus the `TestReservations` helper) covering auth, blood request lifecycle, acceptances and screening rules, packets and hospital donations ([HospitalPacketsAndDonationsTests.cs](backend.Tests/HospitalPacketsAndDonationsTests.cs)), request editing ([BloodRequestEditTests.cs](backend.Tests/BloodRequestEditTests.cs)), request hard delete ([BloodRequestDeleteTests.cs](backend.Tests/BloodRequestDeleteTests.cs)), appeal resolution on reinstatement ([AppealReinstatementTests.cs](backend.Tests/AppealReinstatementTests.cs)), inventory, transfers, emergencies, governance, complaints, hospital registration and profiles. InMemory has no transactions and no PostgreSQL sequence (a counter stands in, see `InventoryLedger.NextTrackingNumbersAsync`).
+- **Backend** ([backend.Tests/](backend.Tests/)): xUnit with EF Core InMemory and Moq; 24 source files (23 test classes plus the `TestReservations` helper) covering auth, blood request lifecycle, acceptances and screening rules, packets and hospital donations ([HospitalPacketsAndDonationsTests.cs](backend.Tests/HospitalPacketsAndDonationsTests.cs)), request editing ([BloodRequestEditTests.cs](backend.Tests/BloodRequestEditTests.cs)), request hard delete ([BloodRequestDeleteTests.cs](backend.Tests/BloodRequestDeleteTests.cs)), appeal resolution on reinstatement ([AppealReinstatementTests.cs](backend.Tests/AppealReinstatementTests.cs)), race conditions ([RaceConditionTests.cs](backend.Tests/RaceConditionTests.cs), [PostgresRaceTests.cs](backend.Tests/PostgresRaceTests.cs)), the idle timeout ([SessionTimeoutTests.cs](backend.Tests/SessionTimeoutTests.cs)), inventory, transfers, emergencies, governance, complaints, hospital registration and profiles. InMemory has no transactions and no PostgreSQL sequence (a counter stands in, see `InventoryLedger.NextTrackingNumbersAsync`).
+- **Race tests** ([RaceConditionTests.cs](backend.Tests/RaceConditionTests.cs)): each test simulates two users with two `DbContext`s on the same database. The second user reads the records first; then the first user's action commits; then the second user's action runs on what it read. That second save must fail with a conflict (409), and the winner's data must be unchanged. InMemory checks concurrency tokens but has no transactions, so a failed save there can leave rows it wrote earlier; the tests therefore only check the rows that carry a token, and "nothing partly saved" is checked on PostgreSQL.
+- **PostgreSQL-only tests** ([PostgresRaceTests.cs](backend.Tests/PostgresRaceTests.cs), 9 tests): a losing accept and a losing doctor approval are rolled back completely, a double hospital approval keeps one decision, the partial unique indexes (active request, open appeal), the acceptance foreign key, the idempotency-key primary key, conditional session updates, and the sweep lease. They are **skipped** unless the environment variable `LIFELINK_PG_TESTS` is set to the path of an appsettings file that contains `ConnectionStrings:DefaultConnection` (for example `backend/appsettings.Development.json`), with the migrations applied. Everything runs inside one transaction that is always rolled back, so nothing is kept; they create no packets (the tracking-number sequence is not transactional).
+- **Duration:** the full backend suite took about 18 minutes in the last run (the new race and session tests take about 2 seconds; no earlier full-run time was recorded to compare).
 - **Agents:** pytest suites in each `tests/` folder ([Supervisor](Agents/Supervisor/tests/), [RequestManagement](Agents/RequestManagement/tests/), [Notification](Agents/Notification/tests/), [InventoryManagement](Agents/InventoryManagement/tests/)).
 - **Frontend:** no automated tests; ESLint only.
 - **Known failing test:** `Admin_Dashboard_Statistics_Calculates_All_9_Metrics` in [Student4AdminGovernanceTests.cs](backend.Tests/Student4AdminGovernanceTests.cs) — the dashboard DTO renamed `TotalUsers` to `TotalDonorPatients` and the new metric counts differently (expected 3, actual 0).
 
 ---
 
-## 13. Known issues and notes
+## 15. Known issues and notes
 
 - **Lint:** about 100 existing ESLint errors, mostly `'React' is defined but never used` from default `import React` in many files.
 - **Old soft-deleted requests:** requests deleted before hard delete was introduced keep `Status = Deleted` and still appear in the creator's, hospital's and assigned doctor's history lists (the assistant snapshot skips them). New deletions are hard deletes.
@@ -946,10 +1087,13 @@ See each agent README for exact steps (Request Management also documents `uvicor
 - **Config defaults:** agent URL defaults in code use `localhost` while `appsettings.json` uses `127.0.0.1`.
 - **Migrations run on startup:** starting the backend against any database applies pending migrations immediately.
 - **Theme:** the manual theme toggle is not persisted across reloads.
+- **Stale page after the other action finished first:** when the other action completed before this one was sent, the backend answers 400 with the current state (for example "This transfer is already Cancelled.") instead of 409, and the page does not reload its list automatically (only 409 triggers the reload).
+- **Sweep lease after switching backends:** the lease is held by the backend instance that last ran the sweep. After switching to another instance (for example a restart), the first sweep can wait up to 7 minutes until the old lease expires.
+- **Sign in again after upgrading:** tokens issued before sessions existed have no `sid` and are refused, so every user signs in once after the upgrade.
 
 ---
 
-## 14. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 |---|---|
@@ -974,3 +1118,8 @@ See each agent README for exact steps (Request Management also documents `uvicor
 | Internal key | Shared secret header `X-Internal-Key` used between the backend and agents |
 | Governance Portal | The only area a suspended account can use: status, appeals |
 | Registration conversation | The hospital–admin message thread after a registration is rejected |
+| Race condition | Two actions on the same data at the same moment, where the result depends on which one saves last |
+| Concurrency token | A number on a row that moves on with every change; a save based on an older number fails with 409 |
+| Idempotency key | A client-generated key sent once per form submission (`Idempotency-Key` header); the same key again creates nothing |
+| Lease | A time-limited claim (`BackgroundJobLeases`) that lets only one backend instance run the background sweep |
+| Session | One sign-in (`UserSessions`, the token's `sid`); ends on sign-out or after the idle timeout |

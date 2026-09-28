@@ -2,9 +2,10 @@ using System;
 
 namespace LifeLink.Entities
 {
-    public class HospitalTransferRequest
+    public class HospitalTransferRequest : IConcurrencyVersioned
     {
         public Guid TransferRequestId { get; set; }
+        public int ConcurrencyToken { get; set; } // optimistic concurrency (see AppDbContext)
         public Guid SenderHospitalId { get; set; }
         public Guid ReceiverHospitalId { get; set; }
         public string BloodGroup { get; set; } = string.Empty;

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { bloodRequestApi, doctorApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { DataTable } from '../../components/common/DataTable';
 import { Badge, RequestStatusBadge } from '../../components/common/Badge';
 import { UserCheck, XCircle, X, Loader2, RefreshCw, Stethoscope, AlertCircle } from 'lucide-react';
@@ -83,6 +83,11 @@ export const VerifyBloodRequestsPage = () => {
       reload();
     } catch (err) {
       addToast({ title: 'Action Failed', message: getApiErrorMessage(err), type: 'error' });
+      // The patient edited it or someone else acted at the same moment: show the current list
+      if (isConflictError(err)) {
+        setModal(null);
+        reload();
+      }
     } finally {
       setSubmitting(false);
     }

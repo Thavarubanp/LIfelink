@@ -5,6 +5,7 @@ import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
 import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
+import { isConflictError } from '../../utils/errorUtils';
 import {
   MessageSquare,
   AlertTriangle,
@@ -136,7 +137,12 @@ export const AdminComplaintsPage = () => {
 
   // Admin reply (the only admin complaint action); errors are shown inside the modal
   const handleSendReply = async (dto) => {
-    await adminApi.replyToComplaint(replyTarget.complaintId, dto);
+    try {
+      await adminApi.replyToComplaint(replyTarget.complaintId, dto);
+    } catch (err) {
+      if (isConflictError(err)) await fetchComplaints(); // the creator replied or closed it at the same moment
+      throw err;
+    }
     addToast({ title: 'Reply Sent', message: 'The complaint creator has been notified.', type: 'success' });
     setReplyTarget(null);
     await fetchComplaints();

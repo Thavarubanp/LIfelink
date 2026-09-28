@@ -27,6 +27,7 @@ namespace LifeLink.Services.Acceptances
     public class AcceptanceService : IAcceptanceService
     {
         public const string FulfilledByOthersReason = "Required donor count has been fulfilled by other selected donors.";
+        public const string HospitalOfferConflictMessage = "This request or the selected packets were just changed by someone else. Please refresh and try again.";
         private const int MaxReportJsonLength = 200_000;
 
         private readonly AppDbContext _context;
@@ -156,6 +157,8 @@ namespace LifeLink.Services.Acceptances
             };
 
             await _context.Acceptances.AddAsync(acceptance);
+            // Saving the acceptance also moves the request's token (AppDbContext): a cancel, expiry, completion or a second
+            // accept at the same moment makes one of the two fail with 409 instead of leaving a stranded acceptance.
             await SaveNewAcceptanceAsync(() => _context.SaveChangesAsync());
 
             // Supervisor workflow: DonorAccepted → Request Management agent opens the screening interview
@@ -669,8 +672,9 @@ namespace LifeLink.Services.Acceptances
             await NotifyRequestStaffAsync(request, "HospitalDonationOffered", "Hospital Donation Offer",
                 $"{donorHospital.Name} offers {packets.Count} {request.BloodGroup} packet(s) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}. Review and approve or reject the offer.");
 
-            // No Supervisor / agent call: hospital blood is not screened
-            await SaveNewAcceptanceAsync(() => InventoryLedger.SavePacketChangesAsync(_context));
+            // No Supervisor / agent call: hospital blood is not screened. Saving the offer also moves the request's token
+            // (AppDbContext), so an offer and a cancel / expiry / completion at the same moment cannot both succeed.
+            await SaveNewAcceptanceAsync(() => InventoryLedger.SavePacketChangesAsync(_context, HospitalOfferConflictMessage));
 
             return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
         }
@@ -934,6 +938,12 @@ namespace LifeLink.Services.Acceptances
                 throw new InvalidOperationException("Hospital donations are approved by the assigned doctor and are not screened.");
             }
 
+            // The agent retrying the same call (for example after a timeout) gets the current state, not an error
+            if (acceptance.Status == AcceptanceStatus.ScreeningPending && newStatus == AcceptanceStatus.ScreeningPending)
+            {
+                return MapToResponseDto(acceptance);
+            }
+
             if (!(acceptance.Status == AcceptanceStatus.Accepted && newStatus == AcceptanceStatus.ScreeningPending))
             {
                 throw new InvalidOperationException($"Invalid status transition from {acceptance.Status} to {newStatus}.");
@@ -980,6 +990,20 @@ namespace LifeLink.Services.Acceptances
             {
                 throw new InvalidOperationException("Hospital donations are approved by the assigned doctor and are not screened.");
             }
+
+            // The agent re-sending the same report (a retry after a timeout) gets the stored version, not a new one
+            if (acceptance.Status == AcceptanceStatus.ScreeningCompleted)
+            {
+                var pending = await _context.DonorVerifications
+                    .Where(v => v.AcceptanceId == acceptanceId)
+                    .OrderByDescending(v => v.ReportVersion)
+                    .FirstOrDefaultAsync();
+                if (pending != null && pending.Status == VerificationStatus.Pending && pending.ReportJson == reportJson)
+                {
+                    return pending;
+                }
+            }
+
             if (acceptance.Status != AcceptanceStatus.Accepted && acceptance.Status != AcceptanceStatus.ScreeningPending)
             {
                 throw new InvalidOperationException($"A screening report cannot be submitted while the acceptance is {acceptance.Status}.");

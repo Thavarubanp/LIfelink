@@ -46,7 +46,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

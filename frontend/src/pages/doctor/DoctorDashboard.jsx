@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { bloodRequestApi, screeningApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { Badge, RequestStatusBadge } from '../../components/common/Badge';
 import { DataTable } from '../../components/common/DataTable';
 import { AgentStatusCard } from '../../components/workflow/AgentStatusCard';
@@ -79,6 +79,11 @@ export const DoctorDashboard = () => {
       setAssignedReloadKey((k) => k + 1);
     } catch (err) {
       addToast({ title: 'Action Failed', message: getApiErrorMessage(err), type: 'error' });
+      // Decided or changed by someone else at the same moment: show the current list
+      if (isConflictError(err)) {
+        setDecision(null);
+        setAssignedReloadKey((k) => k + 1);
+      }
     } finally {
       setSubmitting(false);
     }

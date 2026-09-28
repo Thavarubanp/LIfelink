@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../api';
+import { clearSession, markActivityConfirmed } from '../session/sessionActivity';
 
 const AuthContext = createContext(null);
 
@@ -31,12 +32,15 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (credentials) => {
+    // The backend starts the session's idle clock while handling this request
+    const sentAt = Date.now();
     const res = await authApi.login(credentials);
     const isSuccess = res?.success === true;
     const token = res?.data?.accessToken || res?.data?.token;
 
     if (isSuccess && token) {
       localStorage.setItem('lifelink_token', token);
+      markActivityConfirmed(sentAt);
       
       if (res.data.user) {
         setUser(res.data.user);
@@ -60,7 +64,8 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       // Ignore network errors on logout
     } finally {
-      localStorage.removeItem('lifelink_token');
+      // Clears the token and cached data here and signs out every other open tab
+      clearSession('signed-out');
       setUser(null);
       window.location.href = '/login';
     }

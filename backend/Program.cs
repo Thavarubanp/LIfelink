@@ -70,6 +70,10 @@ builder.Services.AddScoped<IEmailService, MailKitEmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
+// Idle timeout: server-side sessions (Session:IdleTimeoutMinutes, Session:WarningMinutes)
+builder.Services.AddSingleton(SessionSettings.FromConfiguration(builder.Configuration));
+builder.Services.AddScoped<ISessionService, SessionService>();
+
 // Student 3 Services Injection
 builder.Services.AddScoped<IBloodInventoryService, BloodInventoryService>();
 builder.Services.AddScoped<IEmergencyRequestService, EmergencyRequestService>();
@@ -153,10 +157,32 @@ builder.Services.AddAuthentication(options =>
             if (account != null && (account.AccountStatus == LifeLink.Entities.AccountStatus.Blocked || account.AccountStatus == LifeLink.Entities.AccountStatus.Deleted))
             {
                 ctx.Fail("This account is no longer active.");
+                return;
             }
-            else if (ctx.Principal!.IsInRole("Admin") && account?.IsAdmin != true)
+            if (ctx.Principal!.IsInRole("Admin") && account?.IsAdmin != true)
             {
                 ctx.Fail("Admin ownership has changed. Please sign in again.");
+                return;
+            }
+
+            // Idle timeout and sign-out: the token's session must still be open and active within the idle window.
+            // Only requests the app marks as user activity (never background polling) move the session on; the
+            // heartbeat endpoint always does. Tokens without a session (issued before sessions existed) are refused.
+            var sessions = ctx.HttpContext.RequestServices.GetRequiredService<ISessionService>();
+            if (!Guid.TryParse(ctx.Principal.FindFirst(SessionSettings.SessionClaim)?.Value, out var sessionId))
+            {
+                ctx.HttpContext.Response.Headers[SessionSettings.EndedHeader] = "signed-out";
+                ctx.Fail("Please sign in again.");
+                return;
+            }
+            var request = ctx.HttpContext.Request;
+            var recordActivity = request.Headers[SessionSettings.ActivityHeader] == "1" ||
+                                 (HttpMethods.IsPost(request.Method) && request.Path.Equals("/api/Auth/activity", StringComparison.OrdinalIgnoreCase));
+            var state = await sessions.CheckAsync(sessionId, userId, recordActivity);
+            if (state != SessionState.Active)
+            {
+                ctx.HttpContext.Response.Headers[SessionSettings.EndedHeader] = state == SessionState.Idle ? "idle" : "signed-out";
+                ctx.Fail(state == SessionState.Idle ? "You were signed out after a period of inactivity." : "This session has ended. Please sign in again.");
             }
         }
     };

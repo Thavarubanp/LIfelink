@@ -4,6 +4,8 @@ import { emergencyApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { EmergencyResponseTimeline } from '../../components/workflow/EmergencyResponseTimeline';
 import { Zap, AlertTriangle, Loader2 } from 'lucide-react';
+import { newIdempotencyKey } from '../../session/sessionActivity';
+import { isConflictError } from '../../utils/errorUtils';
 
 export const EmergencyHubPage = () => {
   // The hospital is taken from the signed-in account on the server
@@ -15,6 +17,8 @@ export const EmergencyHubPage = () => {
   });
 
   const [loading, setLoading] = useState(false);
+  // One key per emergency form: a double submit or retry never raises the same emergency twice
+  const [submitKey, setSubmitKey] = useState(newIdempotencyKey);
   const { addToast } = useNotification();
 
   const handleSubmit = async (e) => {
@@ -22,7 +26,8 @@ export const EmergencyHubPage = () => {
     setLoading(true);
 
     try {
-      await emergencyApi.createEmergencyRequest(formData);
+      await emergencyApi.createEmergencyRequest(formData, { idempotencyKey: submitKey });
+      setSubmitKey(newIdempotencyKey());
       addToast({
         title: 'Emergency raised',
         message: 'Approved hospitals holding compatible blood have been alerted and can send you a transfer offer.',
@@ -34,6 +39,8 @@ export const EmergencyHubPage = () => {
         message: err.response?.data?.message || err.message || 'Error triggering emergency broadcast.',
         type: 'error'
       });
+      // 409: this form was already submitted; the next submit is a new emergency
+      if (isConflictError(err)) setSubmitKey(newIdempotencyKey());
     } finally {
       setLoading(false);
     }

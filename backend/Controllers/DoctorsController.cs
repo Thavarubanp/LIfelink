@@ -73,7 +73,7 @@ namespace LifeLink.Controllers
                 return StatusCode(StatusCodes.Status201Created,
                     ApiResponse<DoctorResponseDto>.Ok(result, "Doctor account created successfully."));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -176,7 +176,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

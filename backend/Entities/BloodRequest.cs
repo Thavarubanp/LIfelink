@@ -2,7 +2,7 @@ using System;
 
 namespace LifeLink.Entities
 {
-    public class BloodRequest
+    public class BloodRequest : IConcurrencyVersioned
     {
         public Guid BloodRequestId { get; set; } = Guid.NewGuid();
         public Guid PatientUserId { get; set; }

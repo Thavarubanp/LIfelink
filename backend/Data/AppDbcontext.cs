@@ -22,6 +22,9 @@ namespace LifeLink.Data
         public DbSet<Role> Roles { get; set; } = null!;
         public DbSet<UserRole> UserRoles { get; set; } = null!;
         public DbSet<PasswordResetToken> PasswordResetTokens { get; set; } = null!;
+        public DbSet<UserSession> UserSessions { get; set; } = null!;
+        public DbSet<IdempotencyKey> IdempotencyKeys { get; set; } = null!;
+        public DbSet<BackgroundJobLease> BackgroundJobLeases { get; set; } = null!;
 
         // Student 3 DbSets
         public DbSet<Hospital> Hospitals { get; set; } = null!;
@@ -54,55 +57,62 @@ namespace LifeLink.Data
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             EnforceScreeningReportImmutability();
-            AdvanceBloodRequestConcurrencyTokens();
-            AdvanceAppealConcurrencyTokens();
+            AdvanceConcurrencyTokens();
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
 
         public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
             EnforceScreeningReportImmutability();
-            AdvanceBloodRequestConcurrencyTokens();
-            AdvanceAppealConcurrencyTokens();
+            AdvanceConcurrencyTokens();
             return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
 
         /// <summary>
-        /// Every change to a blood request moves its concurrency token on, so two people changing the same request at once
-        /// (approving donors, recording donations, releasing, cancelling, expiry) never silently overwrite each other:
-        /// the later save fails with DbUpdateConcurrencyException (HTTP 409) and is retried on fresh data.
+        /// Every change to a concurrency-versioned entity (blood requests, acceptances, appeals, complaints, hospitals,
+        /// users, transfers, emergencies) moves its token on, so two people changing the same row at once never silently
+        /// overwrite each other: the later save fails with DbUpdateConcurrencyException (HTTP 409).
+        /// Adding a child row whose validity depends on the parent's current state also moves the parent's token:
+        /// an acceptance (its request could be cancelling, expiring or completing at that moment), an appeal thread
+        /// message, a complaint audit entry or reply, and a hospital registration conversation entry.
+        /// Packets and inventory rows are versioned by InventoryLedger itself.
         /// </summary>
-        private void AdvanceBloodRequestConcurrencyTokens()
+        private void AdvanceConcurrencyTokens()
         {
-            foreach (var entry in ChangeTracker.Entries<BloodRequest>())
-            {
-                if (entry.State == EntityState.Modified)
-                {
-                    entry.Entity.ConcurrencyToken++;
-                }
-            }
-        }
-
-        /// <summary>
-        /// An appeal's token moves on when the appeal changes or a message is added to its thread, so a reply and an
-        /// admin action (decision, reinstatement) at the same moment conflict: the later save fails with 409.
-        /// </summary>
-        private void AdvanceAppealConcurrencyTokens()
-        {
-            var touched = new HashSet<Appeal>(ChangeTracker.Entries<Appeal>()
+            var touched = new HashSet<IConcurrencyVersioned>(ChangeTracker.Entries<IConcurrencyVersioned>()
                 .Where(e => e.State == EntityState.Modified)
-                .Select(e => e.Entity));
-            foreach (var message in ChangeTracker.Entries<AppealMessage>().Where(e => e.State == EntityState.Added))
+                .Select(e => e.Entity), ReferenceEqualityComparer.Instance);
+
+            void TouchParent<TParent>(TParent? parent) where TParent : class, IConcurrencyVersioned
             {
-                var appeal = Appeals.Local.FirstOrDefault(a => a.AppealId == message.Entity.AppealId);
-                if (appeal != null && Entry(appeal).State is EntityState.Unchanged or EntityState.Modified)
+                if (parent != null && Entry(parent).State is EntityState.Unchanged or EntityState.Modified)
                 {
-                    touched.Add(appeal);
+                    touched.Add(parent);
                 }
             }
-            foreach (var appeal in touched)
+
+            foreach (var entry in ChangeTracker.Entries().Where(e => e.State == EntityState.Added).ToList())
             {
-                appeal.ConcurrencyToken++;
+                switch (entry.Entity)
+                {
+                    case Acceptance acceptance:
+                        TouchParent(BloodRequests.Local.FirstOrDefault(r => r.BloodRequestId == acceptance.BloodRequestId));
+                        break;
+                    case AppealMessage message:
+                        TouchParent(Appeals.Local.FirstOrDefault(a => a.AppealId == message.AppealId));
+                        break;
+                    case ComplaintAuditLog log:
+                        TouchParent(Complaints.Local.FirstOrDefault(c => c.ComplaintId == log.ComplaintId));
+                        break;
+                    case HospitalApprovalHistory history:
+                        TouchParent(Hospitals.Local.FirstOrDefault(h => h.HospitalId == history.HospitalId));
+                        break;
+                }
+            }
+
+            foreach (var entity in touched)
+            {
+                entity.ConcurrencyToken++;
             }
         }
 
@@ -177,6 +187,36 @@ namespace LifeLink.Data
                 entity.Property(u => u.IsSuspended).IsRequired().HasDefaultValue(false);
                 entity.Property(u => u.SuspensionReason).HasMaxLength(500);
                 entity.Property(u => u.BloodGroup).HasMaxLength(10);
+                entity.Property(u => u.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
+            });
+
+            // Signed-in sessions (idle timeout and sign-out are enforced on every request)
+            modelBuilder.Entity<UserSession>(entity =>
+            {
+                entity.HasKey(s => s.SessionId);
+                entity.HasIndex(s => s.UserId);
+                entity.Property(s => s.EndReason).HasMaxLength(20);
+                entity.HasOne(s => s.User)
+                      .WithMany()
+                      .HasForeignKey(s => s.UserId)
+                      .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // One row per form submission key: a repeated submission with the same key fails on the primary key
+            modelBuilder.Entity<IdempotencyKey>(entity =>
+            {
+                entity.HasKey(k => k.Key);
+                entity.Property(k => k.Key).HasMaxLength(150); // "{userId}:{client key}"
+                entity.Property(k => k.Endpoint).IsRequired().HasMaxLength(100);
+                entity.HasIndex(k => k.CreatedAt);
+            });
+
+            // Which backend instance runs the background sweep (see BackgroundJobLeases)
+            modelBuilder.Entity<BackgroundJobLease>(entity =>
+            {
+                entity.HasKey(l => l.Name);
+                entity.Property(l => l.Name).HasMaxLength(50);
+                entity.Property(l => l.Holder).IsRequired().HasMaxLength(200);
             });
 
             // Role configuration
@@ -238,6 +278,7 @@ namespace LifeLink.Data
                       .HasDefaultValue(ApprovalStatus.Pending);
                 entity.Property(h => h.RejectionReason).HasMaxLength(500);
                 entity.Property(h => h.IsSuspended).IsRequired().HasDefaultValue(false);
+                entity.Property(h => h.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
                 entity.Property(h => h.SuspensionReason).HasMaxLength(500);
                 entity.Property(h => h.PacketShelfLifeDays).IsRequired().HasDefaultValue(35);
                 entity.Property(h => h.ExpiryAlertDays).IsRequired().HasDefaultValue(5);
@@ -345,6 +386,7 @@ namespace LifeLink.Data
             modelBuilder.Entity<EmergencyRequest>(entity =>
             {
                 entity.HasKey(e => e.EmergencyRequestId);
+                entity.Property(e => e.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
                 entity.HasIndex(e => e.HospitalId);
                 entity.HasIndex(e => e.BloodGroup);
                 entity.HasIndex(e => e.Priority);
@@ -364,6 +406,7 @@ namespace LifeLink.Data
             modelBuilder.Entity<HospitalTransferRequest>(entity =>
             {
                 entity.HasKey(t => t.TransferRequestId);
+                entity.Property(t => t.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
                 entity.HasIndex(t => t.SenderHospitalId);
                 entity.HasIndex(t => t.ReceiverHospitalId);
                 entity.HasIndex(t => t.BloodGroup);
@@ -510,6 +553,10 @@ namespace LifeLink.Data
                 entity.HasIndex(b => b.Status);
                 entity.HasIndex(b => b.CreatedAt);
                 entity.HasIndex(b => b.ExpiryDate);
+                // One active request per creator, hospital and blood group (the duplicate rule), also under double submits
+                entity.HasIndex(b => new { b.PatientUserId, b.HospitalId, b.BloodGroup }, "IX_BloodRequests_OneActivePerCreatorHospitalGroup")
+                      .IsUnique()
+                      .HasFilter("\"Status\" IN ('Pending', 'Verified', 'Approved')");
 
                 entity.Property(b => b.BloodGroup).IsRequired().HasMaxLength(10);
                 entity.Property(b => b.UnitsRequired).IsRequired();
@@ -540,6 +587,7 @@ namespace LifeLink.Data
                 entity.HasIndex(a => a.Status);
                 entity.HasIndex(a => a.AcceptedAt);
                 entity.HasIndex(a => a.DonorHospitalId);
+                entity.Property(a => a.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
 
                 // Restrict: a request cannot be removed while any acceptance references it, and an acceptance cannot be
                 // created for a request that was just deleted (a concurrent accept + delete: one of them fails)
@@ -573,6 +621,7 @@ namespace LifeLink.Data
                 entity.HasIndex(c => c.AssignedAdminId);
                 entity.HasIndex(c => c.Status);
                 entity.HasIndex(c => c.CreatedAt);
+                entity.Property(c => c.ConcurrencyToken).IsConcurrencyToken().HasDefaultValue(0);
 
                 entity.Property(c => c.ComplaintType).IsRequired().HasMaxLength(100);
                 entity.Property(c => c.Subject).IsRequired().HasMaxLength(200);
@@ -666,6 +715,13 @@ namespace LifeLink.Data
                 entity.HasIndex(a => a.ReviewedByAdminId);
                 entity.HasIndex(a => a.Status);
                 entity.HasIndex(a => a.SubmittedAt);
+                // One open thread (PENDING or REJECTED) per account and per hospital, also when two appeals arrive at once
+                entity.HasIndex(a => a.UserId, "IX_Appeals_OneOpenPerUser")
+                      .IsUnique()
+                      .HasFilter("\"HospitalId\" IS NULL AND \"Status\" IN ('PENDING', 'REJECTED')");
+                entity.HasIndex(a => a.HospitalId, "IX_Appeals_OneOpenPerHospital")
+                      .IsUnique()
+                      .HasFilter("\"HospitalId\" IS NOT NULL AND \"Status\" IN ('PENDING', 'REJECTED')");
 
                 entity.Property(a => a.Reason).IsRequired().HasMaxLength(2000);
                 entity.Property(a => a.AdminResponse).HasMaxLength(2000);

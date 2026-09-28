@@ -4,7 +4,7 @@ import { Calendar, CheckCircle2, FileText, Loader2, LogOut, PencilLine, Stethosc
 import { acceptanceApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 
 const STATUS = {
   Accepted: { label: 'Screening not started', variant: 'info', next: 'Start your health screening interview.' },
@@ -79,6 +79,8 @@ export const MyAcceptancesPage = () => {
       setReloadKey((k) => k + 1);
     } catch (err) {
       addToast({ title: 'Could not withdraw', message: getApiErrorMessage(err), type: 'error' });
+      // The doctor decided at the same moment: show the current status
+      if (isConflictError(err)) setReloadKey((k) => k + 1);
     } finally {
       setBusy(null);
     }
@@ -92,6 +94,7 @@ export const MyAcceptancesPage = () => {
       navigate(`/donor/acceptances/${a.acceptanceId}/screening`);
     } catch (err) {
       addToast({ title: 'Could not reopen screening', message: getApiErrorMessage(err), type: 'error' });
+      if (isConflictError(err)) setReloadKey((k) => k + 1);
       setBusy(null);
     }
   };

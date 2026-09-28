@@ -397,34 +397,45 @@ namespace LifeLink.Services.Admin
             var currentAdmin = await _context.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == actingAdminId && ur.RoleId == adminRole.RoleId)
                 ?? throw new InvalidOperationException("Only the current Admin can transfer Admin ownership.");
 
+            // The connection retries transient failures, so the two saves run as one unit inside the execution strategy
+            // (a user-started transaction outside it is refused). On a retry the whole unit runs again on fresh data.
             var useTransaction = _context.Database.IsRelational();
-            await using var transaction = useTransaction ? await _context.Database.BeginTransactionAsync() : null;
-
-            // 1. Current Admin -> User (saved first so the single-admin index never sees two Admins)
-            _context.UserRoles.Remove(currentAdmin);
-            if (!await _context.UserRoles.AnyAsync(ur => ur.UserId == actingAdminId && ur.RoleId == userRole.RoleId))
+            var strategy = _context.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(async () =>
             {
-                await _context.UserRoles.AddAsync(new UserRole { UserId = actingAdminId, RoleId = userRole.RoleId });
-            }
-            await _context.SaveChangesAsync();
+                _context.ChangeTracker.Clear();
+                await using var transaction = useTransaction ? await _context.Database.BeginTransactionAsync() : null;
 
-            // 2. Selected User -> Admin, plus the in-app notification
-            _context.UserRoles.RemoveRange(target.UserRoles.Where(ur => ur.RoleId == userRole.RoleId));
-            await _context.UserRoles.AddAsync(new UserRole { UserId = userId, RoleId = adminRole.RoleId });
-            await _context.Notifications.AddAsync(new LifeLink.Entities.Notification
-            {
-                NotificationId = Guid.NewGuid(),
-                UserId = userId,
-                Title = "You Are Now the System Administrator",
-                Message = "Admin ownership of LifeLink has been transferred to your account. Sign in again to access the Admin portal.",
-                NotificationType = "AdminTransfer",
-                RecipientRole = "Admin",
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
+                var adminRoleRow = await _context.UserRoles.FirstOrDefaultAsync(ur => ur.UserId == actingAdminId && ur.RoleId == adminRole.RoleId)
+                    ?? throw new ConflictException("Admin ownership was just changed. Please refresh and try again.");
+                var targetUserRoles = await _context.UserRoles.Where(ur => ur.UserId == userId).ToListAsync();
+
+                // 1. Current Admin -> User (saved first so the single-admin index never sees two Admins)
+                _context.UserRoles.Remove(adminRoleRow);
+                if (!await _context.UserRoles.AnyAsync(ur => ur.UserId == actingAdminId && ur.RoleId == userRole.RoleId))
+                {
+                    await _context.UserRoles.AddAsync(new UserRole { UserId = actingAdminId, RoleId = userRole.RoleId });
+                }
+                await _context.SaveChangesAsync();
+
+                // 2. Selected User -> Admin, plus the in-app notification
+                _context.UserRoles.RemoveRange(targetUserRoles.Where(ur => ur.RoleId == userRole.RoleId));
+                await _context.UserRoles.AddAsync(new UserRole { UserId = userId, RoleId = adminRole.RoleId });
+                await _context.Notifications.AddAsync(new LifeLink.Entities.Notification
+                {
+                    NotificationId = Guid.NewGuid(),
+                    UserId = userId,
+                    Title = "You Are Now the System Administrator",
+                    Message = "Admin ownership of LifeLink has been transferred to your account. Sign in again to access the Admin portal.",
+                    NotificationType = "AdminTransfer",
+                    RecipientRole = "Admin",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+                await _context.SaveChangesAsync();
+
+                if (transaction != null) await transaction.CommitAsync();
             });
-            await _context.SaveChangesAsync();
-
-            if (transaction != null) await transaction.CommitAsync();
         }
 
         // Admins never act on themselves or on the Admin account; blocked/deleted accounts are out of governance

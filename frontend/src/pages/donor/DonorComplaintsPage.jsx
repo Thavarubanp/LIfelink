@@ -5,6 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
+import { isConflictError } from '../../utils/errorUtils';
+import { newIdempotencyKey } from '../../session/sessionActivity';
 import {
   MessageSquare,
   Trash2,
@@ -59,6 +61,8 @@ export const DonorComplaintsPage = () => {
   const [myComplaints, setMyComplaints] = useState([]);
   const [loadingComplaints, setLoadingComplaints] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // One key per complaint form: a double submit or retry never files the same complaint twice
+  const submitKeyRef = useRef(null);
   const [expandedComplaintIds, setExpandedComplaintIds] = useState(new Set());
   const [deletingId, setDeletingId] = useState(null);
   const [replyTarget, setReplyTarget] = useState(null);
@@ -104,6 +108,11 @@ export const DonorComplaintsPage = () => {
         message: err.response?.data?.message || 'Could not mark complaint as solved.',
         type: 'error'
       });
+      // The administrator replied at the same moment: show the current thread
+      if (isConflictError(err)) {
+        setSolveModal({ isOpen: false, complaint: null, notes: '' });
+        await loadComplaintsHistory();
+      }
     } finally {
       setSolvingId(null);
     }
@@ -134,6 +143,7 @@ export const DonorComplaintsPage = () => {
         message: err.response?.data?.message || 'Could not delete complaint.',
         type: 'error'
       });
+      if (isConflictError(err)) await loadComplaintsHistory();
     } finally {
       setDeletingId(null);
     }
@@ -141,7 +151,12 @@ export const DonorComplaintsPage = () => {
 
   // Creator reply (only after an admin reply; replies alternate)
   const handleSendReply = async (dto) => {
-    await complaintApi.replyToComplaint(replyTarget.complaintId, dto);
+    try {
+      await complaintApi.replyToComplaint(replyTarget.complaintId, dto);
+    } catch (err) {
+      if (isConflictError(err)) await loadComplaintsHistory(); // the administrator acted at the same moment
+      throw err;
+    }
     addToast({ title: 'Reply Sent', message: 'The administrator has been notified.', type: 'success' });
     setReplyTarget(null);
     await loadComplaintsHistory();
@@ -290,6 +305,7 @@ export const DonorComplaintsPage = () => {
     setSubmitting(true);
 
     try {
+      submitKeyRef.current ??= newIdempotencyKey();
       const payload = {
         complaintType: formData.complaintType || categories[0],
         subject: selectedTarget
@@ -300,7 +316,8 @@ export const DonorComplaintsPage = () => {
         targetUserId: formData.targetUserId
       };
 
-      await complaintApi.createComplaint(payload);
+      await complaintApi.createComplaint(payload, { idempotencyKey: submitKeyRef.current });
+      submitKeyRef.current = newIdempotencyKey();
 
       addToast({
         title: 'Report Submitted Successfully',
@@ -319,6 +336,11 @@ export const DonorComplaintsPage = () => {
         message: err.response?.data?.message || err.message || 'Could not file complaint.',
         type: 'error'
       });
+      // 409: this form was already submitted; show it and start a new form key
+      if (isConflictError(err)) {
+        submitKeyRef.current = newIdempotencyKey();
+        await loadComplaintsHistory();
+      }
     } finally {
       setSubmitting(false);
     }

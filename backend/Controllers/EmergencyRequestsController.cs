@@ -34,6 +34,7 @@ namespace LifeLink.Controllers
         /// The signed-in hospital raises an emergency; hospitals holding compatible stock are alerted.
         /// </summary>
         [HttpPost]
+        [LifeLink.Common.Idempotent] // a double submit with the same Idempotency-Key creates nothing twice
         [Authorize(Roles = "HospitalStaff")]
         [ProducesResponseType(typeof(ApiResponse<EmergencyRequestResponseDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -56,7 +57,7 @@ namespace LifeLink.Controllers
                 var result = await _emergencyRequestService.CreateEmergencyRequestAsync(request);
                 return CreatedAtAction(nameof(GetEmergencyRequestById), new { id = result.EmergencyRequestId }, ApiResponse<EmergencyRequestResponseDto>.Ok(result, "Emergency request created successfully."));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -124,7 +125,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -153,7 +154,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -182,7 +183,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

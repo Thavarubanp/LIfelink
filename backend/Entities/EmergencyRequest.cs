@@ -2,9 +2,10 @@ using System;
 
 namespace LifeLink.Entities
 {
-    public class EmergencyRequest
+    public class EmergencyRequest : IConcurrencyVersioned
     {
         public Guid EmergencyRequestId { get; set; }
+        public int ConcurrencyToken { get; set; } // optimistic concurrency (see AppDbContext)
         public Guid HospitalId { get; set; }
         public string BloodGroup { get; set; } = string.Empty;
         public int UnitsRequired { get; set; }

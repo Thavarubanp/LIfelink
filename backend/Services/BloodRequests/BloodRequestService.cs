@@ -432,8 +432,18 @@ namespace LifeLink.Services.BloodRequests
             // Automatic expiry check: if expired and still open, mark Rejected and release its donors
             if (IsExpiredAndOpen(request, now))
             {
-                await ExpireAsync(_context, request, now);
-                await _context.SaveChangesAsync();
+                try
+                {
+                    await ExpireAsync(_context, request, now);
+                    await _context.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // Another viewer or the expiry sweep changed it at the same moment: show the current state
+                    _context.ChangeTracker.Clear();
+                    request = await _context.BloodRequests.FindAsync(requestId);
+                    if (request == null) return null;
+                }
             }
 
             return (await MapManyAsync(new[] { request })).First();

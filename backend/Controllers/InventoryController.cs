@@ -66,7 +66,7 @@ namespace LifeLink.Controllers
                 var result = await _inventoryService.CreateInventoryAsync(request);
                 return CreatedAtAction(nameof(GetInventoryById), new { id = result.InventoryId }, ApiResponse<InventoryResponseDto>.Ok(result, "Inventory created successfully."));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 if (ex.Message.Contains("already exists"))
                 {
@@ -171,7 +171,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -196,7 +196,7 @@ namespace LifeLink.Controllers
             {
                 success = await _inventoryService.DeleteInventoryAsync(id);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -236,6 +236,7 @@ namespace LifeLink.Controllers
         /// future, quantity 1-20). Each packet gets a unique tracking number; the hospital comes from the account.
         /// </summary>
         [HttpPost("packets")]
+        [LifeLink.Common.Idempotent] // a double submit with the same Idempotency-Key creates nothing twice
         [Authorize(Roles = "HospitalStaff")]
         [ProducesResponseType(typeof(ApiResponse<List<BloodPacketResponseDto>>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -253,7 +254,7 @@ namespace LifeLink.Controllers
                 return StatusCode(StatusCodes.Status201Created,
                     ApiResponse<List<BloodPacketResponseDto>>.Ok(result, $"{result.Count} blood packet(s) added."));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -292,7 +293,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

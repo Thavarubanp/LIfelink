@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { governanceApi, appealApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { readFileAsAttachment } from '../../utils/fileUtils';
 import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
@@ -85,13 +85,20 @@ export const SuspendedGovernancePage = () => {
       await fetchStatus();
     } catch (err) {
       addToast({ title: 'Submission Failed', message: getApiErrorMessage(err), type: 'error' });
+      // An appeal was just submitted from another tab: show it
+      if (isConflictError(err)) await fetchStatus();
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleReply = async (dto) => {
-    await appealApi.replyToAppeal(replyTarget.appealId, dto);
+    try {
+      await appealApi.replyToAppeal(replyTarget.appealId, dto);
+    } catch (err) {
+      if (isConflictError(err)) await fetchStatus(); // the administrator acted at the same moment
+      throw err;
+    }
     addToast({ title: 'Reply Sent', message: 'The administrator has been notified.', type: 'success' });
     setReplyTarget(null);
     await fetchStatus();

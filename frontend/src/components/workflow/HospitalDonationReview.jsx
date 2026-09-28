@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, HeartHandshake, Loader2, X, XCircle } from 'lucide-react';
 import { acceptanceApi, bloodRequestApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 
 const fmtDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
 
@@ -54,6 +54,12 @@ export const HospitalDonationReview = ({ request, onClose, onDecided }) => {
       onDecided?.();
     } catch (err) {
       addToast({ title: 'Action failed', message: getApiErrorMessage(err), type: 'error' });
+      // The hospital withdrew or someone else decided at the same moment: show the current offers
+      if (isConflictError(err)) {
+        setDecision(null);
+        setReloadKey((k) => k + 1);
+        onDecided?.();
+      }
     } finally {
       setSubmitting(false);
     }

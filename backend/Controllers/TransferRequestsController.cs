@@ -37,6 +37,7 @@ namespace LifeLink.Controllers
 
         /// <summary>Creates a transfer "Request" (ask for blood) or "Offer" (send blood) to another hospital.</summary>
         [HttpPost]
+        [LifeLink.Common.Idempotent] // a double submit with the same Idempotency-Key creates nothing twice
         [Authorize(Roles = "HospitalStaff")]
         [ProducesResponseType(typeof(ApiResponse<TransferRequestResponseDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -150,7 +151,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

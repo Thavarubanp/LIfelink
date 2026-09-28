@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
+import { isConflictError } from '../../utils/errorUtils';
 import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import {
@@ -134,13 +135,23 @@ export const AdminAppealsPage = () => {
         message: err.response?.data?.message || err.message,
         type: 'error'
       });
+      // The appellant replied or another decision was saved at the same moment: show the current thread
+      if (isConflictError(err)) {
+        await fetchAppeals();
+        return;
+      }
       throw err; // Let modal handle it
     }
   };
 
   // Admin reply (the appellant replies next); errors are shown inside the modal
   const handleReply = async (dto) => {
-    await adminApi.replyToAppeal(replyTarget.appealId, dto);
+    try {
+      await adminApi.replyToAppeal(replyTarget.appealId, dto);
+    } catch (err) {
+      if (isConflictError(err)) await fetchAppeals(); // the thread changed at the same moment
+      throw err;
+    }
     addToast({ title: 'Reply Sent', message: 'The appellant has been notified.', type: 'success' });
     setReplyTarget(null);
     await fetchAppeals();

@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, ClipboardCheck, FileText, Loader2, Lock, U
 import { acceptanceApi, bloodRequestApi, screeningApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const RISK_VARIANT = { HIGH: 'danger', MEDIUM: 'warning', LOW: 'success' };
@@ -175,6 +175,11 @@ export const ScreeningReportsPage = () => {
       reload();
     } catch (err) {
       addToast({ title: 'Action failed', message: getApiErrorMessage(err), type: 'error' });
+      // The donor withdrew or another doctor decided at the same moment: show the current state
+      if (isConflictError(err)) {
+        setDialog(null);
+        reload();
+      }
     } finally {
       setSubmitting(false);
     }

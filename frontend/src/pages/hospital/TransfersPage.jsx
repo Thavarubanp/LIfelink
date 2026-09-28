@@ -4,7 +4,8 @@ import { hospitalApi, inventoryApi, profileApi, transferApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { newIdempotencyKey } from '../../session/sessionActivity';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const STATUS_VARIANT = { Pending: 'warning', Completed: 'success', Rejected: 'primary', Cancelled: 'default' };
@@ -27,6 +28,9 @@ export const TransfersPage = () => {
   const [tab, setTab] = useState('incoming');
   const [form, setForm] = useState({ transferType: 'Request', counterpartHospitalId: '', bloodGroup: 'O+', unitsRequested: 1, notes: '', packetIds: [] });
   const [creating, setCreating] = useState(false);
+  // One key per transfer form: a double submit or retry never creates the same transfer twice
+  const [createKey, setCreateKey] = useState(newIdempotencyKey);
+  const [acting, setActing] = useState(false);
   const [rejecting, setRejecting] = useState(null);
   const [sending, setSending] = useState(null); // incoming request this hospital is accepting: { transfer, packetIds }
   const [reason, setReason] = useState('');
@@ -80,25 +84,37 @@ export const TransfersPage = () => {
         ...form,
         unitsRequested: isOffer ? form.packetIds.length : Number(form.unitsRequested),
         packetIds: isOffer ? form.packetIds : null
-      });
+      }, { idempotencyKey: createKey });
+      setCreateKey(newIdempotencyKey());
       addToast({ title: isOffer ? 'Offer sent' : 'Request sent', message: isOffer ? 'The packets are held until the other hospital answers.' : 'The other hospital has been notified.', type: 'success' });
       setForm({ ...form, notes: '', unitsRequested: 1, packetIds: [] });
       setTab('outgoing');
       reload();
     } catch (err) {
       addToast({ title: 'Could not create transfer', message: getApiErrorMessage(err), type: 'error' });
+      // Already submitted, or the selected packets were just used elsewhere: show the current state
+      if (isConflictError(err)) {
+        setCreateKey(newIdempotencyKey());
+        reload();
+      }
     } finally {
       setCreating(false);
     }
   };
 
   const act = async (fn, success) => {
+    if (acting) return;
+    setActing(true);
     try {
       await fn();
       addToast(success);
       reload();
     } catch (err) {
       addToast({ title: 'Action failed', message: getApiErrorMessage(err), type: 'error' });
+      // Accepted, rejected or withdrawn by the other side at the same moment: show the current state
+      if (isConflictError(err)) reload();
+    } finally {
+      setActing(false);
     }
   };
 
@@ -212,7 +228,8 @@ export const TransfersPage = () => {
                       <button type="button" onClick={() => (sendsBlood
                         ? setSending({ transfer: t, packetIds: [] })
                         : act(() => transferApi.approveTransferRequest(t.transferRequestId), { title: 'Transfer accepted', message: 'Packets moved and both inventories updated.', type: 'success' }))}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold bg-emerald-600 text-white hover:bg-emerald-700">
+                        disabled={acting}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Accept
                       </button>
                       <button type="button" onClick={() => { setRejecting(t); setReason(''); }}
@@ -224,7 +241,8 @@ export const TransfersPage = () => {
                   {t.status === 'Pending' && t.createdByHospitalId === myHospitalId && (
                     <button type="button" onClick={() => window.confirm('Delete this pending transfer? It stays in the history as Cancelled.') &&
                       act(() => transferApi.deleteTransferRequest(t.transferRequestId), { title: 'Transfer deleted', message: 'The other hospital has been notified.', type: 'info' })}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+                      disabled={acting}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
                       <Trash2 className="w-3.5 h-3.5" /> Delete
                     </button>
                   )}
@@ -249,7 +267,7 @@ export const TransfersPage = () => {
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setRejecting(null)} className="px-4 py-2 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
-              <button type="submit" className="px-4 py-2 rounded-xl font-semibold bg-rose-600 text-white hover:bg-rose-700">Reject</button>
+              <button type="submit" disabled={acting} className="px-4 py-2 rounded-xl font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50">Reject</button>
             </div>
           </form>
         </div>
@@ -274,7 +292,7 @@ export const TransfersPage = () => {
               selected={sending.packetIds} onChange={(ids) => setSending({ ...sending, packetIds: ids })} />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setSending(null)} className="px-4 py-2 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
-              <button type="submit" disabled={sending.packetIds.length !== sending.transfer.unitsRequested}
+              <button type="submit" disabled={acting || sending.packetIds.length !== sending.transfer.unitsRequested}
                 className="px-4 py-2 rounded-xl font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">Accept and send</button>
             </div>
           </form>

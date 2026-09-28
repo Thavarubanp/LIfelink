@@ -62,7 +62,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status409Conflict, new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -172,7 +172,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -212,7 +212,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -254,7 +254,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -286,7 +286,7 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status409Conflict, new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }

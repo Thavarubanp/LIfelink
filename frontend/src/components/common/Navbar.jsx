@@ -79,10 +79,10 @@ export const Navbar = ({ onOpenNotifications, onOpenNavigation }) => {
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Fetch unread notification count
-  const fetchUnread = async () => {
+  const fetchUnread = async (options) => {
     if (!user) return;
     try {
-      const res = await notificationApi.getUnreadCount();
+      const res = await notificationApi.getUnreadCount(options);
       if (res && typeof res.count === 'number') {
         setUnreadCount(res.count);
       }
@@ -93,7 +93,8 @@ export const Navbar = ({ onOpenNotifications, onOpenNavigation }) => {
 
   useEffect(() => {
     fetchUnread();
-    const interval = setInterval(fetchUnread, 30000);
+    // Background polling does not count as activity for the idle timeout
+    const interval = setInterval(() => fetchUnread({ background: true }), 30000);
     const handleUpdate = () => fetchUnread();
     window.addEventListener('lifelink-notifications-updated', handleUpdate);
 

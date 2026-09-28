@@ -5,7 +5,7 @@ import { DataTable } from '../../components/common/DataTable';
 import { Badge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const DONATION_STATUS = {
@@ -31,6 +31,7 @@ export const DonateBloodPage = () => {
   const [donating, setDonating] = useState(null); // { request, packetIds }
   const [submitting, setSubmitting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [withdrawing, setWithdrawing] = useState(null);
 
   useEffect(() => {
     const load = async () => {
@@ -72,19 +73,29 @@ export const DonateBloodPage = () => {
       setReloadKey((k) => k + 1);
     } catch (err) {
       addToast({ title: 'Could not donate', message: getApiErrorMessage(err), type: 'error' });
+      // The request or the selected packets changed at the same moment: show the current state
+      if (isConflictError(err)) {
+        setDonating(null);
+        setReloadKey((k) => k + 1);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
   const withdraw = async (donation) => {
-    if (!window.confirm('Withdraw this donation? The packets return to your available stock.')) return;
+    if (withdrawing || !window.confirm('Withdraw this donation? The packets return to your available stock.')) return;
+    setWithdrawing(donation.acceptanceId);
     try {
       await acceptanceApi.cancelAcceptance(donation.acceptanceId);
       addToast({ title: 'Donation withdrawn', message: 'The packets are back in your inventory.', type: 'info' });
       setReloadKey((k) => k + 1);
     } catch (err) {
       addToast({ title: 'Could not withdraw', message: getApiErrorMessage(err), type: 'error' });
+      // The doctor decided at the same moment: show the current status
+      if (isConflictError(err)) setReloadKey((k) => k + 1);
+    } finally {
+      setWithdrawing(null);
     }
   };
 
@@ -215,8 +226,8 @@ export const DonateBloodPage = () => {
                     )}
                   </div>
                   {d.status === 'Accepted' && (
-                    <button type="button" onClick={() => withdraw(d)}
-                      className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+                    <button type="button" onClick={() => withdraw(d)} disabled={withdrawing === d.acceptanceId}
+                      className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
                       <Undo2 className="w-3.5 h-3.5" /> Withdraw
                     </button>
                   )}

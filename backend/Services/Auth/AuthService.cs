@@ -18,6 +18,7 @@ namespace LifeLink.Services.Auth
         private readonly IPasswordResetService _passwordResetService;
         private readonly IEmailService _emailService;
         private readonly Microsoft.Extensions.Logging.ILogger<AuthService> _logger;
+        private readonly ISessionService _sessions;
 
         public AuthService(
             AppDbContext context,
@@ -25,7 +26,8 @@ namespace LifeLink.Services.Auth
             IJwtService jwtService,
             IPasswordResetService passwordResetService,
             IEmailService emailService,
-            Microsoft.Extensions.Logging.ILogger<AuthService>? logger = null)
+            Microsoft.Extensions.Logging.ILogger<AuthService>? logger = null,
+            ISessionService? sessions = null)
         {
             _context = context;
             _passwordHasher = passwordHasher;
@@ -33,6 +35,7 @@ namespace LifeLink.Services.Auth
             _passwordResetService = passwordResetService;
             _emailService = emailService;
             _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AuthService>.Instance;
+            _sessions = sessions ?? new SessionService(context, SessionSettings.Default);
         }
 
         public async Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto request)
@@ -133,7 +136,9 @@ namespace LifeLink.Services.Auth
                 roles.Add("User");
             }
 
-            var (token, expiresAt) = _jwtService.GenerateToken(user, roles);
+            // Each sign-in is a server-side session: the idle timeout and sign-out end it (checked on every request)
+            var session = await _sessions.StartAsync(user.UserId);
+            var (token, expiresAt) = _jwtService.GenerateToken(user, roles, session.SessionId);
             var isSuspended = await GovernanceAccessHelper.IsSuspendedForAccessAsync(_context, user, roles);
 
             // Determine MustChangePassword for Doctor accounts
@@ -159,7 +164,9 @@ namespace LifeLink.Services.Auth
                     AccountStatus = user.AccountStatus.ToString(),
                     IsSuspended = isSuspended,
                     MustChangePassword = mustChangePassword,
-                    HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles)
+                    HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles),
+                    SessionIdleTimeoutMinutes = _sessions.Settings.IdleTimeout.TotalMinutes,
+                    SessionWarningMinutes = _sessions.Settings.WarningPeriod.TotalMinutes
                 }
             };
         }
@@ -216,7 +223,9 @@ namespace LifeLink.Services.Auth
                 AccountStatus = user.AccountStatus.ToString(),
                 IsSuspended = isSuspended,
                 MustChangePassword = mustChangePassword,
-                HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles)
+                HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles),
+                SessionIdleTimeoutMinutes = _sessions.Settings.IdleTimeout.TotalMinutes,
+                SessionWarningMinutes = _sessions.Settings.WarningPeriod.TotalMinutes
             };
         }
 

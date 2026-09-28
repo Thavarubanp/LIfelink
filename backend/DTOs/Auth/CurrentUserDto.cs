@@ -23,6 +23,12 @@ namespace LifeLink.DTOs.Auth
         /// The frontend keeps staff of a hospital that is not Approved on the registration status page.
         /// </summary>
         public string? HospitalApprovalStatus { get; set; }
+
+        /// <summary>Idle timeout (Session:IdleTimeoutMinutes): signed out after this long without activity.</summary>
+        public double SessionIdleTimeoutMinutes { get; set; }
+
+        /// <summary>How long before the idle sign-out the warning appears (Session:WarningMinutes).</summary>
+        public double SessionWarningMinutes { get; set; }
     }
 }
 

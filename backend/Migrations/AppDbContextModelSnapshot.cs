@@ -39,6 +39,12 @@ namespace backend.Migrations
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<Guid?>("DonorHospitalId")
                         .HasColumnType("uuid");
 
@@ -121,6 +127,14 @@ namespace backend.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex(new[] { "HospitalId" }, "IX_Appeals_OneOpenPerHospital")
+                        .IsUnique()
+                        .HasFilter("\"HospitalId\" IS NOT NULL AND \"Status\" IN ('PENDING', 'REJECTED')");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_Appeals_OneOpenPerUser")
+                        .IsUnique()
+                        .HasFilter("\"HospitalId\" IS NULL AND \"Status\" IN ('PENDING', 'REJECTED')");
+
                     b.ToTable("Appeals");
                 });
 
@@ -158,6 +172,25 @@ namespace backend.Migrations
                     b.HasIndex("AppealId");
 
                     b.ToTable("AppealMessages");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.BackgroundJobLease", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Holder")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("LeasedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("BackgroundJobLeases");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.BloodInventory", b =>
@@ -367,6 +400,10 @@ namespace backend.Migrations
 
                     b.HasIndex("Status");
 
+                    b.HasIndex(new[] { "PatientUserId", "HospitalId", "BloodGroup" }, "IX_BloodRequests_OneActivePerCreatorHospitalGroup")
+                        .IsUnique()
+                        .HasFilter("\"Status\" IN ('Pending', 'Verified', 'Approved')");
+
                     b.ToTable("BloodRequests", t =>
                         {
                             t.HasCheckConstraint("CK_BloodRequests_FulfilledUnits", "\"FulfilledUnits\" >= 0 AND \"FulfilledUnits\" <= \"UnitsRequired\"");
@@ -427,6 +464,12 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -709,6 +752,12 @@ namespace backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -779,6 +828,12 @@ namespace backend.Migrations
 
                     b.Property<string>("City")
                         .HasColumnType("text");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("ContactNumber")
                         .IsRequired()
@@ -984,6 +1039,12 @@ namespace backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1036,6 +1097,30 @@ namespace backend.Migrations
                     b.HasIndex("Status");
 
                     b.ToTable("HospitalTransferRequests");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.IdempotencyKey", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("IdempotencyKeys");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.InventoryTransaction", b =>
@@ -1263,6 +1348,12 @@ namespace backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1344,6 +1435,35 @@ namespace backend.Migrations
                         .HasFilter("\"RoleId\" = 4");
 
                     b.ToTable("UserRoles");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.UserSession", b =>
+                {
+                    b.Property<Guid>("SessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastActivityAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("SessionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserSessions");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.Acceptance", b =>
@@ -1677,6 +1797,17 @@ namespace backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.UserSession", b =>
+                {
+                    b.HasOne("LifeLink.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

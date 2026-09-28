@@ -3,9 +3,10 @@ using System.Collections.Generic;
 
 namespace LifeLink.Entities
 {
-    public class Complaint
+    public class Complaint : IConcurrencyVersioned
     {
         public Guid ComplaintId { get; set; } = Guid.NewGuid();
+        public int ConcurrencyToken { get; set; } // optimistic concurrency (see AppDbContext)
         public Guid? UserId { get; set; }          // Complainant
         public Guid? HospitalId { get; set; }      // Hospital complained about (also used for doctor-caused issues)
         public Guid? TargetUserId { get; set; }    // Individual user complained about

@@ -6,7 +6,8 @@ import { DataTable, tableFilterClass } from '../../components/common/DataTable';
 import { Badge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { newIdempotencyKey } from '../../session/sessionActivity';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const PACKET_STATUS_VARIANT = { Available: 'success', Reserved: 'info', Issued: 'default', Donated: 'primary', Expired: 'warning' };
@@ -110,7 +111,8 @@ export const InventoryManagementPage = () => {
   });
   const openThresholds = (row) => open({ type: 'thresholds', row }, { minimumThreshold: row.minimumThreshold, maximumCapacity: row.maximumCapacity });
   const openIssue = (row) => open({ type: 'issue', row }, { packetIds: [], auditNotes: '' });
-  const openAddPackets = () => open({ type: 'addPackets' }, { bloodGroup: 'O+', collectionDate: localToday(), quantity: 1 });
+  // One idempotency key per opened form: a double submit or retry never adds the packets twice
+  const openAddPackets = () => open({ type: 'addPackets' }, { bloodGroup: 'O+', collectionDate: localToday(), quantity: 1, idempotencyKey: newIdempotencyKey() });
   const openEditPacket = (packet) => open({ type: 'editPacket', packet }, { bloodGroup: packet.bloodGroup, collectionDate: toDateInput(packet.collectionDate) });
 
   const save = async (e) => {
@@ -163,7 +165,7 @@ export const InventoryManagementPage = () => {
           bloodGroup: form.bloodGroup,
           collectionDate: form.collectionDate,
           quantity: Number(form.quantity) || 1
-        });
+        }, { idempotencyKey: form.idempotencyKey });
         const created = unwrap(res);
         addToast({
           title: 'Packets added',
@@ -177,7 +179,14 @@ export const InventoryManagementPage = () => {
       setDialog(null);
       setReloadKey((k) => k + 1);
     } catch (err) {
-      setFormError(getApiErrorMessage(err));
+      if (isConflictError(err)) {
+        // Used or changed elsewhere at the same moment (or already submitted): show the current stock
+        addToast({ title: 'Not saved', message: getApiErrorMessage(err), type: 'error' });
+        setDialog(null);
+        setReloadKey((k) => k + 1);
+      } else {
+        setFormError(getApiErrorMessage(err));
+      }
     } finally {
       setSaving(false);
     }

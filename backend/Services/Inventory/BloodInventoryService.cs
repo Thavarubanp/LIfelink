@@ -335,15 +335,38 @@ namespace LifeLink.Services.Inventory
             }).ToList();
         }
 
-        /// <summary>Background sweep: available packets past their expiry date become Expired.</summary>
+        /// <summary>
+        /// Background sweep: available packets past their expiry date become Expired. Each hospital + blood group is saved
+        /// on its own, so a packet used at the same moment (409) only postpones that group to the next sweep.
+        /// </summary>
         public async Task<int> ProcessExpiredPacketsAsync()
         {
-            var count = await InventoryLedger.ExpirePacketsAsync(_context, DateTime.UtcNow);
-            if (count > 0)
+            var now = DateTime.UtcNow;
+            var groups = await _context.BloodPackets
+                .Where(p => p.Status == BloodPacketStatus.Available && p.ExpiryDate <= now)
+                .Select(p => new { p.HospitalId, p.BloodGroup })
+                .Distinct()
+                .ToListAsync();
+
+            var total = 0;
+            foreach (var group in groups)
             {
-                await _context.SaveChangesAsync();
+                try
+                {
+                    var count = await InventoryLedger.ExpirePacketsAsync(_context, now, group.HospitalId, group.BloodGroup);
+                    if (count > 0)
+                    {
+                        await _context.SaveChangesAsync();
+                    }
+                    total += count;
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // Someone used a packet of this group at the same moment; the next sweep tries again
+                    _context.ChangeTracker.Clear();
+                }
             }
-            return count;
+            return total;
         }
 
         private async Task EnsureHospitalExistsAsync(Guid hospitalId)

@@ -16,8 +16,9 @@ export const notificationApi = {
     return response.data;
   },
 
-  getUnreadCount: async () => {
-    const response = await client.get('/notifications/unread-count');
+  // Polled in the background by the Navbar: never counts as user activity for the idle timeout
+  getUnreadCount: async ({ background = false } = {}) => {
+    const response = await client.get('/notifications/unread-count', { background });
     return response.data;
   },
 

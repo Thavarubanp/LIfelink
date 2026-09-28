@@ -4,7 +4,7 @@ import { bloodRequestApi, doctorApi, hospitalApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { getUserRoles } from '../../utils/roleUtils';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { MyRequestsList } from './MyRequestsPage';
 import { AlertCircle, Loader2, Building2, X, Lock, Stethoscope } from 'lucide-react';
 
@@ -160,6 +160,8 @@ export const CreatePatientRequestPage = () => {
       setRefreshKey((k) => k + 1);
     } catch (err) {
       setError(getApiErrorMessage(err));
+      // The same request was just created (double submit or another tab): show it in My Requests
+      if (isConflictError(err)) setRefreshKey((k) => k + 1);
     } finally {
       setLoading(false);
     }

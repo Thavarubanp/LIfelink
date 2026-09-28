@@ -10,6 +10,7 @@ import Toast from './components/common/Toast';
 import NotificationCenterDrawer from './components/notifications/NotificationCenterDrawer';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AssistantWidget from './components/assistant/AssistantWidget';
+import IdleSessionManager from './components/session/IdleSessionManager';
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
@@ -94,6 +95,8 @@ export function App() {
     <AuthProvider>
       <NotificationProvider>
         <BrowserRouter>
+          {/* Idle timeout for every signed-in role (warning dialog, sign-out in all tabs) */}
+          <IdleSessionManager />
           <Routes>
             {/* Public Auth Routes */}
             <Route path="/login" element={<LoginPage />} />

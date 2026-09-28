@@ -323,11 +323,13 @@ namespace LifeLink.Services.Inventory
                 $"Packet {packet.TrackingNumber} edited: {string.Join("; ", changes)}", now);
         }
 
-        /// <summary>Marks available packets past their expiry date as Expired (system action).</summary>
-        public static async Task<int> ExpirePacketsAsync(AppDbContext context, DateTime now)
+        /// <summary>Marks available packets past their expiry date as Expired (system action), optionally for one stock row.</summary>
+        public static async Task<int> ExpirePacketsAsync(AppDbContext context, DateTime now, Guid? hospitalId = null, string? bloodGroup = null)
         {
             var expired = await context.BloodPackets
-                .Where(p => p.Status == BloodPacketStatus.Available && p.ExpiryDate <= now)
+                .Where(p => p.Status == BloodPacketStatus.Available && p.ExpiryDate <= now &&
+                            (hospitalId == null || p.HospitalId == hospitalId) &&
+                            (bloodGroup == null || p.BloodGroup == bloodGroup))
                 .ToListAsync();
             foreach (var group in expired.GroupBy(p => new { p.HospitalId, p.BloodGroup }))
             {
@@ -345,10 +347,10 @@ namespace LifeLink.Services.Inventory
         }
 
         /// <summary>
-        /// Saves packet changes; a concurrent change to the same packet or stock row (someone else used it first)
-        /// becomes a ConflictException (HTTP 409) and nothing is saved.
+        /// Saves packet changes; a concurrent change to the same packet or stock row (someone else used it first), or to
+        /// another versioned record in the same save, becomes a ConflictException (HTTP 409) and nothing is saved.
         /// </summary>
-        public static async Task SavePacketChangesAsync(AppDbContext context)
+        public static async Task SavePacketChangesAsync(AppDbContext context, string conflictMessage = PacketConflictMessage)
         {
             try
             {
@@ -356,7 +358,7 @@ namespace LifeLink.Services.Inventory
             }
             catch (DbUpdateConcurrencyException)
             {
-                throw new ConflictException(PacketConflictMessage);
+                throw new ConflictException(conflictMessage);
             }
         }
 
