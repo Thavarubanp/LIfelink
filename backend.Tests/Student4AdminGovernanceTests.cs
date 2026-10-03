@@ -683,6 +683,10 @@ namespace LifeLink.Tests
             var user2 = new User { UserId = Guid.NewGuid(), Email = "user2@example.com", IsSuspended = true, AccountStatus = AccountStatus.Suspended };
             var admin = new User { UserId = Guid.NewGuid(), Email = "admin@example.com", IsSuspended = false };
             await context.Users.AddRangeAsync(user1, user2, admin);
+            await context.UserRoles.AddRangeAsync(
+                new UserRole { UserId = user1.UserId, RoleId = 1 },
+                new UserRole { UserId = user2.UserId, RoleId = 1 },
+                new UserRole { UserId = admin.UserId, RoleId = 4 });
 
             // 2. Hospitals (2 total: 1 approved, 1 pending & suspended)
             var hosp1 = new Hospital { HospitalId = Guid.NewGuid(), Name = "Hosp 1", ApprovalStatus = ApprovalStatus.Approved, IsVerified = true };
@@ -714,7 +718,7 @@ namespace LifeLink.Tests
             var stats = await adminService.GetDashboardStatsAsync();
 
             // Assert (all 9 metrics!)
-            Assert.Equal(3, stats.TotalDonorPatients);
+            Assert.Equal(2, stats.TotalDonorPatients); // donors/patients only; the admin is not counted
             Assert.Equal(2, stats.TotalHospitals);
             Assert.Equal(1, stats.TotalDoctors);
             Assert.Equal(1, stats.ActiveRequests);
