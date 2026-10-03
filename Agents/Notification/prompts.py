@@ -10,7 +10,7 @@ Eligible Candidate Donors:
 {donors_json}
 
 Ranking Rules:
-1. Exact blood group match (e.g., O- for O-) ranks above compatible types.
+1. Every donor listed has the request's exact blood group.
 2. Donors with older last donation dates (or first-time donors) rank above recent donors.
 3. Only rank the donors listed; every one of them has already passed the eligibility checks.
 
@@ -54,6 +54,7 @@ Return strictly a JSON object:
 
 HOSPITAL_ALERT_PROMPT = """You write short, clear operational alerts for hospital blood bank staff on the LifeLink platform.
 Rewrite this alert without changing any fact, number, blood group or hospital name. Do not add information.
+Never mention thresholds, minimum levels or figures like "2/5"; state unit counts only.
 
 Alert type: {kind}
 Draft title: {title}

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -44,6 +45,19 @@ namespace LifeLink.DTOs.Planning
 
         [JsonPropertyName("message")]
         public string Message { get; set; } = string.Empty;
+
+        /// <summary>Stable inventory alert key (type + blood group [+ low hospital]); passed through the agents unchanged.</summary>
+        [JsonPropertyName("dedupeKey")]
+        public string? DedupeKey { get; set; }
+    }
+
+    /// <summary>What happened when agent (or rule-based) alerts were saved: added per type, and duplicates skipped.</summary>
+    public class AlertPersistResult
+    {
+        public int Added { get; set; }
+        public int SkippedDuplicates { get; set; }
+        public Dictionary<string, int> AddedByType { get; set; } = new();
+        public int AddedOf(params string[] types) => types.Sum(t => AddedByType.GetValueOrDefault(t));
     }
 
     public class ExecutionPlanDto

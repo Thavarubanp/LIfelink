@@ -249,14 +249,14 @@ export const AdminAppealsPage = () => {
                     {/* Action Buttons (any open thread, including a rejected one) */}
                     {isOpen && (
                       <div className="flex flex-wrap gap-2 pt-1">
-                        {appeal.awaitingAdminReply ? (
-                          <button
-                            onClick={() => setReplyTarget(appeal)}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" /> Reply
-                          </button>
-                        ) : (
+                        {/* The admin may send several messages in a row (the appellant answers after an admin message) */}
+                        <button
+                          onClick={() => setReplyTarget(appeal)}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> {appeal.awaitingAdminReply ? 'Reply' : 'Send another message'}
+                        </button>
+                        {!appeal.awaitingAdminReply && (
                           <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5" /> Waiting for appellant response
                           </span>
@@ -267,11 +267,14 @@ export const AdminAppealsPage = () => {
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Reinstate
                         </button>
+                        {/* An appeal can be rejected only once (enforced by the backend: a second reject gets 409) */}
                         <button
                           onClick={() => setModal({ appeal, actionType: 'reject' })}
-                          className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
+                          disabled={!appeal.canReject}
+                          title={appeal.canReject ? undefined : 'This appeal has already been rejected.'}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
                         >
-                          <XCircle className="w-3.5 h-3.5" /> Reject Appeal
+                          <XCircle className="w-3.5 h-3.5" /> {appeal.canReject ? 'Reject Appeal' : 'Already Rejected'}
                         </button>
                         <button
                           onClick={() => setModal({ appeal, actionType: 'close' })}

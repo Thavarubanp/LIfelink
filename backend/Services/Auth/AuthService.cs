@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Auth;
 using LifeLink.Entities;
@@ -48,6 +49,16 @@ namespace LifeLink.Services.Auth
                 throw new InvalidOperationException("An account with this email address already exists.");
             }
 
+            string? bloodGroup = null;
+            if (!string.IsNullOrWhiteSpace(request.BloodGroup))
+            {
+                if (!BloodValidationHelper.IsValidBloodGroup(request.BloodGroup))
+                {
+                    throw new InvalidOperationException("Invalid blood group.");
+                }
+                bloodGroup = BloodValidationHelper.NormalizeBloodGroup(request.BloodGroup);
+            }
+
             // Default role is 'User' (RoleId = 1)
             var defaultRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "User");
             if (defaultRole == null)
@@ -68,6 +79,7 @@ namespace LifeLink.Services.Auth
                 DateOfBirth = request.DateOfBirth,
                 Gender = request.Gender?.Trim() ?? string.Empty,
                 Address = request.Address?.Trim() ?? string.Empty,
+                BloodGroup = bloodGroup,
                 AccountStatus = AccountStatus.Active,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -83,6 +95,8 @@ namespace LifeLink.Services.Auth
                 RoleId = defaultRole.RoleId
             });
 
+            await ActivityLogger.AddAsync(_context, newUser.UserId, "Account.Registered", ActivityLogger.Types.Account, newUser.UserId,
+                "Registered a donor/patient account" + (bloodGroup != null ? $" (blood group {bloodGroup})." : "."));
             await _context.SaveChangesAsync();
 
             return new RegisterResponseDto
@@ -330,6 +344,8 @@ namespace LifeLink.Services.Auth
             // Admin, HospitalStaff and Doctor accounts cannot self-delete
             await AccountLifecycleHelper.EnsureDonorPatientAccountAsync(_context, userId, "deleted by their owner");
 
+            // Recorded before the personal data is removed (the log keeps the name at the time of the action)
+            await ActivityLogger.AddAsync(_context, userId, "Account.Deleted", ActivityLogger.Types.Account, userId, "Deleted their own account.");
             await AccountLifecycleHelper.DeleteAccountAsync(_context, user);
             await _context.SaveChangesAsync();
         }
@@ -463,6 +479,7 @@ namespace LifeLink.Services.Auth
 
             // If this user is a Doctor with a pending first-login password change,
             // automatically clear the flag so they can access the dashboard normally.
+            var firstDoctorPasswordChange = false;
             var isDoctor = user.UserRoles.Any(ur => ur.Role.Name == "Doctor");
             if (isDoctor)
             {
@@ -473,9 +490,13 @@ namespace LifeLink.Services.Auth
                     doctorRecord.MustChangePassword = false;
                     doctorRecord.UpdatedAt = DateTime.UtcNow;
                     _context.Doctors.Update(doctorRecord);
+                    firstDoctorPasswordChange = true;
                 }
             }
 
+            await ActivityLogger.AddAsync(_context, userId, firstDoctorPasswordChange ? "Account.FirstPasswordChange" : "Account.PasswordChanged",
+                ActivityLogger.Types.Account, userId,
+                firstDoctorPasswordChange ? "Changed the temporary password at first sign-in." : "Changed their password.");
             await _context.SaveChangesAsync();
         }
 

@@ -68,11 +68,12 @@ class HospitalAlertItem(BaseModel):
     """An alert the Supervisor wants sent to one hospital (emergency stock, shortage, expiring packets, transfer)."""
     hospital_id: str
     hospital_name: Optional[str] = None
-    kind: str  # EmergencyStock, InventoryShortage, PacketsExpiringSoon, TransferSuggestion
+    kind: str  # EmergencyStock, InventoryShortage, InventoryShortageHelp, PacketsExpiringSoon, TransferSuggestion
     blood_group: Optional[str] = None
     units: Optional[int] = None
     message: Optional[str] = None  # facts prepared by the Inventory agent
     related: List[str] = []        # hospital names or request descriptions the alert refers to
+    dedupe_key: Optional[str] = None  # stable key (type + blood group [+ low hospital]); returned unchanged
 
 class HospitalAlertsInput(BaseModel):
     alerts: List[HospitalAlertItem]
@@ -83,6 +84,7 @@ class HospitalNotification(BaseModel):
     notification_type: str
     title: str
     message: str
+    dedupe_key: Optional[str] = None
 
 class HospitalAlertsResponse(BaseModel):
     notifications: List[HospitalNotification]

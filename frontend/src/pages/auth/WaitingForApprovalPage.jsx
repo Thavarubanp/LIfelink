@@ -213,7 +213,7 @@ export const WaitingForApprovalPage = () => {
   const StatusIcon = statusBadge.icon;
 
   return (
-    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden text-slate-100">
+    <div className="ll-auth-page ll-register-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden text-slate-100">
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[750px] bg-cyan-600/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="max-w-2xl w-full relative z-10 space-y-6">

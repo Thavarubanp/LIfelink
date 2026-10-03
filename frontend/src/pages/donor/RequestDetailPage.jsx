@@ -21,6 +21,7 @@ export const RequestDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [notFoundMessage, setNotFoundMessage] = useState('');
   const { addToast } = useNotification();
   const navigate = useNavigate();
 
@@ -36,6 +37,8 @@ export const RequestDetailPage = () => {
         if (me?.bloodGroup) setBloodGroup(me.bloodGroup);
       } catch (err) {
         console.error('Failed to fetch request detail:', err);
+        // e.g. "This blood request was deleted by its creator." (only the Admin can still open a deleted request)
+        if (err.response?.status === 404) setNotFoundMessage(getApiErrorMessage(err));
       } finally {
         setLoading(false);
       }
@@ -73,7 +76,7 @@ export const RequestDetailPage = () => {
   if (!request) {
     return (
       <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500">
-        Blood request record not found.
+        {notFoundMessage || 'Blood request record not found.'}
       </div>
     );
   }

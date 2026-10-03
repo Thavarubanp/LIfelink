@@ -31,7 +31,7 @@ namespace LifeLink.Controllers
         private Task<Guid?> CallerHospitalIdAsync() => CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
 
         /// <summary>
-        /// The signed-in hospital raises an emergency; hospitals holding compatible stock are alerted.
+        /// The signed-in hospital raises an emergency; hospitals holding stock of that exact blood group are alerted.
         /// </summary>
         [HttpPost]
         [LifeLink.Common.Idempotent] // a double submit with the same Idempotency-Key creates nothing twice

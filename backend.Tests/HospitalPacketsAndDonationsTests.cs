@@ -63,9 +63,9 @@ namespace LifeLink.Tests
             var staffA = new User { UserId = Guid.NewGuid(), FirstName = "Hospital A", LastName = "Staff", Email = "a@h.org" };
             var staffB = new User { UserId = Guid.NewGuid(), FirstName = "Hospital B", LastName = "Staff", Email = "b@h.org" };
             var patient = new User { UserId = Guid.NewGuid(), FirstName = "Pat", LastName = "Ient", Email = "patient@h.org" };
-            var doctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = a.HospitalId, FirstName = "Ann", LastName = "Doc", Email = "ann@a.org", IsActive = true };
-            var otherDoctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = a.HospitalId, FirstName = "Ola", LastName = "Doc", Email = "ola@a.org", IsActive = true };
-            var doctorB = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = b.HospitalId, FirstName = "Ben", LastName = "Doc", Email = "ben@b.org", IsActive = true };
+            var doctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = a.HospitalId, FirstName = "Ann", LastName = "Doc", Email = "ann@a.org", IsActive = true, MustChangePassword = false };
+            var otherDoctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = a.HospitalId, FirstName = "Ola", LastName = "Doc", Email = "ola@a.org", IsActive = true, MustChangePassword = false };
+            var doctorB = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = b.HospitalId, FirstName = "Ben", LastName = "Doc", Email = "ben@b.org", IsActive = true, MustChangePassword = false };
 
             await context.Hospitals.AddRangeAsync(a, b);
             await context.Users.AddRangeAsync(staffA, staffB, patient);
@@ -413,7 +413,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Rejection_And_Withdrawal_Return_The_Packets_And_A_Waiting_Offer_Blocks_Deletion()
+        public async Task Rejection_Withdrawal_And_Request_Deletion_Return_The_Packets()
         {
             var s = await SeedAsync();
             var request = await AddApprovedRequestAsync(s, s.Patient.UserId, s.A.HospitalId, s.DoctorA.DoctorId, units: 3);
@@ -435,14 +435,12 @@ namespace LifeLink.Tests
             await s.Acceptances.WithdrawHospitalDonationAsync(second.AcceptanceId, s.B.HospitalId);
             Assert.Equal(2, await UnitsAsync(s.Context, s.B.HospitalId, "A+"));
 
-            // While an offer waits the request cannot be deleted; once it is withdrawn it can, and no packet stays held
+            // Deleting the request while an offer waits closes the offer and its held packets come straight back
             var third = await s.Acceptances.AcceptAsHospitalAsync(s.StaffB.UserId, s.B.HospitalId, Dto());
-            var blocked = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId));
-            Assert.Equal(BloodRequestService.DeleteBlockedByAcceptanceMessage, blocked.Message);
-            await s.Acceptances.WithdrawHospitalDonationAsync(third.AcceptanceId, s.B.HospitalId);
+            Assert.Equal(0, await UnitsAsync(s.Context, s.B.HospitalId, "A+"));
 
             await new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId);
+            Assert.Equal(AcceptanceStatus.Cancelled, (await s.Context.Acceptances.FindAsync(third.AcceptanceId))!.Status);
             Assert.Equal(2, await UnitsAsync(s.Context, s.B.HospitalId, "A+"));
             Assert.All(ids, id => Assert.Equal(BloodPacketStatus.Available, s.Context.BloodPackets.Find(id)!.Status));
             Assert.All(ids, id => Assert.Null(s.Context.BloodPackets.Find(id)!.HeldForReferenceId));

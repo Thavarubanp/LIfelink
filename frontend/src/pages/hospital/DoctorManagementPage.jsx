@@ -202,7 +202,8 @@ export const DoctorManagementPage = () => {
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Doctor Management</h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Manage doctor accounts linked to your hospital. Doctors are required to change their password on first login.
+            Manage doctor accounts linked to your hospital. Doctors are required to change their password on first login; until then they show as
+            "Pending first login" and cannot be assigned to requests.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -518,7 +519,7 @@ export const DoctorManagementPage = () => {
                     </p>
                     {doctor.mustChangePassword && (
                       <span className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-950/50 text-amber-700 dark:text-amber-400 text-[10px] font-bold rounded-full border border-amber-200 dark:border-amber-800/50">
-                        Awaiting First Login
+                        Pending first login
                       </span>
                     )}
                     {!doctor.mustChangePassword && (
@@ -582,8 +583,9 @@ export const DoctorManagementPage = () => {
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Delete <span className="font-semibold text-slate-900 dark:text-slate-100">Dr. {deleteTarget.firstName} {deleteTarget.lastName}</span> ({deleteTarget.email})?
-              Their login access and account will be removed permanently. Blood request history they handled is kept, and any
-              requests still awaiting their decision return to Pending for reassignment.
+              They disappear from your doctor list and can no longer sign in; their email can be used for a new account. Blood
+              request history they handled is kept (shown as "Removed doctor"), and any requests still awaiting their decision
+              return to Pending for reassignment.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button

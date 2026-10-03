@@ -166,7 +166,7 @@ namespace LifeLink.Services.Assistant
             if (hospital == null) return new Dictionary<string, object?> { ["role"] = "HospitalStaff" };
 
             var now = DateTime.UtcNow;
-            var inventory = await _context.BloodInventories.Where(i => i.HospitalId == hospital.HospitalId).OrderBy(i => i.BloodGroup).ToListAsync();
+            var inventory = await _context.BloodInventories.Where(i => i.HospitalId == hospital.HospitalId && i.DeletedAt == null).OrderBy(i => i.BloodGroup).ToListAsync();
             var packets = await _context.BloodPackets
                 .Where(p => p.HospitalId == hospital.HospitalId && p.Status == BloodPacketStatus.Available)
                 .Select(p => new { p.BloodGroup, p.ExpiryDate })
@@ -219,13 +219,13 @@ namespace LifeLink.Services.Assistant
         {
             ["role"] = "Admin",
             ["pendingHospitalRegistrations"] = await _context.Hospitals.CountAsync(LifeLink.Services.Hospitals.RegistrationThread.NeedsAdminReview),
-            ["openComplaints"] = await _context.Complaints.CountAsync(c => c.Status == ComplaintStatus.OPEN || c.Status == ComplaintStatus.UNDER_REVIEW || c.Status == ComplaintStatus.AWAITING_INFORMATION),
+            ["openComplaints"] = await _context.Complaints.CountAsync(c => c.DeletedAt == null && (c.Status == ComplaintStatus.OPEN || c.Status == ComplaintStatus.UNDER_REVIEW || c.Status == ComplaintStatus.AWAITING_INFORMATION)),
             ["pendingAppeals"] = await _context.Appeals.CountAsync(a => a.Status == AppealStatus.PENDING)
         };
 
         private async Task<Dictionary<string, object?>> NotificationSummaryAsync(System.Linq.Expressions.Expression<Func<LifeLink.Entities.Notification, bool>> mine)
         {
-            var query = _context.Notifications.Where(mine);
+            var query = _context.Notifications.Where(mine).Where(n => n.DismissedAt == null);
             return new Dictionary<string, object?>
             {
                 ["unread"] = await query.CountAsync(n => !n.IsRead),

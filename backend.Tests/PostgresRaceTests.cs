@@ -12,6 +12,7 @@ using LifeLink.Services.Admin;
 using LifeLink.Services.Auth;
 using LifeLink.Services.BloodCompatibility;
 using LifeLink.Services.BloodRequests;
+using LifeLink.Services.Common;
 using LifeLink.Services.Notification;
 using LifeLink.Services.Planning;
 using LifeLink.Services.Verification;
@@ -96,7 +97,7 @@ namespace LifeLink.Tests
                 Admin = new User { UserId = Guid.NewGuid(), FirstName = "Ad", LastName = "Test", Email = $"a-{tag}@test.invalid", PasswordHash = "x" }
             };
             var doctorUser = new User { UserId = Guid.NewGuid(), FirstName = "Doc", LastName = "Test", Email = $"doc-{tag}@test.invalid", PasswordHash = "x" };
-            rows.Doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = doctorUser.UserId, HospitalId = rows.Hospital.HospitalId, FirstName = "Doc", LastName = "Test", Email = $"doc-{tag}@test.invalid", LicenseNumber = $"SLMC-{tag}".ToUpperInvariant(), IsActive = true };
+            rows.Doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = doctorUser.UserId, HospitalId = rows.Hospital.HospitalId, FirstName = "Doc", LastName = "Test", Email = $"doc-{tag}@test.invalid", LicenseNumber = $"SLMC-{tag}".ToUpperInvariant(), IsActive = true, MustChangePassword = false };
             db.Hospitals.Add(rows.Hospital);
             db.Users.AddRange(rows.Patient, rows.Donor, rows.Admin, doctorUser);
             db.Doctors.Add(rows.Doctor);
@@ -283,6 +284,49 @@ namespace LifeLink.Tests
         }
 
         [PostgresFact]
+        public async Task Doctor_Email_And_Per_Hospital_Slmc_Are_Unique_Only_Among_Doctors_Who_Were_Not_Removed()
+        {
+            await using var scope = await OpenAsync();
+            var r = await SeedAsync(scope.NewContext());
+            var tag = Guid.NewGuid().ToString("N")[..10];
+            var other = new Hospital { HospitalId = Guid.NewGuid(), Name = $"PG test other {tag}", Email = $"h2-{tag}@test.invalid", IsVerified = true, ApprovalStatus = ApprovalStatus.Approved, PacketShelfLifeDays = 35, ExpiryAlertDays = 7 };
+            var setup = scope.NewContext();
+            setup.Hospitals.Add(other);
+            await setup.SaveChangesAsync();
+            Doctor NewDoctor(Guid hospitalId, string email, string slmc) => new()
+            {
+                DoctorId = Guid.NewGuid(), HospitalId = hospitalId, FirstName = "Doc", LastName = "Test", Email = email, LicenseNumber = slmc, IsActive = true, MustChangePassword = false
+            };
+
+            // Same SLMC at the same hospital: refused by IX_Doctors_HospitalId_LicenseNumber
+            var sameHospital = scope.NewContext();
+            sameHospital.Doctors.Add(NewDoctor(r.Hospital.HospitalId, $"doc2-{tag}@test.invalid", r.Doctor.LicenseNumber));
+            var slmcEx = await Assert.ThrowsAsync<DbUpdateException>(() => sameHospital.SaveChangesAsync());
+            Assert.True(SlmcUniquenessHelper.IsSlmcUniqueViolation(slmcEx));
+
+            // Same SLMC at another hospital (a separate account with another email): allowed
+            var otherHospital = scope.NewContext();
+            otherHospital.Doctors.Add(NewDoctor(other.HospitalId, $"doc3-{tag}@test.invalid", r.Doctor.LicenseNumber));
+            await otherHospital.SaveChangesAsync();
+
+            // Same email twice among doctors who were not removed: refused by IX_Doctors_Email
+            var sameEmail = scope.NewContext();
+            sameEmail.Doctors.Add(NewDoctor(other.HospitalId, r.Doctor.Email, $"SLMC-X-{tag}".ToUpperInvariant()));
+            await Assert.ThrowsAsync<DbUpdateException>(() => sameEmail.SaveChangesAsync());
+
+            // Once the doctor is removed (soft delete), the same email and SLMC can be used again at the same hospital
+            var remove = scope.NewContext();
+            var existing = await remove.Doctors.SingleAsync(d => d.DoctorId == r.Doctor.DoctorId);
+            existing.DeletedAt = DateTime.UtcNow;
+            existing.IsActive = false;
+            await remove.SaveChangesAsync();
+            var reuse = scope.NewContext();
+            reuse.Doctors.Add(NewDoctor(r.Hospital.HospitalId, r.Doctor.Email, r.Doctor.LicenseNumber));
+            await reuse.SaveChangesAsync();
+            Assert.Equal(2, await scope.NewContext().Doctors.CountAsync(d => d.HospitalId == r.Hospital.HospitalId)); // the removed row is kept
+        }
+
+        [PostgresFact]
         public async Task Only_One_Backend_Instance_Holds_The_Sweep_Lease_Until_It_Expires()
         {
             await using var scope = await OpenAsync();
@@ -297,6 +341,30 @@ namespace LifeLink.Tests
             await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"BackgroundJobLeases\" SET \"LeasedUntil\" = {DateTime.UtcNow.AddMinutes(-1)} WHERE \"Name\" = {job}");
             Assert.True(await BackgroundJobLeases.TryAcquireAsync(db, job, "instance-2", TimeSpan.FromMinutes(7)));
             Assert.False(await BackgroundJobLeases.TryAcquireAsync(db, job, "instance-1", TimeSpan.FromMinutes(7)));
+        }
+
+        [PostgresFact]
+        public async Task The_Inventory_Analysis_Lock_Admits_One_Run_Then_A_Cooldown_Then_Frees_Itself()
+        {
+            await using var scope = await OpenAsync();
+            var db = scope.NewContext();
+            var lease = $"pg-test-analysis-{Guid.NewGuid():N}"; // test-only name: the real "InventoryAnalysis" lock is never touched
+            var first = Guid.NewGuid();
+
+            Assert.True(await LifeLink.Services.Inventory.InventoryAnalysisService.TryTakeLockAsync(db, first, lease));
+            Assert.False(await LifeLink.Services.Inventory.InventoryAnalysisService.TryTakeLockAsync(db, Guid.NewGuid(), lease)); // running
+            Assert.Equal("Running", (await LifeLink.Services.Inventory.InventoryAnalysisService.ReadLockAsync(db, lease)).State);
+
+            // Only the run holding the lock can turn it into the cooldown
+            Assert.False(await LifeLink.Services.Inventory.InventoryAnalysisService.StartCooldownAsync(db, Guid.NewGuid(), lease));
+            Assert.True(await LifeLink.Services.Inventory.InventoryAnalysisService.StartCooldownAsync(db, first, lease));
+            var (state, endsAt) = await LifeLink.Services.Inventory.InventoryAnalysisService.ReadLockAsync(db, lease);
+            Assert.Equal("Cooldown", state);
+            Assert.InRange((endsAt!.Value - DateTime.UtcNow).TotalSeconds, 100, 121);
+            Assert.False(await LifeLink.Services.Inventory.InventoryAnalysisService.TryTakeLockAsync(db, Guid.NewGuid(), lease)); // cooling down
+
+            await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE \"BackgroundJobLeases\" SET \"LeasedUntil\" = {DateTime.UtcNow.AddSeconds(-1)} WHERE \"Name\" = {lease}");
+            Assert.True(await LifeLink.Services.Inventory.InventoryAnalysisService.TryTakeLockAsync(db, Guid.NewGuid(), lease));
         }
     }
 }

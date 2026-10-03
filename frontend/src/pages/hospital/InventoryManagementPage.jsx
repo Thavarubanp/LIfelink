@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertTriangle, Droplet, History, Loader2, Package, PackagePlus, Pencil, Plus, Send, Settings, SlidersHorizontal, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, ChevronDown, ChevronRight, Droplet, History, Loader2, PackagePlus, Pencil, Plus, Search, Send, Settings, SlidersHorizontal, X } from 'lucide-react';
 import { inventoryApi, profileApi } from '../../api';
-import { DataTable, tableFilterClass } from '../../components/common/DataTable';
+import { tableFilterClass } from '../../components/common/DataTable';
 import { Badge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
@@ -49,10 +49,29 @@ const collectedDateError = (value, shelfLifeDays) => {
   return '';
 };
 
+const PACKET_PAGE = 10;
+const STATUS_OPTIONS = [
+  ['Available', 'Available'],
+  ['Reserved', 'Reserved (offered, awaiting answer)'],
+  ['Issued', 'Issued'],
+  ['Donated', 'Donated'],
+  ['Expired', 'Expired'],
+  ['', 'All statuses']
+];
+
+/** Stock health of a blood group: the single "below threshold" rule comes from the backend (isLowStock: units < threshold). */
+const HealthBadge = ({ row }) =>
+  row.isLowStock ? <Badge variant="warning" size="sm">Below threshold</Badge>
+    : row.isSurplus ? <Badge variant="info" size="sm">Surplus</Badge> : <Badge variant="success" size="sm">Healthy</Badge>;
+
+const smallButton = 'inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed';
+
 /**
  * Packet-level blood inventory for the signed-in hospital. Staff add collected blood as packets (each gets its own
  * tracking number), set thresholds, and issue blood by selecting the exact packets. Only the hospital that created a
  * packet can edit it, and only while it holds the packet and it is available.
+ * One "Blood groups" card (Phase 4 / 5.2): each group row expands to show its packets with their own status filter;
+ * `?group=A%2B` (from the dashboard) expands that group and scrolls to it.
  */
 export const InventoryManagementPage = () => {
   const { addToast } = useNotification();
@@ -69,6 +88,24 @@ export const InventoryManagementPage = () => {
   const [history, setHistory] = useState(null);
 
   const [reloadKey, setReloadKey] = useState(0);
+  const [searchParams] = useSearchParams();
+  const requestedGroup = searchParams.get('group');
+  const [expanded, setExpanded] = useState(() => (requestedGroup ? [requestedGroup] : []));
+  const [search, setSearch] = useState('');
+  const [healthFilter, setHealthFilter] = useState('');
+  const [packetLimit, setPacketLimit] = useState({});
+  const rowRefs = useRef({});
+  const scrolledTo = useRef(null);
+
+  // ?group= from the dashboard: scroll to that group once the rows are on screen
+  useEffect(() => {
+    if (loading || !requestedGroup || scrolledTo.current === requestedGroup) return;
+    const el = rowRefs.current[requestedGroup];
+    if (el) {
+      scrolledTo.current = requestedGroup;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [loading, requestedGroup, inventory]);
 
   useEffect(() => {
     const fetchInventory = async () => {
@@ -110,7 +147,7 @@ export const InventoryManagementPage = () => {
     bloodGroup: BLOOD_GROUPS.find((g) => !inventory.some((i) => i.bloodGroup === g)) || 'O+', minimumThreshold: 5, maximumCapacity: 100
   });
   const openThresholds = (row) => open({ type: 'thresholds', row }, { minimumThreshold: row.minimumThreshold, maximumCapacity: row.maximumCapacity });
-  const openIssue = (row) => open({ type: 'issue', row }, { packetIds: [], auditNotes: '' });
+  const openIssue = (row, packetIds = []) => open({ type: 'issue', row }, { packetIds, auditNotes: '' });
   // One idempotency key per opened form: a double submit or retry never adds the packets twice
   const openAddPackets = () => open({ type: 'addPackets' }, { bloodGroup: 'O+', collectionDate: localToday(), quantity: 1, idempotencyKey: newIdempotencyKey() });
   const openEditPacket = (packet) => open({ type: 'editPacket', packet }, { bloodGroup: packet.bloodGroup, collectionDate: toDateInput(packet.collectionDate) });
@@ -201,85 +238,69 @@ export const InventoryManagementPage = () => {
     }
   };
 
-  const inventoryColumns = [
-    { header: 'Blood Group', accessor: 'bloodGroup', cell: (row) => <Badge variant="blood" size="sm">{row.bloodGroup}</Badge> },
-    { header: 'Available', accessor: 'unitsAvailable', cell: (row) => <span className="font-bold text-slate-900 dark:text-slate-100">{row.unitsAvailable} packet(s)</span> },
-    { header: 'Threshold', accessor: 'minimumThreshold', cell: (row) => <span className="text-slate-500">{row.minimumThreshold}</span> },
-    { header: 'Capacity', accessor: 'maximumCapacity', cell: (row) => <span className="text-slate-500">{row.maximumCapacity}</span> },
-    {
-      header: 'Expiring Soon',
-      accessor: 'expiringSoonUnits',
-      cell: (row) => row.expiringSoonUnits > 0
-        ? <Badge variant="warning" size="sm">{row.expiringSoonUnits} within {row.expiryAlertDays}d</Badge>
-        : <span className="text-slate-400">-</span>
-    },
-    { header: 'Next Expiry', accessor: 'nextExpiryDate', cell: (row) => <span className="text-slate-500">{fmtDate(row.nextExpiryDate)}</span> },
-    {
-      header: 'Stock Health',
-      accessor: 'isLowStock',
-      cell: (row) => row.unitsAvailable < row.minimumThreshold
-        ? <Badge variant="warning" size="sm">Below threshold</Badge>
-        : row.isSurplus ? <Badge variant="info" size="sm">Surplus</Badge> : <Badge variant="success" size="sm">Healthy</Badge>
-    },
-    {
-      header: 'Action',
-      accessor: 'inventoryId',
-      sortable: false,
-      cell: (row) => (
-        <div className="flex flex-wrap gap-1.5">
-          <button type="button" onClick={() => openThresholds(row)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
-            <SlidersHorizontal className="w-3 h-3" /> Thresholds
-          </button>
-          <button type="button" disabled={row.unitsAvailable === 0} onClick={() => openIssue(row)} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Send className="w-3 h-3" /> Issue
-          </button>
-        </div>
-      )
-    }
-  ];
+  const toggle = (group) => setExpanded((list) => (list.includes(group) ? list.filter((g) => g !== group) : [...list, group]));
+  const groupRow = (group) => inventory.find((i) => i.bloodGroup === group);
 
-  const packetColumns = [
-    { header: 'Tracking No.', accessor: 'trackingNumber', cell: (row) => <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">{row.trackingNumber}</span> },
-    { header: 'Group', accessor: 'bloodGroup', cell: (row) => <Badge variant="blood" size="sm">{row.bloodGroup}</Badge> },
-    { header: 'Collected', accessor: 'collectionDate', cell: (row) => <span>{fmtDate(row.collectionDate)}</span> },
-    {
-      header: 'Expires',
-      accessor: 'expiryDate',
-      cell: (row) => (
-        <span className="flex items-center gap-1">
-          {fmtDate(row.expiryDate)} {row.isExpiringSoon && <Badge variant="warning" size="sm">Soon</Badge>}
-        </span>
-      )
-    },
-    {
-      header: 'Created By',
-      accessor: 'createdByHospitalName',
-      cell: (row) => (
-        <div>
-          <div className="text-slate-700 dark:text-slate-200">{row.createdByHospitalId === row.hospitalId ? 'Your hospital' : row.createdByHospitalName}</div>
-          <div className="text-[10px] text-slate-400">{fmtDate(row.createdAt)} - {row.source}</div>
+  const term = search.trim().toLowerCase();
+  const visibleGroups = inventory
+    .filter((row) => !healthFilter || (healthFilter === 'low' ? row.isLowStock : row.expiringSoonUnits > 0))
+    .filter((row) => !term || row.bloodGroup.toLowerCase().includes(term) ||
+      packets.some((p) => p.bloodGroup === row.bloodGroup && p.trackingNumber.toLowerCase().includes(term)));
+  const packetsOf = (group) => packets.filter((p) => p.bloodGroup === group && (!term || group.toLowerCase().includes(term) || p.trackingNumber.toLowerCase().includes(term)));
+
+  // The packets of one expanded group (with the status filter inside the expanded area)
+  const renderPackets = (row) => {
+    const list = packetsOf(row.bloodGroup);
+    const limit = packetLimit[row.bloodGroup] || PACKET_PAGE;
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">{row.bloodGroup} packets ({list.length})</span>
+          <select aria-label={`${row.bloodGroup} packet status`} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={tableFilterClass}>
+            {STATUS_OPTIONS.map(([value, label]) => <option key={value || 'all'} value={value}>{label}</option>)}
+          </select>
         </div>
-      )
-    },
-    { header: 'Status', accessor: 'status', cell: (row) => <Badge variant={PACKET_STATUS_VARIANT[row.status] || 'default'} size="sm">{row.status}</Badge> },
-    {
-      header: 'Actions',
-      accessor: 'packetId',
-      sortable: false,
-      cell: (row) => (
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={() => openHistory(row)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline">
-            <History className="w-3 h-3" /> History
+        {list.length === 0 ? (
+          <p className="py-3 text-center text-[11px] text-slate-400">No {row.bloodGroup} packets with this status.</p>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <div className="hidden md:grid grid-cols-[1.2fr_0.9fr_1fr_1.3fr_0.8fr_1.4fr] gap-2 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <span>Tracking no.</span><span>Collected</span><span>Expires</span><span>Created by</span><span>Status</span><span>Actions</span>
+            </div>
+            {list.slice(0, limit).map((p) => (
+              <div key={p.packetId} className="grid grid-cols-2 md:grid-cols-[1.2fr_0.9fr_1fr_1.3fr_0.8fr_1.4fr] gap-x-2 gap-y-1 px-3 py-2 text-[11px] items-center">
+                <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">{p.trackingNumber}</span>
+                <span className="text-slate-600 dark:text-slate-300"><span className="md:hidden text-slate-400">Collected </span>{fmtDate(p.collectionDate)}</span>
+                <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                  <span className="md:hidden text-slate-400">Expires </span>{fmtDate(p.expiryDate)} {p.isExpiringSoon && <Badge variant="warning" size="sm">Soon</Badge>}
+                </span>
+                <span className="text-slate-600 dark:text-slate-300">
+                  {p.createdByHospitalId === p.hospitalId ? 'Your hospital' : p.createdByHospitalName}
+                  <span className="block text-[10px] text-slate-400">{fmtDate(p.createdAt)} - {p.source}</span>
+                </span>
+                <span><Badge variant={PACKET_STATUS_VARIANT[p.status] || 'default'} size="sm">{p.status}</Badge></span>
+                <span className="col-span-2 md:col-span-1 flex flex-wrap gap-1.5">
+                  {p.canEdit && (
+                    <button type="button" onClick={() => openEditPacket(p)} className={smallButton}><Pencil className="w-3 h-3" /> Edit</button>
+                  )}
+                  {p.status === 'Available' && (
+                    <button type="button" onClick={() => openIssue(row, [p.packetId])} className={smallButton}><Send className="w-3 h-3" /> Issue</button>
+                  )}
+                  <button type="button" onClick={() => openHistory(p)} className={smallButton}><History className="w-3 h-3" /> History</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {list.length > limit && (
+          <button type="button" onClick={() => setPacketLimit((m) => ({ ...m, [row.bloodGroup]: limit + PACKET_PAGE }))}
+            className="text-[11px] font-semibold text-red-600 hover:underline">
+            Show {Math.min(PACKET_PAGE, list.length - limit)} more of {list.length - limit}
           </button>
-          {row.canEdit && (
-            <button type="button" onClick={() => openEditPacket(row)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:underline">
-              <Pencil className="w-3 h-3" /> Edit
-            </button>
-          )}
-        </div>
-      )
-    }
-  ];
+        )}
+      </div>
+    );
+  };
 
   if (loading) {
     return <div className="py-20 flex justify-center"><Loader2 className="w-8 h-8 text-red-600 animate-spin" /></div>;
@@ -314,44 +335,89 @@ export const InventoryManagementPage = () => {
         </div>
       )}
 
-      {inventory.some((i) => i.unitsAvailable < i.minimumThreshold || i.expiringSoonUnits > 0) && (
+      {inventory.some((i) => i.isLowStock || i.expiringSoonUnits > 0) && (
         <div className="p-3 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>
-            Some blood groups are below threshold or have packets expiring soon. The inventory agent will suggest hospitals to request from or offer to; see your notifications or ask the assistant.
+            Some blood groups are below threshold or have packets expiring soon. The inventory analysis alerts the hospitals holding that exact blood group; see your notifications or run the analysis from the dashboard.
           </span>
         </div>
       )}
 
-      <DataTable
-        title="Blood groups"
-        icon={Droplet}
-        actions={<HeaderAction icon={Plus} label="Add blood group" onClick={openCategory} />}
-        columns={inventoryColumns}
-        data={inventory}
-        searchPlaceholder="Search blood group..."
-        emptyMessage="No blood group categories yet. Add packets or a blood group to start."
-      />
+      {/* One card: blood groups, each expanding to its packets */}
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm">
+        <div className="p-4 border-b border-slate-100 dark:border-slate-800 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Droplet className="w-4 h-4 text-red-600" /> Blood groups
+              <span className="text-[11px] font-normal text-slate-400">({inventory.length})</span>
+            </h2>
+            <div className="flex items-center gap-2">
+              <HeaderAction icon={Plus} label="Add blood group" onClick={openCategory} />
+              <HeaderAction icon={PackagePlus} label="Add packets" onClick={openAddPackets} primary />
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search blood group or tracking number..." aria-label="Search"
+                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-red-500" />
+            </div>
+            <select aria-label="Stock filter" value={healthFilter} onChange={(e) => setHealthFilter(e.target.value)} className={tableFilterClass}>
+              <option value="">All blood groups</option>
+              <option value="low">Below threshold</option>
+              <option value="expiring">Packets expiring soon</option>
+            </select>
+          </div>
+        </div>
 
-      <DataTable
-        title="Blood packets"
-        icon={Package}
-        actions={<HeaderAction icon={PackagePlus} label="Add packets" onClick={openAddPackets} primary />}
-        filters={
-          <select aria-label="Packet status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={tableFilterClass}>
-            <option value="Available">Available</option>
-            <option value="Reserved">Reserved (offered, awaiting answer)</option>
-            <option value="Issued">Issued</option>
-            <option value="Donated">Donated</option>
-            <option value="Expired">Expired</option>
-            <option value="">All</option>
-          </select>
-        }
-        columns={packetColumns}
-        data={packets}
-        searchPlaceholder="Search tracking number or group..."
-        emptyMessage="No packets with this status."
-      />
+        {visibleGroups.length === 0 ? (
+          <p className="p-8 text-center text-xs text-slate-500">
+            {inventory.length === 0 ? 'No blood groups yet. Add packets or a blood group to start.' : 'No blood group matches these filters.'}
+          </p>
+        ) : (
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            <div className="hidden lg:grid grid-cols-[2rem_0.8fr_1fr_0.8fr_0.8fr_1.1fr_1fr_1.1fr_1.6fr] gap-2 px-4 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <span /><span>Group</span><span>Available</span><span>Threshold</span><span>Capacity</span><span>Expiring soon</span><span>Next expiry</span><span>Health</span><span>Actions</span>
+            </div>
+            {visibleGroups.map((row) => {
+              const isOpen = expanded.includes(row.bloodGroup);
+              return (
+                <div key={row.inventoryId} ref={(el) => { rowRefs.current[row.bloodGroup] = el; }} className="scroll-mt-20">
+                  <div className={`grid grid-cols-[2rem_1fr_auto] lg:grid-cols-[2rem_0.8fr_1fr_0.8fr_0.8fr_1.1fr_1fr_1.1fr_1.6fr] gap-2 px-4 py-3 items-center text-xs ${isOpen ? 'bg-red-50/40 dark:bg-red-950/10' : ''}`}>
+                    <button type="button" onClick={() => toggle(row.bloodGroup)} aria-expanded={isOpen} aria-label={`${isOpen ? 'Hide' : 'Show'} ${row.bloodGroup} packets`}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+                      {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                    </button>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="blood" size="sm">{row.bloodGroup}</Badge>
+                      <span className="lg:hidden font-bold text-slate-900 dark:text-slate-100">{row.unitsAvailable} unit(s)</span>
+                      <span className="lg:hidden"><HealthBadge row={row} /></span>
+                    </div>
+                    <span className="hidden lg:block font-bold text-slate-900 dark:text-slate-100">{row.unitsAvailable} packet(s)</span>
+                    <span className="hidden lg:block text-slate-500">{row.minimumThreshold}</span>
+                    <span className="hidden lg:block text-slate-500">{row.maximumCapacity}</span>
+                    <span className="hidden lg:block">
+                      {row.expiringSoonUnits > 0 ? <Badge variant="warning" size="sm">{row.expiringSoonUnits} within {row.expiryAlertDays}d</Badge> : <span className="text-slate-400">-</span>}
+                    </span>
+                    <span className="hidden lg:block text-slate-500">{fmtDate(row.nextExpiryDate)}</span>
+                    <span className="hidden lg:block"><HealthBadge row={row} /></span>
+                    <div className="col-span-3 lg:col-span-1 flex flex-wrap gap-1.5 pl-9 lg:pl-0">
+                      <span className="lg:hidden w-full text-[11px] text-slate-500">
+                        Threshold {row.minimumThreshold} - capacity {row.maximumCapacity}
+                        {row.expiringSoonUnits > 0 ? ` - ${row.expiringSoonUnits} expiring within ${row.expiryAlertDays}d` : ''}
+                      </span>
+                      <button type="button" onClick={() => openThresholds(row)} className={smallButton}><SlidersHorizontal className="w-3 h-3" /> Thresholds</button>
+                      <button type="button" disabled={row.unitsAvailable === 0} onClick={() => openIssue(row)} className={smallButton}><Send className="w-3 h-3" /> Issue</button>
+                    </div>
+                  </div>
+                  {isOpen && <div className="px-4 pb-4 pt-1 bg-slate-50/60 dark:bg-slate-950/30">{renderPackets(row)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {dialog && (
         <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -412,7 +478,7 @@ export const InventoryManagementPage = () => {
             {dialog.type === 'issue' && (
               <>
                 <p className="text-slate-500">Choose the packets to issue. They leave your available stock and stay in the packet history as Issued.</p>
-                <PacketPicker bloodGroup={dialog.row.bloodGroup} selected={form.packetIds} onChange={(ids) => setForm({ ...form, packetIds: ids })} />
+                <PacketPicker bloodGroup={(groupRow(dialog.row.bloodGroup) || dialog.row).bloodGroup} selected={form.packetIds} onChange={(ids) => setForm({ ...form, packetIds: ids })} />
                 <input placeholder="Reason, for example: issued to theatre for patient care" value={form.auditNotes}
                   onChange={(e) => setForm({ ...form, auditNotes: e.target.value })} maxLength={500} className={inputClass} />
               </>

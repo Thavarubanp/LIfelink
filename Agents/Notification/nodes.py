@@ -12,17 +12,15 @@ from prompts import DONOR_RANKING_PROMPT, NOTIFICATIONS_GENERATION_PROMPT
 load_dotenv()
 logger = logging.getLogger("NotificationAgent")
 
-# Blood Compatibility Table (Recipient -> Compatible Donor Blood Groups)
-COMPATIBILITY_MATRIX: Dict[str, List[str]] = {
-    "A+": ["A+", "A-", "O+", "O-"],
-    "A-": ["A-", "O-"],
-    "B+": ["B+", "B-", "O+", "O-"],
-    "B-": ["B-", "O-"],
-    "AB+": ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"],
-    "AB-": ["AB-", "A-", "B-", "O-"],
-    "O+": ["O+", "O-"],
-    "O-": ["O-"]
-}
+# Request alerts go to donors of the EXACT blood group only (owner's decision, 4.4/6.1). Accepting a request with a
+# compatible group is still allowed by the backend (BloodCompatibilityService), but nobody is alerted for it.
+def alert_groups(target_blood_group: str) -> List[str]:
+    return [target_blood_group]
+
+
+# Only Critical requests send alerts (owner's decision D11); Normal and High requests alert nobody (donors find them
+# in the public list).
+URGENT_PRIORITIES = ["CRITICAL"]
 
 def get_llm():
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -39,7 +37,7 @@ def get_llm():
 def check_priority_node(state: NotificationAgentState) -> Dict[str, Any]:
     """Node 1: Evaluates request priority and sets urgency flag."""
     priority = (state.get("priority") or "Normal").strip().upper()
-    is_urgent = priority in ["HIGH", "CRITICAL"]
+    is_urgent = priority in URGENT_PRIORITIES
     logger.info(f"CheckPriorityNode: Request {state.get('request_id')} Priority={priority}, IsUrgent={is_urgent}")
     return {"is_urgent": is_urgent}
 
@@ -58,7 +56,7 @@ def _parse_day(value: Any) -> Optional[date]:
 def is_eligible_donor(donor: Dict[str, Any], compatible_groups: List[str], today: Optional[date] = None) -> bool:
     """
     The Notification agent re-checks every rule the backend applied before an alert is sent:
-    active account, not suspended, not permanently blocked, compatible blood group,
+    active account, not suspended, not permanently blocked, a saved blood group in `compatible_groups` (the exact group),
     at least 120 days since the last donation, and age 18-60 when the date of birth is known.
     """
     today = today or date.today()
@@ -81,14 +79,16 @@ def is_eligible_donor(donor: Dict[str, Any], compatible_groups: List[str], today
 
 def find_eligible_donors_node(state: NotificationAgentState) -> Dict[str, Any]:
     """
-    Node 2: Filters candidate donors with strict business rules (no Gemini): compatible blood group,
+    Node 2: Filters candidate donors with strict business rules (no Gemini): exact blood group,
     active and not suspended or blocked, 120-day donation interval, age 18-60.
     """
     target_blood_group = (state.get("blood_group") or "O+").strip().upper()
     candidates = state.get("candidate_donors") or []
 
-    compatible_groups = COMPATIBILITY_MATRIX.get(target_blood_group, [target_blood_group])
-    eligible = [donor for donor in candidates if is_eligible_donor(donor, compatible_groups)]
+    if not state.get("is_urgent"):
+        logger.info("FindEligibleDonorsNode: request %s is not Critical; no alerts are sent.", state.get("request_id"))
+        return {"eligible_donors": []}
+    eligible = [donor for donor in candidates if is_eligible_donor(donor, alert_groups(target_blood_group))]
 
     logger.info(f"FindEligibleDonorsNode: Filtered {len(eligible)} eligible donors from {len(candidates)} candidates.")
     return {"eligible_donors": eligible}
@@ -157,7 +157,7 @@ def rank_donors_node(state: NotificationAgentState) -> Dict[str, Any]:
             "user_id": d.get("user_id"),
             "rank": idx + 1,
             "suitability_score": score,
-            "reason": "Exact blood group match and high readiness." if is_exact else "Compatible group donor available."
+            "reason": "Exact blood group match and high readiness." if is_exact else "Donor available."
         })
     return {"ranked_donors": ranked}
 
@@ -219,7 +219,11 @@ def generate_notifications_node(state: NotificationAgentState) -> Dict[str, Any]
 
     notifications: List[Dict[str, Any]] = []
 
-    # 1. Donor Notifications (Always sent to eligible donors)
+    if priority not in URGENT_PRIORITIES:
+        # Normal and High priority: nobody is alerted (the creator, hospital and doctor get their usual status notifications)
+        return {"notifications": []}
+
+    # 1. Donor Notifications (eligible donors of the exact group)
     donor_copy = generate_copy_for_role("Donor")
     for donor in eligible_donors:
         notifications.append({
@@ -232,8 +236,8 @@ def generate_notifications_node(state: NotificationAgentState) -> Dict[str, Any]
             "sms_body": donor_copy.get("sms_body")
         })
 
-    # 2. Hospital Notifications (Sent ONLY if High or Critical priority)
-    if priority in ["HIGH", "CRITICAL"]:
+    # 2. Hospital Notifications (the hospitals the backend found holding the exact group)
+    if priority in URGENT_PRIORITIES:
         hospital_copy = generate_copy_for_role("HospitalStaff")
         for hid in verified_hospital_ids:
             notifications.append({

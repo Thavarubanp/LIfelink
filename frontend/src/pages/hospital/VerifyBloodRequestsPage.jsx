@@ -4,7 +4,7 @@ import { bloodRequestApi, doctorApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { DataTable } from '../../components/common/DataTable';
-import { Badge, RequestStatusBadge } from '../../components/common/Badge';
+import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { UserCheck, XCircle, X, Loader2, RefreshCw, Stethoscope, AlertCircle } from 'lucide-react';
 
 /**
@@ -33,8 +33,8 @@ export const VerifyBloodRequestsPage = () => {
         const [reqs, docs] = await Promise.all([bloodRequestApi.getHospitalRequests(), doctorApi.getDoctors()]);
         setRequests(Array.isArray(reqs) ? reqs : []);
         const docList = docs?.data || (Array.isArray(docs) ? docs : []);
-        // Only doctors with an active login can be assigned (backend enforces the same rule)
-        setDoctors(docList.filter((d) => d.isActive && d.userId));
+        // Only doctors with an active login who completed their first login can be assigned (backend enforces the same rule)
+        setDoctors(docList.filter((d) => d.isActive && d.userId && !d.mustChangePassword));
         setLoadError('');
       } catch (err) {
         setLoadError(getApiErrorMessage(err));
@@ -126,7 +126,10 @@ export const VerifyBloodRequestsPage = () => {
       accessor: 'status',
       cell: (row) => (
         <div className="space-y-1 max-w-xs">
-          <RequestStatusBadge status={row.status} />
+          <div className="flex items-center gap-1 flex-wrap">
+            <RequestStatusBadge status={row.status} />
+            {row.isSuspended && <SuspendedBadge reason={row.suspensionReason} />}
+          </div>
           {row.assignedDoctorName && (
             <p className="text-[11px] text-slate-400">Doctor: {row.assignedDoctorName}</p>
           )}
@@ -148,7 +151,9 @@ export const VerifyBloodRequestsPage = () => {
       accessor: 'actions',
       sortable: false,
       cell: (row) =>
-        row.status === 'Pending' ? (
+        row.isSuspended ? (
+          <span className="text-[11px] text-rose-600 dark:text-rose-400 italic">Suspended by the administrator</span>
+        ) : row.status === 'Pending' ? (
           <div className="flex items-center gap-2">
             <button
               onClick={() => openModal('verify', row)}
@@ -260,8 +265,8 @@ export const VerifyBloodRequestsPage = () => {
                     <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-700 dark:text-amber-300 flex items-start gap-2">
                       <Stethoscope className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>
-                        Your hospital has no active doctors. Create one in{' '}
-                        <Link to="/hospital/doctors" className="font-semibold underline">Doctor Management</Link> first.
+                        No doctor can be assigned yet. Doctors appear here after they sign in and change their temporary password
+                        (see{' '}<Link to="/hospital/doctors" className="font-semibold underline">Doctor Management</Link>).
                       </span>
                     </div>
                   )}

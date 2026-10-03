@@ -48,6 +48,7 @@ import AdminDashboard from './pages/admin/AdminDashboard';
 import HospitalManagementPage from './pages/admin/HospitalManagementPage';
 import AdminComplaintsPage from './pages/admin/AdminComplaintsPage';
 import AdminAppealsPage from './pages/admin/AdminAppealsPage';
+import AdminActivityPage from './pages/admin/AdminActivityPage';
 
 // Governance Page
 import SuspendedGovernancePage from './pages/governance/SuspendedGovernancePage';
@@ -294,6 +295,14 @@ export function App() {
                 element={
                   <ProtectedRoute allowedRoles={['Admin']}>
                     <AdminAppealsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/activity"
+                element={
+                  <ProtectedRoute allowedRoles={['Admin']}>
+                    <AdminActivityPage />
                   </ProtectedRoute>
                 }
               />

@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 PRIORITY_WEIGHT = {"CRITICAL": 3, "HIGH": 2, "NORMAL": 1, "MEDIUM": 1, "LOW": 0}
-ALERT_WEIGHT = {"EmergencyStock": 4, "InventoryShortage": 3, "PacketsExpiringSoon": 2, "TransferSuggestion": 1}
+# Order inside one hospital's alerts (at most MAX_ALERTS_PER_HOSPITAL per run): its own shortage first, then requests to
+# help another hospital, then expiring packets
+ALERT_WEIGHT = {"EmergencyStock": 5, "InventoryShortage": 4, "InventoryShortageHelp": 3, "PacketsExpiringSoon": 2, "TransferSuggestion": 1}
 MAX_ALERTS_PER_HOSPITAL = 3
 
 
@@ -36,18 +38,18 @@ def triage_emergency(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "priority": str(payload.get("priority") or "High"),
         "coverage": "covered" if available >= units else "partial" if available else "none",
-        "summary": f"Emergency needs {units} unit(s); {len(holders)} hospital(s) hold {available} compatible unit(s).",
+        "summary": f"Emergency needs {units} unit(s); {len(holders)} hospital(s) hold {available} unit(s) of that blood group.",
     }
 
 
 def prioritise_alerts(recommendations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Keeps the most important alerts per hospital and drops duplicates (same hospital, kind and blood group)."""
+    """Keeps the most important alerts per hospital and drops duplicates (same hospital and dedupe key, else kind + blood group)."""
     seen = set()
     per_hospital: Dict[str, int] = {}
     ordered = sorted(recommendations, key=lambda r: (ALERT_WEIGHT.get(r.get("kind", ""), 0), r.get("urgency", 0)), reverse=True)
     kept = []
     for rec in ordered:
-        key = (rec.get("hospital_id"), rec.get("kind"), rec.get("blood_group"))
+        key = (rec.get("hospital_id"), rec.get("dedupe_key") or (rec.get("kind"), rec.get("blood_group")))
         if key in seen:
             continue
         hospital = str(rec.get("hospital_id"))

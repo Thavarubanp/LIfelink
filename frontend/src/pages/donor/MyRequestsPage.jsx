@@ -5,7 +5,7 @@ import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { getUserRoles } from '../../utils/roleUtils';
 import { DataTable } from '../../components/common/DataTable';
-import { Badge, RequestStatusBadge } from '../../components/common/Badge';
+import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { Trash2, Loader2, X, AlertTriangle, Pencil, Ban } from 'lucide-react';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -13,8 +13,9 @@ const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 /**
  * "My Requests" list shown below the Create Blood Request form.
  * Rejected requests show their rejection reason. A patient can edit the blood group and units of their own request while
- * it is still Pending. The creator can permanently delete a request while no donor is taking part and none was screened;
- * once a donor has been screened the request can only be cancelled (screening reports are never deleted).
+ * it is still Pending. The creator can delete a request at any time, in any status, even while donors take part: active
+ * donors are released and notified, screening reports are kept, and the request disappears from every list (only the
+ * Admin still sees it).
  * Pass a changing `refreshKey` to reload after a new request is created.
  */
 export const MyRequestsList = ({ refreshKey = 0 }) => {
@@ -48,17 +49,14 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
     fetchMy();
   }, [refreshKey, reloadKey]);
 
-  // Delete rules (mirrors the backend): the creator only, no donated units, never once a donor was screened (cancel
-  // instead), and not while a donor or hospital donation is still active (the button shows disabled with the reason)
-  const DELETE_BLOCKED_ACTIVE = "This request can't be deleted because a donor has accepted it.";
-  const DELETE_BLOCKED_SCREENED = "This request can't be deleted because a donor has already been screened. You can cancel it instead.";
+  // Delete rule (mirrors the backend): the creator only, in any status (deleted requests are no longer listed)
+  const canDelete = (row) => row.patientUserId === user?.userId && row.status !== 'Deleted';
   const isOwnOpen = (row) => row.patientUserId === user?.userId && row.status !== 'Completed' && row.status !== 'Deleted' && !(row.fulfilledUnits > 0);
-  const canDelete = (row) => isOwnOpen(row) && !row.hasScreenedDonors;
-  const deleteBlockedByDonor = (row) => canDelete(row) && row.hasActiveAcceptances;
-  const canCancel = (row) => isOwnOpen(row) && row.hasScreenedDonors && row.status !== 'Cancelled';
+  const canCancel = (row) => !row.isSuspended && isOwnOpen(row) && row.hasScreenedDonors && row.status !== 'Cancelled';
 
   // Editable only by the patient who created it, while it is still Pending (mirrors the backend rule)
-  const canEdit = (row) => isPatient && row.status === 'Pending' && row.patientUserId === user?.userId && new Date(row.expiryDate) > new Date();
+  // While the admin has it suspended only Delete stays available (owner's Q7)
+  const canEdit = (row) => !row.isSuspended && isPatient && row.status === 'Pending' && row.patientUserId === user?.userId && new Date(row.expiryDate) > new Date();
 
   const openEdit = (row) => {
     setEditTarget(row);
@@ -115,7 +113,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       await bloodRequestApi.deleteRequest(deleteTarget.bloodRequestId);
       addToast({
         title: 'Request Deleted',
-        message: 'The request was permanently deleted. The hospital, the assigned doctor and affected donors were notified.',
+        message: 'The request was deleted. The hospital, the assigned doctor and any donors taking part were notified.',
         type: 'success'
       });
       setDeleteTarget(null);
@@ -162,7 +160,10 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       accessor: 'status',
       cell: (row) => (
         <div className="space-y-1 max-w-xs">
-          <RequestStatusBadge status={row.status} />
+          <div className="flex items-center gap-1 flex-wrap">
+            <RequestStatusBadge status={row.status} />
+            {row.isSuspended && <SuspendedBadge reason={row.suspensionReason} />}
+          </div>
           {row.status === 'Rejected' && row.rejectionReason && (
             <p className="text-[11px] text-rose-600 dark:text-rose-400 leading-snug">
               <span className="font-semibold">Reason:</span> {row.rejectionReason}
@@ -197,9 +198,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
             {canDelete(row) && (
               <button
                 onClick={() => setDeleteTarget(row)}
-                disabled={deleteBlockedByDonor(row)}
-                title={deleteBlockedByDonor(row) ? DELETE_BLOCKED_ACTIVE : undefined}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-50 dark:disabled:hover:bg-rose-950/60"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-900 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Delete
               </button>
@@ -207,16 +206,10 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
             {canCancel(row) && (
               <button
                 onClick={() => setCancelTarget(row)}
-                title={DELETE_BLOCKED_SCREENED}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 text-amber-800 hover:bg-amber-100 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-900 transition-colors"
               >
                 <Ban className="w-3.5 h-3.5" /> Cancel
               </button>
-            )}
-            {(deleteBlockedByDonor(row) || canCancel(row)) && (
-              <p className="basis-full text-[11px] leading-snug text-slate-500 dark:text-slate-400">
-                {deleteBlockedByDonor(row) ? DELETE_BLOCKED_ACTIVE : DELETE_BLOCKED_SCREENED}
-              </p>
             )}
           </div>
         ) : (
@@ -369,9 +362,11 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Request <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">#{String(deleteTarget.bloodRequestId).substring(0, 8)}</span>{' '}
-              ({deleteTarget.bloodGroup}, {deleteTarget.unitsRequired} units) will be permanently deleted, together with its doctor
-              assignment and any withdrawn acceptances. The hospital, the assigned doctor and those donors will be notified.
-              This cannot be undone.
+              ({deleteTarget.bloodGroup}, {deleteTarget.unitsRequired} units) will be deleted and disappear from your list.
+              {deleteTarget.hasActiveAcceptances
+                ? ' Donors or hospitals still taking part are released (any reserved slot or held blood packets are freed) and notified.'
+                : ''}{' '}
+              The hospital and the assigned doctor will be notified. Screening reports are kept. This cannot be undone.
             </p>
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button

@@ -10,6 +10,7 @@ using LifeLink.Services.Inventory;
 using LifeLink.Services.Notification;
 using LifeLink.Services.Planning;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Emergency
 {
@@ -65,6 +66,8 @@ namespace LifeLink.Services.Emergency
             };
 
             _context.EmergencyRequests.Add(request);
+            await ActivityLogger.AddForHospitalAsync(_context, request.HospitalId, "Emergency.Raised", ActivityLogger.Types.Emergency, request.EmergencyRequestId,
+                $"Raised emergency #{NotificationFactory.ShortId(request.EmergencyRequestId)}: {request.UnitsRequired} unit(s) of {request.BloodGroup}, {request.Priority} priority.");
             await _context.SaveChangesAsync();
 
             await DispatchStockAlertsAsync(request);
@@ -74,12 +77,12 @@ namespace LifeLink.Services.Emergency
 
         /// <summary>
         /// Workflow C (EmergencyShortage): the Supervisor runs the Inventory and Notification agents over the
-        /// hospitals the backend found with compatible stock; alerts are saved only for those hospitals.
+        /// hospitals the backend found holding the EXACT blood group; alerts are saved only for those hospitals.
         /// Without the Supervisor, the same hospitals get a standard alert.
         /// </summary>
         private async Task DispatchStockAlertsAsync(EmergencyRequest request)
         {
-            var stockHolders = await FindHospitalsWithCompatibleStockAsync(request);
+            var stockHolders = await FindHospitalsWithExactGroupStockAsync(request);
             var requester = await _context.Hospitals.Where(h => h.HospitalId == request.HospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "A partner hospital";
 
             if (_planningAgent != null)
@@ -121,7 +124,7 @@ namespace LifeLink.Services.Emergency
             {
                 await _context.Notifications.AddAsync(NotificationFactory.ForHospital(holder.HospitalId, "EmergencyStockAlert",
                     $"[{request.Priority.ToUpper()}] Emergency Blood Support Needed ({request.BloodGroup})",
-                    $"{requester} urgently needs {request.UnitsRequired} unit(s) of {request.BloodGroup}. You hold {holder.Units} compatible unit(s); consider sending a transfer offer."));
+                    $"{requester} urgently needs {request.UnitsRequired} unit(s) of {request.BloodGroup}. You hold {holder.Units} unit(s) of {request.BloodGroup}; consider sending a transfer offer."));
             }
             if (stockHolders.Count > 0)
             {
@@ -131,27 +134,16 @@ namespace LifeLink.Services.Emergency
 
         public record StockHolder(Guid HospitalId, string Name, int Units);
 
-        // Red cell compatible donor groups for each recipient group
-        private static readonly Dictionary<string, string[]> CompatibleDonorGroups = new()
-        {
-            ["O-"] = new[] { "O-" },
-            ["O+"] = new[] { "O+", "O-" },
-            ["A-"] = new[] { "A-", "O-" },
-            ["A+"] = new[] { "A+", "A-", "O+", "O-" },
-            ["B-"] = new[] { "B-", "O-" },
-            ["B+"] = new[] { "B+", "B-", "O+", "O-" },
-            ["AB-"] = new[] { "AB-", "A-", "B-", "O-" },
-            ["AB+"] = new[] { "AB+", "AB-", "A+", "A-", "B+", "B-", "O+", "O-" }
-        };
-
-        /// <summary>Approved, non-suspended hospitals (not the requester) holding unexpired compatible packets.</summary>
-        public async Task<List<StockHolder>> FindHospitalsWithCompatibleStockAsync(EmergencyRequest request)
+        /// <summary>
+        /// Approved, non-suspended hospitals (not the requester) holding unexpired packets of the EXACT blood group
+        /// (owner's decision 6.1: no compatible groups).
+        /// </summary>
+        public async Task<List<StockHolder>> FindHospitalsWithExactGroupStockAsync(EmergencyRequest request)
         {
             var now = DateTime.UtcNow;
-            var groups = CompatibleDonorGroups.GetValueOrDefault(request.BloodGroup) ?? new[] { request.BloodGroup };
             var stock = await _context.BloodPackets
                 .Where(p => p.Status == BloodPacketStatus.Available && p.ExpiryDate > now &&
-                            groups.Contains(p.BloodGroup) && p.HospitalId != request.HospitalId &&
+                            p.BloodGroup == request.BloodGroup && p.HospitalId != request.HospitalId &&
                             p.Hospital.IsVerified && !p.Hospital.IsSuspended)
                 .GroupBy(p => new { p.HospitalId, p.Hospital.Name })
                 .Select(g => new { g.Key.HospitalId, g.Key.Name, Units = g.Count() })
@@ -193,6 +185,8 @@ namespace LifeLink.Services.Emergency
             request.Status = EmergencyRequestStatus.Approved.ToString();
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddForHospitalAsync(_context, request.HospitalId, "Emergency.Approved", ActivityLogger.Types.Emergency, request.EmergencyRequestId,
+                $"Approved emergency #{NotificationFactory.ShortId(request.EmergencyRequestId)} ({request.BloodGroup}).");
             await _context.SaveChangesAsync();
             return await MapToResponseDtoAsync(request.EmergencyRequestId);
         }
@@ -210,6 +204,8 @@ namespace LifeLink.Services.Emergency
             request.Status = EmergencyRequestStatus.Rejected.ToString();
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddForHospitalAsync(_context, request.HospitalId, "Emergency.Rejected", ActivityLogger.Types.Emergency, request.EmergencyRequestId,
+                $"Rejected emergency #{NotificationFactory.ShortId(request.EmergencyRequestId)} ({request.BloodGroup}).");
             await _context.SaveChangesAsync();
             return await MapToResponseDtoAsync(request.EmergencyRequestId);
         }
@@ -234,6 +230,8 @@ namespace LifeLink.Services.Emergency
             request.Status = EmergencyRequestStatus.Completed.ToString();
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddForHospitalAsync(_context, request.HospitalId, "Emergency.Completed", ActivityLogger.Types.Emergency, request.EmergencyRequestId,
+                $"Completed emergency #{NotificationFactory.ShortId(request.EmergencyRequestId)} ({request.BloodGroup}).");
             await _context.SaveChangesAsync();
             return await MapToResponseDtoAsync(request.EmergencyRequestId);
         }

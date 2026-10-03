@@ -15,6 +15,13 @@ namespace LifeLink.Entities
         public bool IsRead { get; set; } = false;
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        /// <summary>Set when the recipient dismisses it; it is then hidden from their lists and counts.</summary>
+        public DateTime? DismissedAt { get; set; }
+        /// <summary>
+        /// Stable key of an inventory alert (type + blood group, plus the low hospital for a "help" alert). The same unread
+        /// alert with the same key is not sent to the same hospital again within 12 hours (Q12: AI-rewritten titles change).
+        /// </summary>
+        public string? DedupeKey { get; set; }
 
         // Navigation properties
         public User? User { get; set; }

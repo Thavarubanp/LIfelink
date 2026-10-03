@@ -6,6 +6,7 @@ using LifeLink.Data;
 using LifeLink.DTOs.Inventory;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Inventory
 {
@@ -45,12 +46,25 @@ namespace LifeLink.Services.Inventory
             var existing = await _context.BloodInventories
                 .FirstOrDefaultAsync(i => i.HospitalId == dto.HospitalId && i.BloodGroup == dto.BloodGroup);
 
+            var now = DateTime.UtcNow;
+            if (existing != null && existing.DeletedAt != null)
+            {
+                // A deleted group is added again: the same row comes back with the threshold and capacity entered now
+                existing.DeletedAt = null;
+                existing.MinimumThreshold = dto.MinimumThreshold;
+                existing.MaximumCapacity = dto.MaximumCapacity;
+                existing.UpdatedAt = now;
+                await ActivityLogger.AddForHospitalAsync(_context, dto.HospitalId, "Inventory.GroupAdded", ActivityLogger.Types.Inventory, existing.InventoryId,
+                    $"Added blood group {dto.BloodGroup} again (threshold {dto.MinimumThreshold}, capacity {dto.MaximumCapacity}).");
+                await _context.SaveChangesAsync();
+                return await MapToResponseDtoAsync(existing.InventoryId);
+            }
+
             if (existing != null)
             {
                 throw new InvalidOperationException($"Blood inventory for hospital '{dto.HospitalId}' and blood group '{dto.BloodGroup}' already exists.");
             }
 
-            var now = DateTime.UtcNow;
             var inventory = new BloodInventory
             {
                 InventoryId = Guid.NewGuid(),
@@ -65,6 +79,8 @@ namespace LifeLink.Services.Inventory
             };
 
             _context.BloodInventories.Add(inventory);
+            await ActivityLogger.AddForHospitalAsync(_context, dto.HospitalId, "Inventory.GroupAdded", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                $"Added blood group {dto.BloodGroup} (threshold {dto.MinimumThreshold}, capacity {dto.MaximumCapacity}).");
             await _context.SaveChangesAsync();
 
             return await MapToResponseDtoAsync(inventory.InventoryId);
@@ -77,7 +93,7 @@ namespace LifeLink.Services.Inventory
         public async Task<InventoryResponseDto> UpdateInventoryAsync(Guid id, UpdateInventoryDto dto, Guid? performedByUserId = null)
         {
             var inventory = await _context.BloodInventories.FindAsync(id);
-            if (inventory == null)
+            if (inventory == null || inventory.DeletedAt != null)
             {
                 throw new KeyNotFoundException($"Blood inventory record with ID '{id}' was not found.");
             }
@@ -100,6 +116,11 @@ namespace LifeLink.Services.Inventory
             }
 
             var now = DateTime.UtcNow;
+            if (inventory.MinimumThreshold != dto.MinimumThreshold || inventory.MaximumCapacity != dto.MaximumCapacity)
+            {
+                await ActivityLogger.AddForHospitalAsync(_context, inventory.HospitalId, "Inventory.ThresholdsChanged", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                    $"Changed {inventory.BloodGroup} threshold {inventory.MinimumThreshold} -> {dto.MinimumThreshold}, capacity {inventory.MaximumCapacity} -> {dto.MaximumCapacity}.");
+            }
             inventory.MinimumThreshold = dto.MinimumThreshold;
             inventory.MaximumCapacity = dto.MaximumCapacity;
             inventory.UpdatedAt = now;
@@ -114,6 +135,8 @@ namespace LifeLink.Services.Inventory
 
                 var packets = await InventoryLedger.RequireSelectablePacketsAsync(_context, inventory.HospitalId, dto.IssuePacketIds, inventory.BloodGroup);
                 await InventoryLedger.IssuePacketsAsync(_context, packets, null, reason, performedByUserId);
+                await ActivityLogger.AddForHospitalAsync(_context, inventory.HospitalId, "Inventory.PacketsIssued", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                    $"Issued {packets.Count} {inventory.BloodGroup} packet(s) ({string.Join(", ", packets.Select(x => x.TrackingNumber))}): {reason}");
             }
 
             await InventoryLedger.SavePacketChangesAsync(_context);
@@ -124,7 +147,7 @@ namespace LifeLink.Services.Inventory
         {
             var inventory = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .FirstOrDefaultAsync(i => i.InventoryId == id);
+                .FirstOrDefaultAsync(i => i.InventoryId == id && i.DeletedAt == null);
 
             if (inventory == null) return null;
             return (await MapManyAsync(new[] { inventory })).First();
@@ -134,7 +157,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .Where(i => i.HospitalId == hospitalId)
+                .Where(i => i.HospitalId == hospitalId && i.DeletedAt == null)
                 .OrderBy(i => i.BloodGroup)
                 .ToListAsync();
 
@@ -145,6 +168,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
+                .Where(i => i.DeletedAt == null)
                 .OrderBy(i => i.HospitalId)
                 .ThenBy(i => i.BloodGroup)
                 .ToListAsync();
@@ -152,11 +176,14 @@ namespace LifeLink.Services.Inventory
             return await MapManyAsync(list);
         }
 
-        /// <summary>Only an unused category can be deleted; anything with packets or audit history is kept.</summary>
+        /// <summary>
+        /// Only an unused category can be deleted; anything with packets or audit history is kept. Soft delete: the row
+        /// stays (hidden from every list); adding the same blood group again restores it.
+        /// </summary>
         public async Task<bool> DeleteInventoryAsync(Guid id)
         {
             var inventory = await _context.BloodInventories.FindAsync(id);
-            if (inventory == null)
+            if (inventory == null || inventory.DeletedAt != null)
             {
                 return false;
             }
@@ -168,7 +195,10 @@ namespace LifeLink.Services.Inventory
                 throw new InvalidOperationException("This blood group has stock or audit history and cannot be deleted. Set its threshold to 0 instead.");
             }
 
-            _context.BloodInventories.Remove(inventory);
+            inventory.DeletedAt = DateTime.UtcNow;
+            inventory.UpdatedAt = inventory.DeletedAt.Value;
+            await ActivityLogger.AddForHospitalAsync(_context, inventory.HospitalId, "Inventory.GroupDeleted", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                $"Deleted the unused blood group {inventory.BloodGroup}.");
             await _context.SaveChangesAsync();
             return true;
         }
@@ -177,7 +207,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .Where(i => i.UnitsAvailable <= i.MinimumThreshold)
+                .Where(i => i.DeletedAt == null && i.UnitsAvailable < i.MinimumThreshold) // the single "below threshold" rule (InventoryRules.IsBelowThreshold)
                 .OrderBy(i => i.UnitsAvailable)
                 .ToListAsync();
 
@@ -188,7 +218,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .Where(i => i.UnitsAvailable >= (i.MaximumCapacity * 0.8))
+                .Where(i => i.DeletedAt == null && i.UnitsAvailable >= (i.MaximumCapacity * 0.8))
                 .OrderByDescending(i => i.UnitsAvailable)
                 .ToListAsync();
 
@@ -228,6 +258,9 @@ namespace LifeLink.Services.Inventory
 
             var packets = await InventoryLedger.AddCollectedPacketsAsync(_context, hospitalId, bloodGroup, dto.Quantity, collected,
                 BloodPacketSource.Manual, null, TransactionType.StockAddition, "Collected blood entered by hospital staff", performedByUserId);
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Inventory.PacketsAdded", ActivityLogger.Types.Inventory, null,
+                $"Added {packets.Count} {bloodGroup} packet(s) collected {collected:d MMM yyyy}" +
+                (packets.Count > 0 ? $" ({packets.First().TrackingNumber}{(packets.Count > 1 ? " to " + packets.Last().TrackingNumber : "")})." : "."));
             await InventoryLedger.SavePacketChangesAsync(_context);
 
             var ids = packets.Select(p => p.PacketId).ToList();
@@ -267,6 +300,8 @@ namespace LifeLink.Services.Inventory
             var shelfLifeDays = await _context.Hospitals.Where(h => h.HospitalId == hospitalId).Select(h => h.PacketShelfLifeDays).FirstAsync();
             var collected = PacketDateRules.Validate(dto.CollectionDate, shelfLifeDays, DateTime.UtcNow);
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Inventory.PacketEdited", ActivityLogger.Types.Inventory, packet.PacketId,
+                $"Edited packet {packet.TrackingNumber}: {packet.BloodGroup} -> {NormalizeGroup(dto.BloodGroup)}, collected {collected:d MMM yyyy}.");
             await InventoryLedger.ChangePacketDetailsAsync(_context, packet, NormalizeGroup(dto.BloodGroup), collected, shelfLifeDays, performedByUserId);
             await InventoryLedger.SavePacketChangesAsync(_context);
 

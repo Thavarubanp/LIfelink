@@ -9,6 +9,7 @@ using LifeLink.Entities;
 using LifeLink.Services.Hospitals;
 using LifeLink.Services.Appeals;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Admin
 {
@@ -33,15 +34,15 @@ namespace LifeLink.Services.Admin
                          && !u.UserRoles.Any(ur => ur.RoleId == 2 || ur.RoleId == 3 || ur.RoleId == 4))
                 .CountAsync();
             var totalHospitals = await _context.Hospitals.CountAsync();
-            var totalDoctors = await _context.Doctors.CountAsync();
+            var totalDoctors = await _context.Doctors.CountAsync(d => d.DeletedAt == null); // removed doctors are listed, not counted
 
             var activeRequests = await _context.BloodRequests.CountAsync(r =>
                 r.Status == BloodRequestStatus.Pending || r.Status == BloodRequestStatus.Verified || r.Status == BloodRequestStatus.Approved);
 
-            var pendingComplaints = await _context.Complaints.CountAsync(c =>
+            var pendingComplaints = await _context.Complaints.CountAsync(c => c.DeletedAt == null && (
                 c.Status == ComplaintStatus.OPEN ||
                 c.Status == ComplaintStatus.UNDER_REVIEW ||
-                c.Status == ComplaintStatus.AWAITING_INFORMATION);
+                c.Status == ComplaintStatus.AWAITING_INFORMATION));
 
             // Registrations waiting for the admin: pending, or rejected with a hospital reply as the latest entry
             var pendingHospitalApprovals = await _context.Hospitals.CountAsync(RegistrationThread.NeedsAdminReview);
@@ -65,6 +66,72 @@ namespace LifeLink.Services.Admin
         }
 
         /// <summary>Registrations waiting for the admin: pending, or rejected with a hospital reply as the latest entry.</summary>
+        /// <summary>Activity log areas whose "new" items are highlighted until the admin opens them.</summary>
+        public static class AttentionAreas
+        {
+            public const string BloodRequests = "blood-requests";
+            public const string Transfers = "transfers";
+            public static bool IsValid(string area) => area is BloodRequests or Transfers;
+        }
+
+        /// <summary>
+        /// Badge counts for the admin sidebar and dashboard: new blood requests and transfers since the admin last opened
+        /// that Activity log tab, and registrations, appeals and complaints currently waiting for the admin.
+        /// </summary>
+        public async Task<AdminAttentionDto> GetAttentionCountsAsync(Guid adminId)
+        {
+            var seen = await _context.AdminSeenMarkers.Where(m => m.AdminUserId == adminId).ToDictionaryAsync(m => m.Area, m => m.SeenAt);
+            DateTime? requestsSeen = seen.TryGetValue(AttentionAreas.BloodRequests, out var r) ? r : null;
+            DateTime? transfersSeen = seen.TryGetValue(AttentionAreas.Transfers, out var t) ? t : null;
+
+            return new AdminAttentionDto
+            {
+                BloodRequestsSeenAt = requestsSeen,
+                TransfersSeenAt = transfersSeen,
+                NewBloodRequests = await _context.BloodRequests.CountAsync(b => requestsSeen == null || b.CreatedAt > requestsSeen),
+                NewTransfers = await _context.HospitalTransferRequests.CountAsync(x => transfersSeen == null || x.CreatedAt > transfersSeen),
+                // Same rule as the registration queue: pending, or a hospital reply waiting for the admin
+                PendingRegistrations = await _context.Hospitals.CountAsync(RegistrationThread.NeedsAdminReview),
+                // Open appeals whose latest message is the appellant's
+                PendingAppeals = await _context.Appeals.CountAsync(a =>
+                    (a.Status == AppealStatus.PENDING || a.Status == AppealStatus.REJECTED) &&
+                    a.Messages.OrderByDescending(m => m.CreatedAt).Select(m => m.AdminId).FirstOrDefault() == null),
+                // Open complaints (not deleted) where it is the admin's turn: no reply yet, or the creator replied last
+                PendingComplaints = await _context.Complaints.CountAsync(c =>
+                    c.DeletedAt == null &&
+                    c.Status != ComplaintStatus.RESOLVED && c.Status != ComplaintStatus.REJECTED && c.Status != ComplaintStatus.CANCELLED &&
+                    c.AuditLogs.Where(l => l.PreviousStatus == l.NewStatus).OrderByDescending(l => l.CreatedAt).Select(l => l.AdminId).FirstOrDefault() == null)
+            };
+        }
+
+        /// <summary>The admin opened an Activity log tab: everything up to now is no longer "new" for them.</summary>
+        public async Task MarkAreaSeenAsync(Guid adminId, string area)
+        {
+            if (!AttentionAreas.IsValid(area))
+            {
+                throw new InvalidOperationException($"Unknown area '{area}'.");
+            }
+
+            var marker = await _context.AdminSeenMarkers.FindAsync(adminId, area);
+            if (marker == null)
+            {
+                _context.AdminSeenMarkers.Add(new AdminSeenMarker { AdminUserId = adminId, Area = area, SeenAt = DateTime.UtcNow });
+            }
+            else
+            {
+                marker.SeenAt = DateTime.UtcNow;
+            }
+
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException) when (marker == null)
+            {
+                // Opened in two tabs at the same moment: the other tab already stored the marker
+            }
+        }
+
         public async Task<List<AdminHospitalResponseDto>> GetPendingHospitalsAsync()
         {
             var list = await _context.Hospitals
@@ -106,6 +173,7 @@ namespace LifeLink.Services.Admin
                 Comments = "Hospital registration verified and approved."
             });
 
+            await ActivityLogger.AddAsync(_context, adminId, "Hospital.Approved", ActivityLogger.Types.Hospital, hospital.HospitalId, $"Approved the registration of {hospital.Name}.", hospital.HospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyHospitalApprovedAsync(hospital);
@@ -152,6 +220,7 @@ namespace LifeLink.Services.Admin
                 ReportDocumentUrl = hasReport ? dto.ReportDocumentUrl : null
             });
 
+            await ActivityLogger.AddAsync(_context, adminId, "Hospital.RegistrationRejected", ActivityLogger.Types.Hospital, hospital.HospitalId, $"Rejected the registration of {hospital.Name}: {dto.Reason}", hospital.HospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyHospitalRejectedAsync(hospital, dto.Reason);
@@ -198,6 +267,7 @@ namespace LifeLink.Services.Admin
             hospital.ApprovalStatus = ApprovalStatus.Rejected; // the hospital's turn again
             hospital.UpdatedAt = DateTime.UtcNow;
 
+            await ActivityLogger.AddAsync(_context, adminId, "Hospital.RegistrationComment", ActivityLogger.Types.Hospital, hospital.HospitalId, $"Commented on the registration of {hospital.Name}.", hospital.HospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyHospitalRegistrationCommentAsync(hospital, message);
@@ -236,6 +306,7 @@ namespace LifeLink.Services.Admin
             user.AccountStatus = AccountStatus.Suspended;
             user.UpdatedAt = DateTime.UtcNow;
 
+            await ActivityLogger.AddAsync(_context, actingAdminId, "Account.Suspended", ActivityLogger.Types.Governance, user.UserId, $"Suspended the account: {dto.Reason}", subjectUserId: user.UserId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyUserSuspendedAsync(user, dto.Reason, dto.SuspendedUntil);
@@ -265,6 +336,7 @@ namespace LifeLink.Services.Admin
             // reinstatement. The existing reinstatement notification/email is the only message the user gets.
             await AppealDecisions.ApproveOpenAppealsOnReinstatementAsync(_context, user.UserId, null, actingAdminId, AppealDecisions.UserReinstatedNote);
 
+            await ActivityLogger.AddAsync(_context, actingAdminId, "Account.Reinstated", ActivityLogger.Types.Governance, user.UserId, "Reinstated the account.", subjectUserId: user.UserId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyUserReinstatedAsync(user);
@@ -272,12 +344,18 @@ namespace LifeLink.Services.Admin
             return MapToUserDto(user);
         }
 
-        public async Task<AdminHospitalResponseDto> SuspendHospitalAsync(Guid hospitalId, SuspendHospitalDto dto)
+        public async Task<AdminHospitalResponseDto> SuspendHospitalAsync(Guid hospitalId, SuspendHospitalDto dto, Guid? actingAdminId = null)
         {
             var hospital = await _context.Hospitals.FindAsync(hospitalId);
             if (hospital == null)
             {
                 throw new KeyNotFoundException($"Hospital with ID {hospitalId} was not found.");
+            }
+
+            // A registration still waiting for (or refused) approval cannot be suspended; only approved hospitals can
+            if (hospital.ApprovalStatus != ApprovalStatus.Approved)
+            {
+                throw new InvalidOperationException("Only approved hospitals can be suspended. This hospital's registration has not been approved.");
             }
 
             hospital.IsSuspended = true;
@@ -309,6 +387,7 @@ namespace LifeLink.Services.Admin
                 });
             }
 
+            await ActivityLogger.AddAsync(_context, actingAdminId, "Hospital.Suspended", ActivityLogger.Types.Governance, hospital.HospitalId, $"Suspended the hospital: {dto.Reason}", hospital.HospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyHospitalSuspendedAsync(hospital, dto.Reason, dto.SuspendedUntil);
@@ -332,6 +411,7 @@ namespace LifeLink.Services.Admin
             // Same rule as for users: the hospital's still-open appeal is resolved in the same save
             await AppealDecisions.ApproveOpenAppealsOnReinstatementAsync(_context, null, hospital.HospitalId, actingAdminId, AppealDecisions.HospitalReinstatedNote);
 
+            await ActivityLogger.AddAsync(_context, actingAdminId, "Hospital.Reinstated", ActivityLogger.Types.Governance, hospital.HospitalId, "Reinstated the hospital.", hospital.HospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyHospitalReinstatedAsync(hospital);
@@ -366,6 +446,7 @@ namespace LifeLink.Services.Admin
             await LifeLink.Services.Common.AccountLifecycleHelper.EnsureDonorPatientAccountAsync(_context, userId, "permanently blocked");
 
             await LifeLink.Services.Common.AccountLifecycleHelper.PermanentlyBlockAsync(_context, user);
+            await ActivityLogger.AddAsync(_context, actingAdminId, "Account.Blocked", ActivityLogger.Types.Governance, user.UserId, "Permanently blocked the account.", subjectUserId: user.UserId);
             await _context.SaveChangesAsync();
             return MapToUserDto(user);
         }
@@ -416,6 +497,7 @@ namespace LifeLink.Services.Admin
                 {
                     await _context.UserRoles.AddAsync(new UserRole { UserId = actingAdminId, RoleId = userRole.RoleId });
                 }
+                await ActivityLogger.AddAsync(_context, actingAdminId, "Account.PromotedToAdmin", ActivityLogger.Types.Governance, userId, "Transferred Admin ownership to this account.", subjectUserId: userId);
                 await _context.SaveChangesAsync();
 
                 // 2. Selected User -> Admin, plus the in-app notification

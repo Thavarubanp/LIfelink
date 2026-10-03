@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Building2,
@@ -24,6 +24,9 @@ import EditProfileModal from '../../components/common/EditProfileModal';
 import AttachmentLink from '../../components/common/AttachmentLink';
 import RegistrationThread from '../../components/hospital/RegistrationThread';
 import { DocumentPreviewModal } from '../../components/common/DocumentPreviewModal';
+import ActivityLogList from '../../components/activity/ActivityLogList';
+import AdminMessageButton from '../../components/admin/AdminMessageButton';
+import { activityApi } from '../../api';
 
 // Email, license number and registration number are not editable
 const HOSPITAL_EDIT_FIELDS = [
@@ -52,6 +55,8 @@ export const HospitalProfilePage = () => {
 
   const currentRoles = Array.isArray(currentUser?.roles) ? currentUser.roles : [currentUser?.roles];
   const isAdmin = currentRoles.includes('Admin');
+  // Admin only: the hospital's full activity log (its staff, its doctors and admin actions on it)
+  const loadActivity = useCallback((params) => activityApi.getHospitalActivity(id, params), [id]);
 
   const handleSave = async (values) => {
     const updated = await profileApi.updateHospitalProfile(profile.hospitalId, {
@@ -317,6 +322,16 @@ export const HospitalProfilePage = () => {
           </div>
           <RegistrationThread entries={shownRegistration.approvalHistory} onPreview={setPreviewDoc} />
         </div>
+      )}
+
+      {isAdmin && <AdminMessageButton hospitalId={profile.hospitalId} recipientName={profile.name} />}
+
+      {isAdmin && (
+        <ActivityLogList
+          load={loadActivity}
+          title="Hospital activity log"
+          description="What this hospital's staff and doctors did, and administrator actions on the hospital. Visible to the Admin only."
+        />
       )}
 
       {editing && (

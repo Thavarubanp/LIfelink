@@ -46,8 +46,9 @@ namespace LifeLink.Services.Verification
                 "A doctor must be assigned before the request can be verified.");
 
             var now = DateTime.UtcNow;
+            // An assignment closed when its doctor was removed stays as history; a new one is created instead
             var verification = await _context.BloodRequestVerifications
-                .FirstOrDefaultAsync(v => v.BloodRequestId == requestId);
+                .FirstOrDefaultAsync(v => v.BloodRequestId == requestId && v.Status != VerificationStatus.Closed);
 
             if (verification == null)
             {
@@ -69,6 +70,8 @@ namespace LifeLink.Services.Verification
             request.Status = BloodRequestStatus.Verified;
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "BloodRequest.Verified", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
+                $"Verified blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}, {request.UnitsRequired} unit(s)) and assigned Dr. {doctor.FirstName} {doctor.LastName}.");
             await _context.SaveChangesAsync();
 
             return MapVerification(verification, doctor);
@@ -104,6 +107,8 @@ namespace LifeLink.Services.Verification
             request.RejectionReason = message;
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "BloodRequest.RejectedByHospital", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
+                $"Rejected blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}): {message}");
             await _context.SaveChangesAsync();
         }
 
@@ -124,6 +129,8 @@ namespace LifeLink.Services.Verification
             request.Status = BloodRequestStatus.Approved;
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddAsync(_context, doctorUserId, "BloodRequest.ApprovedByDoctor", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
+                $"Approved blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}, {request.UnitsRequired} unit(s)); it is now public.", doctor.HospitalId);
             await _context.SaveChangesAsync();
 
             await DispatchApprovalAlertsAsync(request);
@@ -139,12 +146,17 @@ namespace LifeLink.Services.Verification
         private async Task DispatchApprovalAlertsAsync(BloodRequest request)
         {
             var priority = !string.IsNullOrWhiteSpace(request.Priority) ? request.Priority : "Normal";
-            var isUrgent = priority.Equals("High", StringComparison.OrdinalIgnoreCase) || priority.Equals("Critical", StringComparison.OrdinalIgnoreCase);
+            // Normal and High priority: no alerts to anyone (donors find it in the public list); the creator, the hospital
+            // and the assigned doctor still get their usual status notifications. Only Critical requests alert (D11).
+            if (!NotificationAgentService.IsAlertPriority(priority))
+            {
+                return;
+            }
 
             if (_planningAgent != null)
             {
                 var candidates = await _notificationAgent.GetEligibleDonorCandidatesAsync(request.BloodRequestId, request.BloodGroup, request.PatientUserId);
-                var hospitalIds = isUrgent ? await _notificationAgent.GetAlertHospitalIdsAsync(request.HospitalId) : new List<Guid>();
+                var hospitalIds = await _notificationAgent.GetAlertHospitalIdsAsync(request.HospitalId, request.BloodGroup);
                 var hospitalName = await _context.Hospitals.Where(h => h.HospitalId == request.HospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "Partner Hospital";
 
                 var planResult = await _planningAgent.DispatchPlanAsync(new PlanRequestDto
@@ -197,6 +209,8 @@ namespace LifeLink.Services.Verification
             request.RejectionReason = message;
             request.UpdatedAt = now;
 
+            await ActivityLogger.AddAsync(_context, doctorUserId, "BloodRequest.RejectedByDoctor", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
+                $"Rejected blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}): {message}", doctor.HospitalId);
             await _context.SaveChangesAsync();
 
             return MapVerification(verification, doctor);
@@ -215,6 +229,7 @@ namespace LifeLink.Services.Verification
                 throw new UnauthorizedAccessException("This blood request was not sent to your hospital.");
             }
 
+            SuspensionGuard.EnsureNotSuspended(request); // verify and reject are refused while the admin has it suspended
             return request;
         }
 
@@ -232,6 +247,7 @@ namespace LifeLink.Services.Verification
                 throw new KeyNotFoundException($"Blood request with ID {requestId} was not found.");
             }
 
+            SuspensionGuard.EnsureNotSuspended(request);
             var verification = await _context.BloodRequestVerifications
                 .FirstOrDefaultAsync(v => v.BloodRequestId == requestId && v.DoctorId == doctor.DoctorId);
             if (verification == null)
@@ -319,6 +335,8 @@ namespace LifeLink.Services.Verification
                 $"Dr. {doctor.FirstName} {doctor.LastName} approved your screening for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}. A donation slot is reserved for you." +
                 (report.Notes != null ? $" Notes: {report.Notes}" : string.Empty)));
 
+            await ActivityLogger.AddAsync(_context, doctorUserId, "Screening.Approved", ActivityLogger.Types.Screening, report.DonorVerificationId,
+                $"Approved screening report v{report.ReportVersion} of a donor for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} (one donation slot reserved).", doctor.HospitalId);
             await _context.SaveChangesAsync();
             return await MapDonorVerificationAsync(report, doctorUserId);
         }
@@ -343,6 +361,8 @@ namespace LifeLink.Services.Verification
                 "Screening Not Approved",
                 $"Your screening for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was not approved. Reason: {message}"));
 
+            await ActivityLogger.AddAsync(_context, doctorUserId, "Screening.Rejected", ActivityLogger.Types.Screening, report.DonorVerificationId,
+                $"Rejected screening report v{report.ReportVersion} of a donor for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}: {message}", doctor.HospitalId);
             await _context.SaveChangesAsync();
             return await MapDonorVerificationAsync(report, doctorUserId);
         }
@@ -353,6 +373,10 @@ namespace LifeLink.Services.Verification
             if (doctor == null || !doctor.IsActive)
             {
                 throw new UnauthorizedAccessException("Only active doctor accounts can review donor screening reports.");
+            }
+            if (!DoctorAssignmentRules.HasCompletedFirstLogin(doctor))
+            {
+                throw new UnauthorizedAccessException("Sign in and change your temporary password before reviewing screening reports.");
             }
 
             // Accepts a report id, or an acceptance id meaning its latest version
@@ -373,6 +397,7 @@ namespace LifeLink.Services.Verification
                 throw new UnauthorizedAccessException("Only doctors of the hospital handling this request can review its donors.");
             }
 
+            SuspensionGuard.EnsureNotSuspended(request);
             if (report.Status != VerificationStatus.Pending)
             {
                 throw new InvalidOperationException($"This report version is already {report.Status}.");
@@ -457,9 +482,9 @@ namespace LifeLink.Services.Verification
                 ReportVersion = v.ReportVersion,
                 IsLatestVersion = v.ReportVersion == latestVersion,
                 DoctorId = v.DoctorId,
-                DoctorName = doctor != null ? $"{doctor.FirstName} {doctor.LastName}" : (v.DoctorId == null ? string.Empty : "Removed doctor"),
+                DoctorName = doctor != null && doctor.DeletedAt == null ? $"{doctor.FirstName} {doctor.LastName}" : (v.DoctorId == null && doctor == null ? string.Empty : "Removed doctor"),
                 DecidedByDoctorId = v.DecidedByDoctorId,
-                DecidedByName = !decided ? null : (decidedBy != null ? $"{decidedBy.FirstName} {decidedBy.LastName}" : "Removed doctor"),
+                DecidedByName = !decided ? null : (decidedBy != null && decidedBy.DeletedAt == null ? $"{decidedBy.FirstName} {decidedBy.LastName}" : "Removed doctor"),
                 IsAssignedToMe = viewerDoctorUserId.HasValue && doctor?.UserId == viewerDoctorUserId,
                 Status = v.Status.ToString(),
                 MedicalReportSummary = v.MedicalReportSummary,

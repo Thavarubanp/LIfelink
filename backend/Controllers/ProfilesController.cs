@@ -91,7 +91,7 @@ namespace LifeLink.Controllers
             if (canViewInventory)
             {
                 dto.Inventory = await _context.BloodInventories
-                    .Where(bi => bi.HospitalId == id)
+                    .Where(bi => bi.HospitalId == id && bi.DeletedAt == null)
                     .OrderBy(bi => bi.BloodGroup)
                     .Select(bi => new HospitalInventoryItemDto
                     {
@@ -176,9 +176,11 @@ namespace LifeLink.Controllers
                 .Include(d => d.Hospital)
                 .FirstOrDefaultAsync(d => d.DoctorId == id);
 
-            // Visible only to Admins, the doctor themself and the doctor's own hospital; everyone else gets 404
-            if (doctor == null ||
-                !(_currentUserService.Roles.Contains("Admin") || IsOwnDoctorProfile(doctor.UserId) || await IsOwnHospitalAsync(doctor.HospitalId)))
+            // Visible only to Admins, the doctor themself and the doctor's own hospital; everyone else gets 404.
+            // A removed doctor is visible to the Admin only.
+            var isAdmin = _currentUserService.Roles.Contains("Admin");
+            if (doctor == null || (doctor.DeletedAt != null && !isAdmin) ||
+                !(isAdmin || IsOwnDoctorProfile(doctor.UserId) || await IsOwnHospitalAsync(doctor.HospitalId)))
             {
                 return NotFound(ApiResponse<object>.Fail("Doctor profile not found."));
             }
@@ -282,6 +284,8 @@ namespace LifeLink.Controllers
 
             user.UpdatedAt = DateTime.UtcNow;
 
+            await ActivityLogger.AddAsync(_context, user.UserId, "Profile.Updated", ActivityLogger.Types.Account, user.UserId,
+                "Updated their profile" + (user.BloodGroup != null ? $" (blood group {user.BloodGroup})." : "."));
             await _context.SaveChangesAsync();
             return await GetUserProfile(id);
         }
@@ -304,7 +308,7 @@ namespace LifeLink.Controllers
             var slmc = SlmcUniquenessHelper.Normalize(dto.LicenseNumber);
             if (slmc.Length == 0)
                 return BadRequest(ApiResponse<object>.Fail("SLMC number is required."));
-            if (await SlmcUniquenessHelper.IsSlmcTakenAsync(_context, slmc, doctor.DoctorId))
+            if (await SlmcUniquenessHelper.IsSlmcTakenAsync(_context, slmc, doctor.HospitalId, doctor.DoctorId))
                 return BadRequest(ApiResponse<object>.Fail(SlmcUniquenessHelper.DuplicateMessage));
 
             var now = DateTime.UtcNow;
@@ -323,6 +327,8 @@ namespace LifeLink.Controllers
                 doctor.User.UpdatedAt = now;
             }
 
+            await ActivityLogger.AddAsync(_context, doctor.UserId, "Profile.Updated", ActivityLogger.Types.Account, doctor.DoctorId,
+                "Updated their doctor profile.", doctor.HospitalId);
             try
             {
                 await _context.SaveChangesAsync();
@@ -369,6 +375,8 @@ namespace LifeLink.Controllers
             hospital.ExpiryAlertDays = alertDays;
             hospital.UpdatedAt = DateTime.UtcNow;
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospital.HospitalId, "Hospital.ProfileUpdated", ActivityLogger.Types.Hospital,
+                hospital.HospitalId, "Updated the hospital profile.");
             await _context.SaveChangesAsync();
             return await GetHospitalProfile(id);
         }

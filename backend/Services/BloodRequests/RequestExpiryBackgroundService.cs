@@ -14,16 +14,15 @@ namespace LifeLink.Services.BloodRequests
 {
     /// <summary>
     /// Every 5 minutes: expires overdue blood requests and blood packets. Every InventoryMonitoring:IntervalMinutes
-    /// (default 30): runs the threshold/expiry inventory check through the Supervisor.
+    /// (default 30): runs the scheduled inventory analysis (InventoryAnalysisService: shared lock with manual runs, last
+    /// scheduled run read from InventoryAnalysisRuns, so restarts do not cause extra runs).
     /// </summary>
     public class RequestExpiryBackgroundService : BackgroundService
     {
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<RequestExpiryBackgroundService> _logger;
         private readonly TimeSpan _period = TimeSpan.FromMinutes(5);
-        private readonly TimeSpan _inventoryCheckPeriod;
         private readonly bool _inventoryCheckEnabled;
-        private DateTime _lastInventoryCheck = DateTime.MinValue;
 
         // Sweep lease: this instance's id, and a lease longer than one period so the holder keeps it while running
         private readonly string _instanceId = $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
@@ -36,7 +35,6 @@ namespace LifeLink.Services.BloodRequests
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
-            _inventoryCheckPeriod = TimeSpan.FromMinutes(Math.Max(5, configuration.GetValue("InventoryMonitoring:IntervalMinutes", 30)));
             _inventoryCheckEnabled = configuration.GetValue("InventoryMonitoring:Enabled", true);
         }
 
@@ -132,15 +130,15 @@ namespace LifeLink.Services.BloodRequests
                 _logger.LogError(ex, "Error occurred while removing old idempotency keys.");
             }
 
-            if (_inventoryCheckEnabled && DateTime.UtcNow - _lastInventoryCheck >= _inventoryCheckPeriod)
+            if (_inventoryCheckEnabled)
             {
-                _lastInventoryCheck = DateTime.UtcNow;
                 try
                 {
                     db.ChangeTracker.Clear();
-                    var monitor = scope.ServiceProvider.GetRequiredService<InventoryMonitor>();
-                    var alerts = await monitor.RunInventoryCheckAsync();
-                    if (alerts > 0) _logger.LogInformation("Inventory check sent {Count} hospital alerts.", alerts);
+                    var analysis = scope.ServiceProvider.GetRequiredService<InventoryAnalysisService>();
+                    var run = await analysis.RunScheduledIfDueAsync();
+                    if (run != null) _logger.LogInformation("Scheduled inventory analysis {Status}: {Low} low-stock, {Expiring} expiring-soon alert(s).",
+                        run.Status, run.LowStockAlerts, run.ExpiringAlerts);
                 }
                 catch (Exception ex)
                 {

@@ -13,6 +13,7 @@ using LifeLink.Services.Inventory;
 using LifeLink.Services.Notification;
 using LifeLink.Services.Planning;
 using LifeLink.Services.BloodCompatibility;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Acceptances
@@ -33,15 +34,134 @@ namespace LifeLink.Services.Acceptances
         private readonly AppDbContext _context;
         private readonly IBloodCompatibilityService _bloodCompatibilityService;
         private readonly IPlanningAgentService? _planningAgent;
+        private readonly IScreeningAgentClient? _screeningAgent;
 
         public AcceptanceService(
             AppDbContext context,
             IBloodCompatibilityService bloodCompatibilityService,
-            IPlanningAgentService? planningAgent = null)
+            IPlanningAgentService? planningAgent = null,
+            IScreeningAgentClient? screeningAgent = null)
         {
             _context = context;
             _bloodCompatibilityService = bloodCompatibilityService;
             _planningAgent = planningAgent;
+            _screeningAgent = screeningAgent;
+        }
+
+        /// <summary>
+        /// 7.3: the donor's own answers from their latest screening report version (no AI risk level, flags or summary).
+        /// </summary>
+        public async Task<ScreeningAnswersDto> GetScreeningAnswersAsync(Guid acceptanceId, Guid donorUserId)
+        {
+            var acceptance = await _context.Acceptances.FindAsync(acceptanceId)
+                             ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
+            if (acceptance.DonorUserId != donorUserId || acceptance.DonorHospitalId != null)
+            {
+                throw new UnauthorizedAccessException("Only the donor can see their screening answers.");
+            }
+            var latest = await _context.DonorVerifications.Where(v => v.AcceptanceId == acceptanceId)
+                             .OrderByDescending(v => v.ReportVersion).FirstOrDefaultAsync()
+                         ?? throw new KeyNotFoundException("No screening answers have been submitted for this donation yet.");
+            var request = await RequireRequestAsync(acceptance.BloodRequestId);
+
+            var dto = new ScreeningAnswersDto
+            {
+                AcceptanceId = acceptanceId, ReportVersion = latest.ReportVersion, Status = latest.Status.ToString(), SubmittedAt = latest.CreatedAt
+            };
+            try
+            {
+                using var doc = JsonDocument.Parse(latest.ReportJson ?? "{}");
+                var root = doc.RootElement;
+                if (root.TryGetProperty("questionnaire", out var questionnaire)) dto.Questionnaire = questionnaire.Clone();
+                if (root.TryGetProperty("form_answers", out var formAnswers)) dto.Answers = formAnswers.Clone();
+                if (root.TryGetProperty("sections", out var sections) && sections.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var s in sections.EnumerateArray())
+                    {
+                        var section = new ScreeningAnswerSectionDto
+                        {
+                            Index = s.TryGetProperty("index", out var i) && i.TryGetInt32(out var n) ? n : 0,
+                            Title = s.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty,
+                            Confidential = s.TryGetProperty("confidential", out var c) && c.ValueKind == JsonValueKind.True
+                        };
+                        if (s.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var item in items.EnumerateArray())
+                            {
+                                section.Items.Add(new ScreeningAnswerItemDto
+                                {
+                                    Question = item.TryGetProperty("question", out var q) ? q.GetString() ?? string.Empty : string.Empty,
+                                    Answer = item.TryGetProperty("answer", out var a) ? a.ToString() : string.Empty
+                                });
+                            }
+                        }
+                        dto.Sections.Add(section);
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // A legacy record without a structured report: nothing to show
+            }
+
+            if (acceptance.Status != AcceptanceStatus.ScreeningCompleted || latest.Status != VerificationStatus.Pending)
+            {
+                dto.EditUnavailableReason = "The doctor has already decided on these answers, or they are not waiting for review.";
+            }
+            else if (SuspensionGuard.IsSuspended(request))
+            {
+                dto.EditUnavailableReason = "The blood request is temporarily suspended by the administrator.";
+            }
+            else if (dto.Questionnaire == null)
+            {
+                dto.EditUnavailableReason = "These answers come from the earlier questionnaire; use Continue screening in the chat to update them.";
+            }
+            dto.CanEdit = dto.EditUnavailableReason == null;
+            return dto;
+        }
+
+        /// <summary>
+        /// 7.2: the donor saves the edit form while their report waits for the doctor. The agent checks the answers first
+        /// (nothing changes if they are incomplete or the agent is unreachable); then the current version is superseded and
+        /// the agent builds and submits the new version in the background. The chat interview does not run again.
+        /// </summary>
+        public async Task<AcceptanceResponseDto> UpdateScreeningAnswersAsync(Guid acceptanceId, Guid donorUserId, JsonElement answers)
+        {
+            if (answers.ValueKind != JsonValueKind.Object || answers.GetRawText().Length > 20_000)
+            {
+                throw new InvalidOperationException("The answers are missing or too large.");
+            }
+            if (_screeningAgent == null)
+            {
+                throw new ScreeningAgentUnavailableException("The screening assistant is not configured.");
+            }
+
+            var current = await GetScreeningAnswersAsync(acceptanceId, donorUserId);
+            if (!current.CanEdit)
+            {
+                throw new InvalidOperationException(current.EditUnavailableReason ?? "These answers can no longer be changed.");
+            }
+            await DonorEligibility.RequireEligibleDonorAccountAsync(_context, donorUserId);
+
+            var problems = await _screeningAgent.ValidateAnswersAsync(acceptanceId, answers);
+            if (problems.Count > 0)
+            {
+                throw new InvalidOperationException(string.Join(" ", problems));
+            }
+
+            // Supersede the waiting version and reopen (the same rules and notifications as "Update my answers")
+            var result = await ReopenScreeningAsync(acceptanceId, donorUserId);
+            await ActivityLogger.AddAsync(_context, donorUserId, "Screening.AnswersEdited", ActivityLogger.Types.Screening, acceptanceId,
+                "Edited their screening answers with the form (a new report version follows).");
+            await _context.SaveChangesAsync();
+
+            if (!await _screeningAgent.SubmitAnswersAsync(acceptanceId, answers))
+            {
+                // The donor can still finish in the chat (Continue screening): their previous answers are the defaults there
+                throw new ScreeningAgentUnavailableException(
+                    "Your previous answers were withdrawn for editing, but the new answers could not be sent right now. Use Continue screening to send them.");
+            }
+            return result;
         }
 
         public async Task<AcceptanceResponseDto> AcceptRequestAsync(Guid donorUserId, CreateAcceptanceDto dto)
@@ -64,6 +184,7 @@ namespace LifeLink.Services.Acceptances
             {
                 throw new InvalidOperationException($"Blood request with ID {dto.BloodRequestId} was not found.");
             }
+            SuspensionGuard.EnsureNotSuspended(request);
 
             if (request.CancelledAt != null || request.Status == BloodRequestStatus.Cancelled || request.Status == BloodRequestStatus.Deleted)
             {
@@ -159,6 +280,8 @@ namespace LifeLink.Services.Acceptances
             await _context.Acceptances.AddAsync(acceptance);
             // Saving the acceptance also moves the request's token (AppDbContext): a cancel, expiry, completion or a second
             // accept at the same moment makes one of the two fail with 409 instead of leaving a stranded acceptance.
+            await ActivityLogger.AddAsync(_context, donorUserId, "Donation.Accepted", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Accepted blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}) as a donor (blood group {bloodGroup}).");
             await SaveNewAcceptanceAsync(() => _context.SaveChangesAsync());
 
             // Supervisor workflow: DonorAccepted → Request Management agent opens the screening interview
@@ -249,6 +372,8 @@ namespace LifeLink.Services.Acceptances
                     (wasReserved ? " Their reserved slot is free again." : string.Empty));
             }
 
+            await ActivityLogger.AddAsync(_context, donorUserId, "Donation.Withdrawn", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Withdrew from blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}).");
             await _context.SaveChangesAsync();
             return MapToResponseDto(acceptance);
         }
@@ -263,6 +388,7 @@ namespace LifeLink.Services.Acceptances
             var acceptance = await _context.Acceptances.FindAsync(acceptanceId)
                              ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
+            SuspensionGuard.EnsureNotSuspended(request);
             await RequireHospitalAuthorityAsync(request, actorUserId, actingHospitalId);
 
             if (acceptance.DonorHospitalId != null)
@@ -282,6 +408,8 @@ namespace LifeLink.Services.Acceptances
                 "Donation Reservation Released",
                 $"Your donation for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was released by the hospital. Reason: {message}"));
 
+            await ActivityLogger.AddAsync(_context, actorUserId, "Donation.Released", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Released a donor from blood request #{NotificationFactory.ShortId(request.BloodRequestId)}: {message}", request.HospitalId, acceptance.DonorUserId);
             await _context.SaveChangesAsync();
             return MapToResponseDto(acceptance);
         }
@@ -321,9 +449,12 @@ namespace LifeLink.Services.Acceptances
             acceptance.Status = AcceptanceStatus.ScreeningPending;
 
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
+            SuspensionGuard.EnsureNotSuspended(request);
             await NotifyAssignedDoctorOrHospitalAsync(request, latest.DoctorId, "ScreeningReportSuperseded", "Screening Report Being Updated",
                 $"The donor is updating their screening answers for request #{NotificationFactory.ShortId(request.BloodRequestId)}. A new report version will follow.");
 
+            await ActivityLogger.AddAsync(_context, donorUserId, "Screening.Reopened", ActivityLogger.Types.Screening, acceptance.AcceptanceId,
+                $"Reopened their screening answers for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} (a new report version will follow).");
             await _context.SaveChangesAsync();
             return MapToResponseDto(acceptance);
         }
@@ -357,14 +488,7 @@ namespace LifeLink.Services.Acceptances
                 var dto = MapToResponseDto(a);
                 if (requests.TryGetValue(a.BloodRequestId, out var r))
                 {
-                    dto.HospitalId = r.HospitalId;
-                    dto.HospitalName = hospitalNames.GetValueOrDefault(r.HospitalId);
-                    dto.RequestBloodGroup = r.BloodGroup;
-                    dto.RequestPriority = r.Priority;
-                    dto.RequestStatus = r.Status.ToString();
-                    dto.UnitsRequired = r.UnitsRequired;
-                    dto.FulfilledUnits = r.FulfilledUnits;
-                    dto.ReservedUnits = r.ReservedUnits;
+                    AddRequestContext(dto, r, hospitalNames);
                 }
                 dto.ScreeningHistory = reports.Where(v => v.AcceptanceId == a.AcceptanceId).Select(MapDecision).ToList();
                 return dto;
@@ -379,7 +503,7 @@ namespace LifeLink.Services.Acceptances
             SubmittedAt = v.CreatedAt,
             DecidedAt = v.Status is VerificationStatus.Approved or VerificationStatus.Rejected ? v.VerifiedAt : null,
             DecidedByName = v.Status is VerificationStatus.Approved or VerificationStatus.Rejected
-                ? (v.DecidedByDoctor != null ? $"Dr. {v.DecidedByDoctor.FirstName} {v.DecidedByDoctor.LastName}".Trim() : "Removed doctor")
+                ? (v.DecidedByDoctor != null && v.DecidedByDoctor.DeletedAt == null ? $"Dr. {v.DecidedByDoctor.FirstName} {v.DecidedByDoctor.LastName}".Trim() : "Removed doctor")
                 : null,
             ApprovalNotes = v.Status == VerificationStatus.Approved ? v.Notes : null,
             RejectionReason = v.Status == VerificationStatus.Rejected ? v.Notes : null,
@@ -389,7 +513,12 @@ namespace LifeLink.Services.Acceptances
         public async Task<AcceptanceResponseDto?> GetAcceptanceByIdAsync(Guid acceptanceId)
         {
             var acceptance = await _context.Acceptances.FindAsync(acceptanceId);
-            return acceptance != null ? MapToResponseDto(acceptance) : null;
+            if (acceptance == null) return null;
+            var dto = MapToResponseDto(acceptance);
+            // Read by the screening agent, which pauses the interview while the request is suspended
+            dto.RequestSuspended = await _context.BloodRequests
+                .AnyAsync(r => r.BloodRequestId == acceptance.BloodRequestId && r.AdminSuspendedAt != null);
+            return dto;
         }
 
         public async Task<List<RequestAcceptanceDetailDto>> GetRequestAcceptancesAsync(Guid bloodRequestId)
@@ -466,6 +595,7 @@ namespace LifeLink.Services.Acceptances
             {
                 throw new InvalidOperationException($"Blood request with ID {bloodRequestId} was not found.");
             }
+            SuspensionGuard.EnsureNotSuspended(request);
 
             if (request.Status == BloodRequestStatus.Completed)
             {
@@ -552,6 +682,8 @@ namespace LifeLink.Services.Acceptances
 
             var closedCount = await CompleteIfFulfilledAsync(request);
 
+            await ActivityLogger.AddAsync(_context, actorUserId, "Donation.Recorded", ActivityLogger.Types.Donation, request.BloodRequestId,
+                $"Recorded {selected.Count} donation(s) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.FulfilledUnits}/{request.UnitsRequired} donated).", request.HospitalId);
             await _context.SaveChangesAsync();
 
             return new FinalizeDonorSelectionResponseDto
@@ -612,6 +744,7 @@ namespace LifeLink.Services.Acceptances
 
             var request = await _context.BloodRequests.FindAsync(dto.BloodRequestId)
                           ?? throw new InvalidOperationException($"Blood request with ID {dto.BloodRequestId} was not found.");
+            SuspensionGuard.EnsureNotSuspended(request);
 
             if (request.HospitalId == hospitalId)
             {
@@ -674,6 +807,8 @@ namespace LifeLink.Services.Acceptances
 
             // No Supervisor / agent call: hospital blood is not screened. Saving the offer also moves the request's token
             // (AppDbContext), so an offer and a cancel / expiry / completion at the same moment cannot both succeed.
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Donation.HospitalOffered", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Offered {packets.Count} {request.BloodGroup} packet(s) from inventory to blood request #{NotificationFactory.ShortId(request.BloodRequestId)}.");
             await SaveNewAcceptanceAsync(() => InventoryLedger.SavePacketChangesAsync(_context, HospitalOfferConflictMessage));
 
             return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
@@ -699,6 +834,8 @@ namespace LifeLink.Services.Acceptances
             await NotifyRequestStaffAsync(request, "HospitalDonationWithdrawn", "Hospital Donation Withdrawn",
                 $"A hospital withdrew its donation offer for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}.");
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Donation.HospitalWithdrawn", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Withdrew its donation offer for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} (packets back in inventory).");
             await InventoryLedger.SavePacketChangesAsync(_context);
             return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
         }
@@ -796,6 +933,8 @@ namespace LifeLink.Services.Acceptances
                 "Donation Approved",
                 $"Dr. {doctor.FirstName} {doctor.LastName} approved your donation of {packets.Count} packet(s) to blood request #{shortId}.{note}"));
 
+            await ActivityLogger.AddAsync(_context, doctorUserId, "Donation.HospitalApproved", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Approved a hospital donation of {packets.Count} packet(s) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}.", doctor.HospitalId);
             await InventoryLedger.SavePacketChangesAsync(_context);
             return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
         }
@@ -811,6 +950,8 @@ namespace LifeLink.Services.Acceptances
                 "Donation Not Approved",
                 $"Your donation to blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was not approved. Reason: {message}. The packets are back in your inventory."));
 
+            await ActivityLogger.AddAsync(_context, doctorUserId, "Donation.HospitalRejected", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
+                $"Rejected a hospital donation for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}: {message}", request.HospitalId);
             await InventoryLedger.SavePacketChangesAsync(_context);
             return (await MapHospitalDonationsAsync(new List<Acceptance> { acceptance })).Single();
         }
@@ -823,6 +964,10 @@ namespace LifeLink.Services.Acceptances
             {
                 throw new UnauthorizedAccessException("Only active doctor accounts can decide on hospital donations.");
             }
+            if (!DoctorAssignmentRules.HasCompletedFirstLogin(doctor))
+            {
+                throw new UnauthorizedAccessException("Sign in and change your temporary password before deciding on hospital donations.");
+            }
 
             var acceptance = await _context.Acceptances.FindAsync(acceptanceId)
                              ?? throw new KeyNotFoundException($"Acceptance with ID {acceptanceId} was not found.");
@@ -832,9 +977,10 @@ namespace LifeLink.Services.Acceptances
             }
 
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
+            SuspensionGuard.EnsureNotSuspended(request);
 
             var assignedDoctorId = await _context.BloodRequestVerifications
-                .Where(v => v.BloodRequestId == request.BloodRequestId)
+                .Where(v => v.BloodRequestId == request.BloodRequestId && v.Status != VerificationStatus.Closed)
                 .OrderByDescending(v => v.UpdatedAt)
                 .Select(v => v.DoctorId)
                 .FirstOrDefaultAsync();
@@ -908,17 +1054,31 @@ namespace LifeLink.Services.Acceptances
                 dto.Packets = packets.GetValueOrDefault(a.AcceptanceId) ?? new List<DonatedPacketDto>();
                 if (requests.TryGetValue(a.BloodRequestId, out var r))
                 {
-                    dto.HospitalId = r.HospitalId;
-                    dto.HospitalName = hospitalNames.GetValueOrDefault(r.HospitalId);
-                    dto.RequestBloodGroup = r.BloodGroup;
-                    dto.RequestPriority = r.Priority;
-                    dto.RequestStatus = r.Status.ToString();
-                    dto.UnitsRequired = r.UnitsRequired;
-                    dto.FulfilledUnits = r.FulfilledUnits;
-                    dto.ReservedUnits = r.ReservedUnits;
+                    AddRequestContext(dto, r, hospitalNames);
                 }
                 return dto;
             }).ToList();
+        }
+
+        // The request's details shown with an acceptance. A deleted request shows only that it was deleted: the
+        // acceptance stays (closed) in the donor's or donating hospital's history, but the request is not shown.
+        private static void AddRequestContext(AcceptanceResponseDto dto, BloodRequest r, IReadOnlyDictionary<Guid, string> hospitalNames)
+        {
+            dto.RequestStatus = r.Status.ToString();
+            dto.RequestSuspended = r.AdminSuspendedAt != null;
+            if (r.Status == BloodRequestStatus.Deleted)
+            {
+                dto.RequestDeleted = true;
+                return;
+            }
+
+            dto.HospitalId = r.HospitalId;
+            dto.HospitalName = hospitalNames.GetValueOrDefault(r.HospitalId);
+            dto.RequestBloodGroup = r.BloodGroup;
+            dto.RequestPriority = r.Priority;
+            dto.UnitsRequired = r.UnitsRequired;
+            dto.FulfilledUnits = r.FulfilledUnits;
+            dto.ReservedUnits = r.ReservedUnits;
         }
 
         /// <summary>
@@ -937,6 +1097,7 @@ namespace LifeLink.Services.Acceptances
             {
                 throw new InvalidOperationException("Hospital donations are approved by the assigned doctor and are not screened.");
             }
+            await SuspensionGuard.EnsureRequestNotSuspendedAsync(_context, acceptance.BloodRequestId);
 
             // The agent retrying the same call (for example after a timeout) gets the current state, not an error
             if (acceptance.Status == AcceptanceStatus.ScreeningPending && newStatus == AcceptanceStatus.ScreeningPending)
@@ -1012,6 +1173,7 @@ namespace LifeLink.Services.Acceptances
             await DonorEligibility.RequireEligibleDonorAccountAsync(_context, acceptance.DonorUserId);
 
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
+            SuspensionGuard.EnsureNotSuspended(request);
             if (request.Status != BloodRequestStatus.Approved)
             {
                 throw new InvalidOperationException($"The blood request is {request.Status}, so the report cannot be submitted.");
@@ -1022,7 +1184,7 @@ namespace LifeLink.Services.Acceptances
                 .MaxAsync(v => (int?)v.ReportVersion) ?? 0;
 
             var assignedDoctorId = await _context.BloodRequestVerifications
-                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null)
+                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null && v.Status != VerificationStatus.Closed)
                 .OrderByDescending(v => v.UpdatedAt)
                 .Select(v => v.DoctorId)
                 .FirstOrDefaultAsync();
@@ -1046,6 +1208,8 @@ namespace LifeLink.Services.Acceptances
             await NotifyAssignedDoctorOrHospitalAsync(request, assignedDoctorId, "ScreeningReportSubmitted", "Donor Screening Report Ready",
                 $"A donor screening report (version {report.ReportVersion}) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}) is waiting for your review.");
 
+            await ActivityLogger.AddAsync(_context, acceptance.DonorUserId, "Screening.Submitted", ActivityLogger.Types.Screening, report.DonorVerificationId,
+                $"Submitted screening answers (report version {report.ReportVersion}) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)}.");
             await _context.SaveChangesAsync();
             return report;
         }
@@ -1107,7 +1271,7 @@ namespace LifeLink.Services.Acceptances
         private async Task NotifyRequestStaffAsync(BloodRequest request, string type, string title, string message)
         {
             var assignedDoctorId = await _context.BloodRequestVerifications
-                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null)
+                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null && v.Status != VerificationStatus.Closed)
                 .OrderByDescending(v => v.UpdatedAt)
                 .Select(v => v.DoctorId)
                 .FirstOrDefaultAsync();

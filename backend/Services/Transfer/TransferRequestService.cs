@@ -8,6 +8,7 @@ using LifeLink.Entities;
 using LifeLink.Services.Inventory;
 using LifeLink.Services.Notification;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Transfer
 {
@@ -91,6 +92,10 @@ namespace LifeLink.Services.Transfer
                 type == TransferTypes.Offer
                     ? $"{creator.Name} offers {dto.UnitsRequested} unit(s) of {dto.BloodGroup} to your hospital. Review it under Inter-Hospital Transfers."
                     : $"{creator.Name} requests {dto.UnitsRequested} unit(s) of {dto.BloodGroup} from your hospital. Review it under Inter-Hospital Transfers."));
+            await ActivityLogger.AddForHospitalAsync(_context, actingHospitalId, type == TransferTypes.Offer ? "Transfer.OfferCreated" : "Transfer.RequestCreated",
+                ActivityLogger.Types.Transfer, request.TransferRequestId, type == TransferTypes.Offer
+                    ? $"Offered {request.UnitsRequested} {request.BloodGroup} packet(s) to {counterpart.Name} (transfer #{NotificationFactory.ShortId(request.TransferRequestId)})."
+                    : $"Asked {counterpart.Name} for {request.UnitsRequested} {request.BloodGroup} unit(s) (transfer #{NotificationFactory.ShortId(request.TransferRequestId)}).");
             await InventoryLedger.SavePacketChangesAsync(_context);
 
             return await MapToResponseDtoAsync(request.TransferRequestId);
@@ -177,6 +182,8 @@ namespace LifeLink.Services.Transfer
                 $"{(request.TransferType == TransferTypes.Offer ? receiver.Name : sender.Name)} accepted the transfer. {request.UnitsRequested} packet(s) moved from {sender.Name} to {receiver.Name}."));
 
             // Transfer token: accept, reject and withdraw at the same moment cannot both succeed
+            await ActivityLogger.AddForHospitalAsync(_context, actingHospitalId, "Transfer.Accepted", ActivityLogger.Types.Transfer, request.TransferRequestId,
+                $"Accepted transfer #{NotificationFactory.ShortId(request.TransferRequestId)}: {request.UnitsRequested} {request.BloodGroup} packet(s) moved from {sender.Name} to {receiver.Name}.");
             await InventoryLedger.SavePacketChangesAsync(_context, TransferConflictMessage);
             return await GetTransferRequestAsync(id) ?? throw new KeyNotFoundException();
         }
@@ -211,6 +218,8 @@ namespace LifeLink.Services.Transfer
                 $"{rejecterName} rejected the transfer. Reason: {message}"));
 
             // Transfer token: accept, reject and withdraw at the same moment cannot both succeed
+            await ActivityLogger.AddForHospitalAsync(_context, actingHospitalId, "Transfer.Rejected", ActivityLogger.Types.Transfer, request.TransferRequestId,
+                $"Rejected transfer #{NotificationFactory.ShortId(request.TransferRequestId)} ({request.UnitsRequested} {request.BloodGroup}): {message}");
             await InventoryLedger.SavePacketChangesAsync(_context, TransferConflictMessage);
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
@@ -230,6 +239,7 @@ namespace LifeLink.Services.Transfer
             {
                 throw new InvalidOperationException($"Only pending transfers can be deleted. This one is {request.Status}.");
             }
+            SuspensionGuard.EnsureNotSuspended(request); // withdrawing is refused while suspended
 
             var now = DateTime.UtcNow;
             request.Status = TransferRequestStatus.Cancelled.ToString();
@@ -244,6 +254,8 @@ namespace LifeLink.Services.Transfer
                 $"{creatorName} withdrew its transfer {(request.TransferType == TransferTypes.Offer ? "offer" : "request")}."));
 
             // Transfer token: accept, reject and withdraw at the same moment cannot both succeed
+            await ActivityLogger.AddForHospitalAsync(_context, actingHospitalId, "Transfer.Withdrawn", ActivityLogger.Types.Transfer, request.TransferRequestId,
+                $"Withdrew transfer #{NotificationFactory.ShortId(request.TransferRequestId)} ({request.UnitsRequested} {request.BloodGroup}).");
             await InventoryLedger.SavePacketChangesAsync(_context, TransferConflictMessage);
             return await MapToResponseDtoAsync(request.TransferRequestId);
         }
@@ -269,6 +281,7 @@ namespace LifeLink.Services.Transfer
             {
                 throw new InvalidOperationException($"This transfer is already {request.Status}.");
             }
+            SuspensionGuard.EnsureNotSuspended(request); // accept and reject are refused while suspended
             return request;
         }
 
@@ -356,6 +369,9 @@ namespace LifeLink.Services.Transfer
                 ApprovedAt = r.ApprovedAt,
                 RejectedAt = r.RejectedAt,
                 CreatedAt = r.CreatedAt,
+                IsSuspended = r.AdminSuspendedAt != null,
+                SuspendedAt = r.AdminSuspendedAt,
+                SuspensionReason = r.AdminSuspensionReason,
                 UpdatedAt = r.UpdatedAt
             };
         }

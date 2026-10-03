@@ -78,7 +78,8 @@ namespace LifeLink.Tests
                 HospitalId = verifiedHospital.HospitalId,
                 FirstName = "Gregory",
                 LastName = "House",
-                Email = "house@jth.org"
+                Email = "house@jth.org",
+                MustChangePassword = false // first login completed (only such doctors review reports, 5.1)
             };
             await context.Doctors.AddAsync(doctor);
 

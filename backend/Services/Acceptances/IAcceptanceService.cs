@@ -12,6 +12,8 @@ namespace LifeLink.Services.Acceptances
         Task<AcceptanceResponseDto> CancelAcceptanceAsync(Guid acceptanceId, Guid donorUserId);
         Task<AcceptanceResponseDto> ReleaseReservationAsync(Guid acceptanceId, Guid actorUserId, Guid? actingHospitalId, string? reason);
         Task<AcceptanceResponseDto> ReopenScreeningAsync(Guid acceptanceId, Guid donorUserId);
+        Task<ScreeningAnswersDto> GetScreeningAnswersAsync(Guid acceptanceId, Guid donorUserId);
+        Task<AcceptanceResponseDto> UpdateScreeningAnswersAsync(Guid acceptanceId, Guid donorUserId, System.Text.Json.JsonElement answers);
         Task<IEnumerable<AcceptanceResponseDto>> GetMyAcceptancesAsync(Guid donorUserId);
         Task<AcceptanceResponseDto?> GetAcceptanceByIdAsync(Guid acceptanceId);
         Task<List<RequestAcceptanceDetailDto>> GetRequestAcceptancesAsync(Guid bloodRequestId);

@@ -22,6 +22,18 @@ export const acceptanceApi = {
   },
 
   // Donor: "Update my answers" while the report still waits for the doctor (a new report version follows)
+  /** The donor's own submitted screening answers (latest version, no AI fields) and whether they can still edit them */
+  getScreeningAnswers: async (id) => {
+    const response = await client.get(`/Acceptances/${id}/screening-answers`);
+    return response.data;
+  },
+
+  /** Save the edit form: { fieldId: value, ..., CONFIRM_TRUE: 'Yes' }. A new report version follows (no chat). */
+  updateScreeningAnswers: async (id, answers) => {
+    const response = await client.put(`/Acceptances/${id}/screening-answers`, { answers }, { timeout: 40000 });
+    return response.data;
+  },
+
   reopenScreening: async (id) => {
     const response = await client.put(`/Acceptances/${id}/status?status=ScreeningPending`);
     return response.data;

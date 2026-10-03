@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { bloodRequestApi, screeningApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
-import { Badge, RequestStatusBadge } from '../../components/common/Badge';
+import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { DataTable } from '../../components/common/DataTable';
 import { AgentStatusCard } from '../../components/workflow/AgentStatusCard';
 import { HospitalDonationReview } from '../../components/workflow/HospitalDonationReview';
@@ -122,7 +122,10 @@ export const DoctorDashboard = () => {
       accessor: 'status',
       cell: (row) => (
         <div className="space-y-1 max-w-xs">
-          <RequestStatusBadge status={row.status} />
+          <div className="flex items-center gap-1 flex-wrap">
+            <RequestStatusBadge status={row.status} />
+            {row.isSuspended && <SuspendedBadge reason={row.suspensionReason} />}
+          </div>
           {row.status === 'Rejected' && row.rejectionReason && (
             <p className="text-[11px] text-rose-600 dark:text-rose-400 leading-snug">
               <span className="font-semibold">Reason:</span> {row.rejectionReason}
@@ -141,7 +144,9 @@ export const DoctorDashboard = () => {
       accessor: 'actions',
       sortable: false,
       cell: (row) =>
-        row.pendingHospitalDonations > 0 ? (
+        row.isSuspended ? (
+          <span className="text-[11px] text-rose-600 dark:text-rose-400 italic">Suspended by the administrator</span>
+        ) : row.pendingHospitalDonations > 0 ? (
           <button
             onClick={() => setReviewing(row)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-950/60 dark:text-red-300 dark:hover:bg-red-900 border border-red-200 dark:border-red-900 transition-colors"

@@ -30,7 +30,7 @@ export const EmergencyHubPage = () => {
       setSubmitKey(newIdempotencyKey());
       addToast({
         title: 'Emergency raised',
-        message: 'Approved hospitals holding compatible blood have been alerted and can send you a transfer offer.',
+        message: 'Approved hospitals holding this exact blood group have been alerted and can send you a transfer offer.',
         type: 'danger'
       });
     } catch (err) {
@@ -53,7 +53,7 @@ export const EmergencyHubPage = () => {
           <Zap className="w-5 h-5 text-red-600 animate-pulse" /> Emergency Blood Dispatch Center
         </h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Hospital-to-hospital emergency support: other approved hospitals holding compatible blood are alerted and can offer a transfer.
+          Hospital-to-hospital emergency support: other approved hospitals holding the same blood group are alerted and can offer a transfer.
         </p>
       </div>
 
@@ -134,7 +134,7 @@ export const EmergencyHubPage = () => {
             disabled={loading}
             className="w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 uppercase tracking-wider disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Alert hospitals with compatible stock</>}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Alert hospitals holding this blood group</>}
           </button>
         </form>
       </div>

@@ -25,6 +25,9 @@ namespace LifeLink.Data
         public DbSet<UserSession> UserSessions { get; set; } = null!;
         public DbSet<IdempotencyKey> IdempotencyKeys { get; set; } = null!;
         public DbSet<BackgroundJobLease> BackgroundJobLeases { get; set; } = null!;
+        public DbSet<InventoryAnalysisRun> InventoryAnalysisRuns { get; set; } = null!;
+        public DbSet<ActivityLog> ActivityLogs { get; set; } = null!;
+        public DbSet<AdminSeenMarker> AdminSeenMarkers { get; set; } = null!;
 
         // Student 3 DbSets
         public DbSet<Hospital> Hospitals { get; set; } = null!;
@@ -57,6 +60,7 @@ namespace LifeLink.Data
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
             EnforceScreeningReportImmutability();
+            EnforceActivityLogAppendOnly();
             AdvanceConcurrencyTokens();
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
@@ -64,6 +68,7 @@ namespace LifeLink.Data
         public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
             EnforceScreeningReportImmutability();
+            EnforceActivityLogAppendOnly();
             AdvanceConcurrencyTokens();
             return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         }
@@ -113,6 +118,18 @@ namespace LifeLink.Data
             foreach (var entity in touched)
             {
                 entity.ConcurrencyToken++;
+            }
+        }
+
+        /// <summary>The activity log is append-only: entries are added in the same save as their action, never changed or removed.</summary>
+        private void EnforceActivityLogAppendOnly()
+        {
+            foreach (var entry in ChangeTracker.Entries<ActivityLog>())
+            {
+                if (entry.State is EntityState.Modified or EntityState.Deleted)
+                {
+                    throw new InvalidOperationException("Activity log entries cannot be changed or deleted.");
+                }
             }
         }
 
@@ -217,6 +234,36 @@ namespace LifeLink.Data
                 entity.HasKey(l => l.Name);
                 entity.Property(l => l.Name).HasMaxLength(50);
                 entity.Property(l => l.Holder).IsRequired().HasMaxLength(200);
+            });
+
+            // Activity log: append-only, plain id columns (no foreign keys), read per actor, hospital or subject by time
+            modelBuilder.Entity<InventoryAnalysisRun>(entity =>
+            {
+                entity.HasKey(r => r.RunId);
+                entity.Property(r => r.Trigger).IsRequired().HasMaxLength(20);
+                entity.Property(r => r.Status).IsRequired().HasMaxLength(30);
+                entity.HasIndex(r => r.StartedAt);
+                entity.HasIndex(r => new { r.Trigger, r.StartedAt });
+            });
+
+            modelBuilder.Entity<ActivityLog>(entity =>
+            {
+                entity.HasKey(a => a.Id);
+                entity.Property(a => a.ActorRole).IsRequired().HasMaxLength(30);
+                entity.Property(a => a.ActorName).IsRequired().HasMaxLength(200);
+                entity.Property(a => a.Action).IsRequired().HasMaxLength(60);
+                entity.Property(a => a.EntityType).IsRequired().HasMaxLength(40);
+                entity.Property(a => a.Summary).IsRequired().HasMaxLength(500);
+                entity.HasIndex(a => new { a.ActorUserId, a.OccurredAt });
+                entity.HasIndex(a => new { a.HospitalId, a.OccurredAt });
+                entity.HasIndex(a => new { a.SubjectUserId, a.OccurredAt });
+            });
+
+            // When each admin last opened an Activity log area (the "new" highlight and badge)
+            modelBuilder.Entity<AdminSeenMarker>(entity =>
+            {
+                entity.HasKey(m => new { m.AdminUserId, m.Area });
+                entity.Property(m => m.Area).HasMaxLength(40);
             });
 
             // Role configuration
@@ -416,6 +463,7 @@ namespace LifeLink.Data
                 entity.Property(t => t.Status).IsRequired().HasMaxLength(20);
                 entity.Property(t => t.TransferType).IsRequired().HasMaxLength(20).HasDefaultValue(TransferTypes.Request);
                 entity.Property(t => t.RejectionReason).HasMaxLength(500);
+                entity.Property(t => t.AdminSuspensionReason).HasMaxLength(500);
 
                 entity.HasOne(t => t.SenderHospital)
                       .WithMany(h => h.SentTransferRequests)
@@ -433,8 +481,11 @@ namespace LifeLink.Data
             {
                 entity.HasKey(d => d.DoctorId);
                 entity.HasIndex(d => d.HospitalId);
-                entity.HasIndex(d => d.Email).IsUnique();
-                entity.HasIndex(d => d.LicenseNumber).IsUnique(); // SLMC number, stored trimmed + upper-cased
+                // Removed (soft-deleted) doctors keep their row; their email can be reused, and the SLMC number
+                // (stored trimmed + upper-cased) is unique only within one hospital
+                entity.HasIndex(d => d.Email).IsUnique().HasFilter("\"DeletedAt\" IS NULL");
+                entity.HasIndex(d => new { d.HospitalId, d.LicenseNumber }, "IX_Doctors_HospitalId_LicenseNumber")
+                      .IsUnique().HasFilter("\"DeletedAt\" IS NULL");
 
                 entity.Property(d => d.FirstName).IsRequired().HasMaxLength(100);
                 entity.Property(d => d.LastName).IsRequired().HasMaxLength(100);
@@ -531,6 +582,8 @@ namespace LifeLink.Data
                 entity.HasIndex(n => n.HospitalId);
                 entity.Property(n => n.Title).IsRequired().HasMaxLength(200);
                 entity.Property(n => n.NotificationType).IsRequired().HasMaxLength(100);
+                entity.Property(n => n.DedupeKey).HasMaxLength(200);
+                entity.HasIndex(n => new { n.HospitalId, n.DedupeKey });
 
                 entity.HasOne(n => n.User)
                       .WithMany()
@@ -565,6 +618,7 @@ namespace LifeLink.Data
                 entity.Property(b => b.Reason).IsRequired().HasMaxLength(500);
                 entity.Property(b => b.Priority).IsRequired().HasMaxLength(20);
                 entity.Property(b => b.RejectionReason).HasMaxLength(500);
+                entity.Property(b => b.AdminSuspensionReason).HasMaxLength(500);
                 entity.Property(b => b.ConcurrencyToken).IsConcurrencyToken();
                 entity.Property(b => b.Status)
                       .HasConversion<string>()

@@ -35,5 +35,8 @@ namespace LifeLink.DTOs.Auth
 
         [StringLength(500, ErrorMessage = "Address cannot exceed 500 characters.")]
         public string? Address { get; set; }
+
+        // Optional (donor/patient); can be added or changed later in the profile until a donation confirms it
+        public string? BloodGroup { get; set; }
     }
 }

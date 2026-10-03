@@ -14,7 +14,8 @@ namespace LifeLink.DTOs.Inventory
         public int ExpiringSoonUnits { get; set; } // available packets inside the hospital's expiry alert window
         public DateTime? NextExpiryDate { get; set; }
         public int ExpiryAlertDays { get; set; }
-        public bool IsLowStock => UnitsAvailable <= MinimumThreshold;
+        // The single "below threshold" rule (InventoryRules): strictly below the minimum threshold
+        public bool IsLowStock => LifeLink.Services.Inventory.InventoryRules.IsBelowThreshold(UnitsAvailable, MinimumThreshold);
         public bool IsSurplus => UnitsAvailable >= (int)(MaximumCapacity * 0.8);
         public DateTime LastUpdated { get; set; }
         public DateTime CreatedAt { get; set; }

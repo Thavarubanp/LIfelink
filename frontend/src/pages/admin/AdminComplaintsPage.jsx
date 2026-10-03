@@ -21,7 +21,8 @@ import {
   X,
   ExternalLink,
   Phone,
-  MapPin
+  MapPin,
+  Trash2
 } from 'lucide-react';
 
 export const AdminComplaintsPage = () => {
@@ -347,6 +348,12 @@ export const AdminComplaintsPage = () => {
                         </button>
                       </div>
 
+                      {!c.hospitalId && !c.targetUserId && (
+                        <span className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-900/50">
+                          General question (no target)
+                        </span>
+                      )}
+
                       {c.hospitalName && (
                         <span className="flex items-center gap-1">
                           <Building2 className="w-3.5 h-3.5 text-cyan-500" />
@@ -383,7 +390,12 @@ export const AdminComplaintsPage = () => {
                   <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800 flex-wrap">
                     {/* Active Governance Action Buttons (only visible if active) */}
                     {/* Admins can only reply; replies alternate with the complaint creator */}
-                    {!isClosedOrCancelled ? (
+                    {c.deletedAt ? (
+                      // Deleted by its creator: kept for the Admin, read-only
+                      <span className="text-xs font-semibold text-rose-700 dark:text-rose-300 px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 rounded-lg border border-rose-200 dark:border-rose-800 flex items-center gap-1.5">
+                        <Trash2 className="w-3.5 h-3.5" /> Deleted by creator (Read-Only)
+                      </span>
+                    ) : !isClosedOrCancelled ? (
                       c.awaitingAdminReply ? (
                         <button
                           onClick={() => setReplyTarget(c)}
@@ -431,7 +443,7 @@ export const AdminComplaintsPage = () => {
                       <div className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
                         <span className="text-[10px] font-bold uppercase text-slate-400">Target Facility</span>
                         <div className="text-xs text-slate-700 dark:text-slate-300 font-medium">
-                          {c.hospitalName || 'General Platform Service'}
+                          {c.hospitalName || (c.targetUserId ? 'None (filed against a user)' : 'None (general question to the admin)')}
                         </div>
                         {c.hospitalId && (
                           <div className="text-[11px] text-slate-400 font-mono">Hospital ID: {c.hospitalId}</div>

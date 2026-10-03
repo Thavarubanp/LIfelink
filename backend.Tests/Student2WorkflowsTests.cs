@@ -130,8 +130,10 @@ namespace LifeLink.Tests
             return new NotificationAgentService(context, new HttpClient(), config, logger);
         }
 
-        [Fact]
-        public async Task Normal_Priority_Approval_Notifies_Only_Eligible_Donors()
+        [Theory]
+        [InlineData("Normal")]
+        [InlineData("High")]
+        public async Task Normal_Or_High_Priority_Approval_Sends_No_Alerts(string priority)
         {
             var context = GetInMemoryDbContext();
             var notificationService = CreateNotificationService(context);
@@ -147,27 +149,25 @@ namespace LifeLink.Tests
 
             var hospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "St. Jude", IsVerified = true };
             // Doctor login id without a Users row so the doctor is not counted as a donor recipient
-            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = hospital.HospitalId, FirstName = "John", LastName = "Watson", Email = "watson@stjude.org" };
+            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = hospital.HospitalId, FirstName = "John", LastName = "Watson", Email = "watson@stjude.org", MustChangePassword = false };
             await context.Hospitals.AddAsync(hospital);
             await context.Doctors.AddAsync(doctor);
             await context.SaveChangesAsync();
 
-            var requestId = await SeedVerifiedRequestAsync(context, hospital.HospitalId, doctor.DoctorId, "A+", "Normal");
+            var requestId = await SeedVerifiedRequestAsync(context, hospital.HospitalId, doctor.DoctorId, "A+", priority);
 
             var result = await verificationService.ApproveBloodRequestAsync(requestId, doctor.UserId!.Value, "Patient verified and cleared for matching.");
             Assert.NotNull(result);
             Assert.Equal("Approved", result.Status);
             Assert.Equal(BloodRequestStatus.Approved, (await context.BloodRequests.FindAsync(requestId))!.Status);
 
+            // Owner's decisions (Phase 5, D11): Normal and High requests alert nobody; donors find them in the public list
             var notifications = await context.Notifications.ToListAsync();
-            Assert.Equal(2, notifications.Count);
-            Assert.All(notifications, n => Assert.Equal("EligibleDonorAlert", n.NotificationType));
-            Assert.All(notifications, n => Assert.Null(n.HospitalId)); // donor alerts never land in a hospital's notification centre
-            Assert.Equal(new[] { donor1.UserId, donor2.UserId }.OrderBy(x => x), notifications.Select(n => n.UserId!.Value).OrderBy(x => x));
+            Assert.DoesNotContain(notifications, n => n.NotificationType is "EligibleDonorAlert" or "UrgentHospitalAlert");
         }
 
         [Fact]
-        public async Task High_Or_Critical_Priority_Approval_Notifies_Donors_And_UrgentHospitals_Only()
+        public async Task Critical_Priority_Approval_Alerts_Exact_Group_Donors_And_Hospitals_Holding_That_Group()
         {
             var context = GetInMemoryDbContext();
             var notificationService = CreateNotificationService(context);
@@ -188,12 +188,19 @@ namespace LifeLink.Tests
             var unverifiedHospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Pending Hospital", IsVerified = false };
             var suspendedHospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Suspended Hospital", IsVerified = true, IsSuspended = true };
 
-            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = requestingHospital.HospitalId, FirstName = "Stephen", LastName = "Strange", Email = "strange@origin.org" };
+            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = requestingHospital.HospitalId, FirstName = "Stephen", LastName = "Strange", Email = "strange@origin.org", MustChangePassword = false };
+            // O+ can receive O-, but alerts go to the exact group only; a user without a saved group is never alerted
+            var compatibleDonor = new User { UserId = Guid.NewGuid(), FirstName = "Comp", LastName = "Atible", Email = "c@lifelink.org", AccountStatus = AccountStatus.Active, BloodGroup = "O+" };
+            var noGroup = new User { UserId = Guid.NewGuid(), FirstName = "No", LastName = "Group", Email = "n@lifelink.org", AccountStatus = AccountStatus.Active };
 
             await context.Roles.AddAsync(adminRole);
-            await context.Users.AddRangeAsync(adminUser, donorUser, suspendedDonor);
+            await context.Users.AddRangeAsync(adminUser, donorUser, suspendedDonor, compatibleDonor, noGroup);
             await context.Hospitals.AddRangeAsync(requestingHospital, otherHospital1, otherHospital2, unverifiedHospital, suspendedHospital);
             await context.Doctors.AddAsync(doctor);
+            // Hospital 1 holds O- (alerted); hospital 2 holds only O+ (not alerted); the suspended hospital holds O- (not alerted)
+            BloodPacket Packet(Hospital h, string group) => new() { HospitalId = h.HospitalId, CreatedByHospitalId = h.HospitalId, BloodGroup = group,
+                TrackingNumber = $"PKT-T{Guid.NewGuid():N}"[..12], CollectionDate = DateTime.UtcNow.AddDays(-1), ExpiryDate = DateTime.UtcNow.AddDays(30) };
+            await context.BloodPackets.AddRangeAsync(Packet(otherHospital1, "O-"), Packet(otherHospital2, "O+"), Packet(suspendedHospital, "O-"));
             await context.SaveChangesAsync();
 
             var requestId = await SeedVerifiedRequestAsync(context, requestingHospital.HospitalId, doctor.DoctorId, "O-", "Critical");
@@ -203,10 +210,10 @@ namespace LifeLink.Tests
             Assert.Equal("Approved", result.Status);
 
             var notifications = await context.Notifications.ToListAsync();
-            // Donors: 1 (active donor only), Urgent Hospitals: 2 (approved, not suspended, not the requester)
-            Assert.Equal(3, notifications.Count);
+            // Donors: 1 (active, exact group O-); Hospitals: 1 (approved, not suspended, not the requester, holding O-)
+            Assert.Equal(2, notifications.Count);
             Assert.Equal(donorUser.UserId, Assert.Single(notifications, n => n.NotificationType == "EligibleDonorAlert").UserId);
-            Assert.Equal(2, notifications.Count(n => n.NotificationType == "UrgentHospitalAlert"));
+            Assert.Equal(otherHospital1.HospitalId, Assert.Single(notifications, n => n.NotificationType == "UrgentHospitalAlert").HospitalId);
             Assert.DoesNotContain(notifications, n => n.HospitalId == suspendedHospital.HospitalId || n.HospitalId == unverifiedHospital.HospitalId);
             Assert.Empty(notifications.Where(n => n.RecipientRole == "Admin"));
         }
@@ -219,7 +226,7 @@ namespace LifeLink.Tests
             var verificationService = new VerificationService(context, notificationService);
 
             var hospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Mercy Hospital", IsVerified = true };
-            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = hospital.HospitalId, FirstName = "Meredith", LastName = "Grey", Email = "grey@mercy.org", IsActive = true };
+            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = hospital.HospitalId, FirstName = "Meredith", LastName = "Grey", Email = "grey@mercy.org", IsActive = true, MustChangePassword = false };
             var donorA = new User { UserId = Guid.NewGuid(), FirstName = "A", LastName = "Donor", Email = "a@d.org", BloodGroup = "B+" };
             var donorB = new User { UserId = Guid.NewGuid(), FirstName = "B", LastName = "Donor", Email = "b@d.org", BloodGroup = "B+" };
             var request = new BloodRequest { BloodRequestId = Guid.NewGuid(), PatientUserId = Guid.NewGuid(), HospitalId = hospital.HospitalId, BloodGroup = "B+", UnitsRequired = 2, Reason = "Surgery", Priority = "Normal", Status = BloodRequestStatus.Approved, ExpiryDate = DateTime.UtcNow.AddDays(3) };

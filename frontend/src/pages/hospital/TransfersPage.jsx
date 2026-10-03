@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CheckCircle2, Loader2, Send, Trash2, X, XCircle } from 'lucide-react';
 import { hospitalApi, inventoryApi, profileApi, transferApi } from '../../api';
-import { Badge } from '../../components/common/Badge';
+import { Badge, SuspendedBadge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
@@ -218,12 +218,14 @@ export const TransfersPage = () => {
                     <span className="text-slate-500">{sendsBlood ? 'to' : 'from'} {other}</span>
                     <Badge variant="default" size="sm">{t.transferType}</Badge>
                     <Badge variant={STATUS_VARIANT[t.status] || 'default'} size="sm">{t.status}</Badge>
+                    {t.isSuspended && <SuspendedBadge reason={t.suspensionReason} />}
                   </div>
+                  {t.isSuspended && <p className="text-[11px] text-rose-600 dark:text-rose-400">Suspended by the administrator: it cannot be accepted, rejected or deleted until the suspension is lifted.</p>}
                   <p className="text-[11px] text-slate-500">Created {fmt(t.requestedAt)}{t.notes ? ` - ${t.notes}` : ''}</p>
                   {t.rejectionReason && <p className="text-[11px] text-rose-600"><span className="font-semibold">Rejection reason:</span> {t.rejectionReason}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2 shrink-0">
-                  {t.status === 'Pending' && incomingToMe && (
+                  {!t.isSuspended && t.status === 'Pending' && incomingToMe && (
                     <>
                       <button type="button" onClick={() => (sendsBlood
                         ? setSending({ transfer: t, packetIds: [] })
@@ -238,7 +240,7 @@ export const TransfersPage = () => {
                       </button>
                     </>
                   )}
-                  {t.status === 'Pending' && t.createdByHospitalId === myHospitalId && (
+                  {!t.isSuspended && t.status === 'Pending' && t.createdByHospitalId === myHospitalId && (
                     <button type="button" onClick={() => window.confirm('Delete this pending transfer? It stays in the history as Cancelled.') &&
                       act(() => transferApi.deleteTransferRequest(t.transferRequestId), { title: 'Transfer deleted', message: 'The other hospital has been notified.', type: 'info' })}
                       disabled={acting}

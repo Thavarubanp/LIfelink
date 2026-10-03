@@ -41,16 +41,16 @@ namespace LifeLink.Services.Notification
         }
 
         /// <summary>
-        /// Donors who may receive a donation alert for this request. Every rule is checked here and again by the
-        /// Notification agent: plain donor account; Active, not suspended, not permanently blocked; known blood group
-        /// compatible with the request; 120-day interval; age 18-60 when known; no active donation process;
-        /// not the request creator; not already accepted or rejected for this request.
+        /// Donors who may receive a donation alert for this request (Critical requests only). Every rule is checked
+        /// here and again by the Notification agent: plain donor account; Active, not suspended, not permanently blocked;
+        /// a SAVED blood group EXACTLY equal to the request's (users without a saved group are never alerted); 120-day
+        /// interval; age 18-60 when known; no active donation process; not the request creator; not already accepted or
+        /// rejected for this request. (Accepting with a compatible group is still allowed; only alerts are exact.)
         /// </summary>
         public async Task<List<DonorCandidate>> GetEligibleDonorCandidatesAsync(Guid bloodRequestId, string bloodGroup, Guid? excludeUserId = null)
         {
             var now = DateTime.UtcNow;
             var intervalCutoff = now.AddDays(-DonorEligibility.DonationIntervalDays);
-            var compatibleDonorGroups = BloodCompatibility.Where(kv => kv.Value.Contains(bloodGroup)).Select(kv => kv.Key).ToList();
 
             var nonDonorIds = DonorEligibility.NonDonorUserIds(_context);
             var busyDonorIds = _context.Acceptances
@@ -61,7 +61,7 @@ namespace LifeLink.Services.Notification
 
             var users = await _context.Users
                 .Where(u => u.AccountStatus == AccountStatus.Active && !u.IsSuspended && !u.IsPermanentlyBlocked &&
-                            u.BloodGroup != null && compatibleDonorGroups.Contains(u.BloodGroup) &&
+                            u.BloodGroup != null && u.BloodGroup == bloodGroup &&
                             (u.LastDonationDate == null || u.LastDonationDate <= intervalCutoff) &&
                             !nonDonorIds.Contains(u.UserId) &&
                             !busyDonorIds.Contains(u.UserId) &&
@@ -75,12 +75,27 @@ namespace LifeLink.Services.Notification
                 .ToList();
         }
 
-        /// <summary>Approved, non-suspended hospitals other than the requesting one.</summary>
-        public Task<List<Guid>> GetAlertHospitalIdsAsync(Guid requestingHospitalId) =>
-            _context.Hospitals
-                .Where(h => h.IsVerified && !h.IsSuspended && h.HospitalId != requestingHospitalId)
+        /// <summary>
+        /// Approved, non-suspended hospitals other than the requesting one that hold the EXACT blood group (at least one
+        /// available, unexpired packet of it).
+        /// </summary>
+        public Task<List<Guid>> GetAlertHospitalIdsAsync(Guid requestingHospitalId, string bloodGroup)
+        {
+            var now = DateTime.UtcNow;
+            return _context.Hospitals
+                .Where(h => h.IsVerified && !h.IsSuspended && h.HospitalId != requestingHospitalId &&
+                            _context.BloodPackets.Any(p => p.HospitalId == h.HospitalId && p.BloodGroup == bloodGroup &&
+                                                           p.Status == BloodPacketStatus.Available && p.ExpiryDate > now))
                 .Select(h => h.HospitalId)
                 .ToListAsync();
+        }
+
+        /// <summary>
+        /// Only Critical requests send alerts (owner's decision D11). Normal and High requests alert nobody: donors find
+        /// them in the public list, and the creator, hospital and assigned doctor get their usual status notifications.
+        /// </summary>
+        public static bool IsAlertPriority(string? priority) =>
+            (priority ?? "Normal").Trim().Equals("Critical", StringComparison.OrdinalIgnoreCase);
 
         public async Task<int> NotifyEligibleDonorsAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority)
         {
@@ -102,13 +117,13 @@ namespace LifeLink.Services.Notification
 
         public async Task<int> NotifyUrgentHospitalsAsync(Guid bloodRequestId, string bloodGroup, Guid requestingHospitalId, string priority)
         {
-            var hospitalIds = await GetAlertHospitalIdsAsync(requestingHospitalId);
+            var hospitalIds = await GetAlertHospitalIdsAsync(requestingHospitalId, bloodGroup);
             if (!hospitalIds.Any()) return 0;
 
             var requestingName = await _context.Hospitals.Where(h => h.HospitalId == requestingHospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "A partner hospital";
             var notifications = hospitalIds.Select(id => NotificationFactory.ForHospital(id, "UrgentHospitalAlert",
                 $"[{priority.ToUpper()}] Urgent Hospital Blood Shortage Notice ({bloodGroup})",
-                $"{requestingName} has an urgent approved request for blood group {bloodGroup}.")).ToList();
+                $"{requestingName} has an urgent approved request for blood group {bloodGroup}, and your hospital holds {bloodGroup}. Consider offering a transfer.")).ToList();
 
             await _context.Notifications.AddRangeAsync(notifications);
             await _context.SaveChangesAsync();
@@ -121,8 +136,12 @@ namespace LifeLink.Services.Notification
         /// Saves alerts composed by an agent. Only recipients the backend itself selected are accepted, so an agent
         /// can never address a user or hospital outside the eligible set.
         /// </summary>
-        public async Task<int> PersistAgentNotificationsAsync(IEnumerable<AgentNotificationDto> items, ISet<Guid> allowedUserIds, ISet<Guid> allowedHospitalIds)
+        public async Task<int> PersistAgentNotificationsAsync(IEnumerable<AgentNotificationDto> items, ISet<Guid> allowedUserIds, ISet<Guid> allowedHospitalIds) =>
+            (await PersistAgentNotificationsDetailedAsync(items, allowedUserIds, allowedHospitalIds)).Added;
+
+        public async Task<AlertPersistResult> PersistAgentNotificationsDetailedAsync(IEnumerable<AgentNotificationDto> items, ISet<Guid> allowedUserIds, ISet<Guid> allowedHospitalIds)
         {
+            var result = new AlertPersistResult();
             var notifications = new List<LifeLink.Entities.Notification>();
             foreach (var n in items)
             {
@@ -132,7 +151,9 @@ namespace LifeLink.Services.Notification
 
                 if (n.RecipientType.Equals("Hospital", StringComparison.OrdinalIgnoreCase) && allowedHospitalIds.Contains(recipientId))
                 {
-                    notifications.Add(NotificationFactory.ForHospital(recipientId, n.NotificationType ?? "UrgentHospitalAlert", title, message));
+                    var hospitalAlert = NotificationFactory.ForHospital(recipientId, n.NotificationType ?? "UrgentHospitalAlert", title, message);
+                    hospitalAlert.DedupeKey = string.IsNullOrWhiteSpace(n.DedupeKey) ? null : Truncate(n.DedupeKey.Trim(), 200);
+                    notifications.Add(hospitalAlert);
                 }
                 else if (n.RecipientType.Equals("Donor", StringComparison.OrdinalIgnoreCase) && allowedUserIds.Contains(recipientId))
                 {
@@ -140,33 +161,46 @@ namespace LifeLink.Services.Notification
                 }
             }
 
-            var added = 0;
             foreach (var notification in notifications)
             {
-                if (notification.HospitalId.HasValue && await IsDuplicateHospitalAlertAsync(notification.HospitalId.Value, notification.NotificationType, notification.Title))
+                if (notification.HospitalId.HasValue && await IsDuplicateHospitalAlertAsync(notification))
                 {
+                    result.SkippedDuplicates++;
+                    continue;
+                }
+                // The same key twice in one batch is also a duplicate
+                if (notification.DedupeKey != null && _context.Notifications.Local.Any(x => x != notification && x.HospitalId == notification.HospitalId &&
+                        x.DedupeKey == notification.DedupeKey && _context.Entry(x).State == EntityState.Added))
+                {
+                    result.SkippedDuplicates++;
                     continue;
                 }
                 await _context.Notifications.AddAsync(notification);
-                added++;
+                result.Added++;
+                result.AddedByType[notification.NotificationType] = result.AddedByType.GetValueOrDefault(notification.NotificationType) + 1;
             }
 
-            if (added > 0)
+            if (result.Added > 0)
             {
                 await _context.SaveChangesAsync();
             }
-            return added;
+            return result;
         }
 
         public async Task ProcessRequestApprovalNotificationAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority)
         {
             var priorityUpper = (priority ?? "Normal").Trim().ToUpperInvariant();
+            if (!IsAlertPriority(priorityUpper))
+            {
+                _logger.LogInformation("Request {RequestId} is {Priority} priority: no donor or hospital alerts are sent.", bloodRequestId, priorityUpper);
+                return;
+            }
             var agentBaseUrl = _configuration["NotificationAgent:BaseUrl"] ?? "http://localhost:8000";
             var hospitalName = await _context.Hospitals.Where(h => h.HospitalId == hospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "Partner Hospital";
             var creatorId = await _context.BloodRequests.Where(r => r.BloodRequestId == bloodRequestId).Select(r => (Guid?)r.PatientUserId).FirstOrDefaultAsync();
 
             var candidates = await GetEligibleDonorCandidatesAsync(bloodRequestId, bloodGroup, creatorId);
-            var hospitalIds = priorityUpper is "HIGH" or "CRITICAL" ? await GetAlertHospitalIdsAsync(hospitalId) : new List<Guid>();
+            var hospitalIds = await GetAlertHospitalIdsAsync(hospitalId, bloodGroup);
 
             var payload = new
             {
@@ -212,14 +246,11 @@ namespace LifeLink.Services.Notification
                 _logger.LogWarning(ex, "LangGraph Agent microservice call failed or unavailable. Falling back to internal notification processor.");
             }
 
-            // Fallback routing if the agent was not reached (Donors always, Hospitals only on High/Critical)
+            // Fallback routing if the agent was not reached: exact-group donors and exact-group stock holders
             if (!agentSuccess)
             {
                 await NotifyEligibleDonorsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
-                if (priorityUpper == "HIGH" || priorityUpper == "CRITICAL")
-                {
-                    await NotifyUrgentHospitalsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
-                }
+                await NotifyUrgentHospitalsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
             }
         }
 
@@ -232,29 +263,21 @@ namespace LifeLink.Services.Notification
             }
         }
 
-        // Scheduled inventory checks run every 30 minutes; the same unread alert is not repeated within 12 hours
-        private Task<bool> IsDuplicateHospitalAlertAsync(Guid hospitalId, string type, string title)
+        // Scheduled inventory checks run every 30 minutes; the same unread alert is not repeated within 12 hours.
+        // Inventory alerts carry a stable DedupeKey (type + blood group [+ low hospital]); other alerts fall back to type + title.
+        private Task<bool> IsDuplicateHospitalAlertAsync(LifeLink.Entities.Notification alert)
         {
             var since = DateTime.UtcNow.AddHours(-12);
-            return _context.Notifications.AnyAsync(n => n.HospitalId == hospitalId && n.UserId == null && !n.IsRead &&
-                                                        n.NotificationType == type && n.Title == title && n.CreatedAt >= since);
+            var hospitalId = alert.HospitalId;
+            var recent = _context.Notifications.Where(n => n.HospitalId == hospitalId && n.UserId == null && !n.IsRead && n.DismissedAt == null &&
+                                                           n.CreatedAt >= since);
+            return alert.DedupeKey != null
+                ? recent.AnyAsync(n => n.DedupeKey == alert.DedupeKey)
+                : recent.AnyAsync(n => n.NotificationType == alert.NotificationType && n.Title == alert.Title);
         }
 
         private static string Truncate(string? value, int max) =>
             string.IsNullOrEmpty(value) ? string.Empty : (value.Length <= max ? value : value[..max]);
-
-        // Recipient blood group -> compatible donor groups (red cell compatibility)
-        private static readonly Dictionary<string, string[]> BloodCompatibility = new()
-        {
-            ["O-"] = new[] { "O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+" },
-            ["O+"] = new[] { "O+", "A+", "B+", "AB+" },
-            ["A-"] = new[] { "A-", "A+", "AB-", "AB+" },
-            ["A+"] = new[] { "A+", "AB+" },
-            ["B-"] = new[] { "B-", "B+", "AB-", "AB+" },
-            ["B+"] = new[] { "B+", "AB+" },
-            ["AB-"] = new[] { "AB-", "AB+" },
-            ["AB+"] = new[] { "AB+" }
-        };
 
         public async Task<NotificationResponseDto> CreateRecommendationNotificationAsync(CreateRecommendationNotificationDto dto)
         {
@@ -263,7 +286,7 @@ namespace LifeLink.Services.Notification
                 : (!string.IsNullOrWhiteSpace(dto.NotificationType) ? dto.NotificationType : "RECIPIENT");
 
             var existing = await _context.Notifications
-                .Where(n => n.HospitalId == dto.TargetFacilityId && n.UserId == null && !n.IsRead &&
+                .Where(n => n.HospitalId == dto.TargetFacilityId && n.UserId == null && !n.IsRead && n.DismissedAt == null &&
                             n.NotificationType == notificationType && n.Title == dto.Title &&
                             n.CreatedAt >= DateTime.UtcNow.AddHours(-12))
                 .FirstOrDefaultAsync();
@@ -299,7 +322,7 @@ namespace LifeLink.Services.Notification
         public async Task<List<NotificationResponseDto>> GetNotificationsForUserAsync(Guid userId)
         {
             return await _context.Notifications
-                .Where(n => n.UserId == userId)
+                .Where(n => n.UserId == userId && n.DismissedAt == null)
                 .OrderByDescending(n => n.CreatedAt)
                 .Select(n => new NotificationResponseDto
                 {
@@ -339,7 +362,7 @@ namespace LifeLink.Services.Notification
         {
             if (!userId.HasValue && !hospitalId.HasValue) return 0;
 
-            var query = _context.Notifications.Where(n => !n.IsRead);
+            var query = _context.Notifications.Where(n => !n.IsRead && n.DismissedAt == null);
             if (userId.HasValue && hospitalId.HasValue)
             {
                 query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
@@ -360,7 +383,8 @@ namespace LifeLink.Services.Notification
         {
             if (!userId.HasValue && !hospitalId.HasValue) return new List<NotificationResponseDto>();
 
-            var query = _context.Notifications.AsQueryable();
+            // Dismissed notifications are hidden from their recipient (they stay in the database)
+            var query = _context.Notifications.Where(n => n.DismissedAt == null);
             if (userId.HasValue && hospitalId.HasValue)
             {
                 query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
@@ -408,24 +432,27 @@ namespace LifeLink.Services.Notification
             return true;
         }
 
-        /// <summary>Deletes one notification addressed to the caller (their user or their hospital).</summary>
+        /// <summary>
+        /// Dismisses one notification addressed to the caller (their user or their hospital). Soft delete: it is hidden
+        /// from the caller's lists and counts but stays in the database.
+        /// </summary>
         public async Task<bool> DeleteNotificationAsync(Guid notificationId, Guid? userId, Guid? hospitalId = null)
         {
             var notification = await _context.Notifications.FindAsync(notificationId);
-            if (notification == null) return false;
+            if (notification == null || notification.DismissedAt != null) return false;
 
             bool matchesUser = userId.HasValue && notification.UserId == userId.Value;
             bool matchesHospital = hospitalId.HasValue && notification.HospitalId == hospitalId.Value;
             if (!matchesUser && !matchesHospital) return false;
 
-            _context.Notifications.Remove(notification);
+            notification.DismissedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync();
             return true;
         }
 
         public async Task<int> MarkAllNotificationsReadAsync(Guid? userId, Guid? hospitalId = null, bool isAdmin = false)
         {
-            var query = _context.Notifications.Where(n => !n.IsRead);
+            var query = _context.Notifications.Where(n => !n.IsRead && n.DismissedAt == null);
             if (!isAdmin)
             {
                 if (userId.HasValue && hospitalId.HasValue)

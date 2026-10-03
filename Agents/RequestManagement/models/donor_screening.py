@@ -1,224 +1,184 @@
 """
-LifeLink donor screening questionnaire (12 sections).
+LifeLink donor screening questionnaire: exactly 7 questions (Sri Lanka NBTS donor questionnaire, owner's Phase 5 list),
+plus a final "I confirm my answers are true" tick that is not counted as a question.
 
-Question types:
-  confirm   - Section 1 details pre-filled from the donor's profile; "yes" keeps the value, anything else replaces it
-  yes_no    - yes / no
-  text      - free text
-  date      - a date (YYYY-MM-DD or YYYY-MM)
-  number    - a whole number
-  select    - one of `options`
-  checklist - any of `options` (or "None"); a follow-up question asks for details of the ticked items
+Each question has typed parts (fields). The chat shows them as inputs inside the question bubble (tick boxes, options,
+dates, numbers, "None of these", "I don't remember"), and free text is still accepted. Answers are stored per field ID,
+and the deterministic rules (services/eligibility_rules.py) read those fields directly.
 
-Section 10 is confidential: its answers are parsed by fixed rules only and never sent to an LLM.
-Pregnancy-related questions are asked once (Section 4) and only to female donors; the report repeats them in Section 12.
+Part types:
+  text, number, date        - one value ("date" is YYYY-MM-DD; parts with allow_unknown also accept "Donor doesn't remember")
+  select                    - one of `options`
+  yes_no                    - "Yes" / "No"
+  checklist                 - any of `options`, or "None" (stored as a JSON list, [] = none of these)
+  trips                     - list of {"country", "return_date"} (stored as JSON)
+
+A part with `show_if` applies only when another field has a given answer (a ticked item or "Yes"); asking for it is a
+short follow-up, not a new question. Question 7 is confidential: it is parsed by rules only and never sent to an LLM.
+The pregnancy part is shown only to female donors.
 """
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 YES_NO = ["Yes", "No"]
+DONT_REMEMBER = "Donor doesn't remember"
+
+CONDITIONS = ["Heart disease", "Diabetes", "High blood pressure", "Epilepsy", "Hepatitis", "Cancer", "Bleeding disorder"]
+RECENT_EVENTS = ["Tattoo", "Surgery", "Blood transfusion"]
+FEMALE_STATUS = ["Pregnant", "Breastfeeding", "Gave birth in the last year"]
+
+
+class PartDefinition(BaseModel):
+    id: str
+    label: str
+    type: str
+    options: Optional[List[str]] = None
+    required: bool = True
+    allow_none: bool = False          # checklist: "None of these"
+    allow_unknown: bool = False       # date: "I don't remember"
+    prefill_key: Optional[str] = None  # profile value shown as the default
+    show_if: Optional[Dict[str, str]] = None  # {"field": id, "equals": "Yes"} or {"field": id, "includes": "Tattoo"}
+    female_only: bool = False
+    min: Optional[float] = None
+    max: Optional[float] = None
 
 
 class QuestionDefinition(BaseModel):
     question_id: str
-    section: str
-    section_index: int
-    question_text: str
-    question_type: str = "yes_no"
-    options: Optional[List[str]] = None
-    help: Optional[str] = None
-    parent_id: Optional[str] = None
-    trigger_answer: Optional[str] = None  # "yes", or "any" for checklist parents with at least one item ticked
-    female_only: bool = False
-    prefill_key: Optional[str] = None
+    number: int
+    title: str
+    text: str
+    parts: List[PartDefinition]
     confidential: bool = False
 
 
-SECTIONS: Dict[int, str] = {
-    1: "Personal Information",
-    2: "Previous Donation History",
-    3: "Current Health Status",
-    4: "Basic Eligibility",
-    5: "Medical History",
-    6: "Recent Medical Events (past 12 months)",
-    7: "Recent Diseases (past 12 months)",
-    8: "Dental & Medication History",
-    9: "Travel History",
-    10: "Infectious Disease Risk Assessment (confidential)",
-    11: "Recent Symptoms (past 6 months)",
-    12: "Female Donors",
-}
-
-MEDICAL_CONDITIONS = [
-    "Heart disease", "Heart surgery", "Stroke", "High blood pressure", "Low blood pressure", "Asthma",
-    "Chronic lung disease", "Tuberculosis", "Diabetes", "Thyroid disease", "Kidney disease", "Liver disease",
-    "Cancer", "Epilepsy", "Seizures", "Mental illness", "Blood disorders", "Bleeding disorders",
-    "G6PD deficiency", "Polycythemia", "Leprosy", "Syphilis", "Gonorrhea", "Severe allergies",
-]
-RECENT_EVENTS = [
-    "Blood transfusion", "Surgery", "Hospitalization", "Serious accident", "Vaccination", "Rabies treatment",
-    "Acupuncture", "Tattoo", "Piercing", "Imprisonment",
-]
-RECENT_DISEASES = [
-    "Jaundice", "Hepatitis B", "Hepatitis C", "Typhoid", "Tuberculosis", "Malaria", "Dengue", "Chickenpox",
-    "Measles", "COVID-19", "Other infectious disease",
-]
-DENTAL_MEDICATION = [
-    "Dental procedure", "Antibiotics", "Prescription medication", "Blood thinners", "Steroids", "Medication for an infection",
-]
-INFECTION_RISKS = [
-    "HIV/AIDS", "Hepatitis B", "Hepatitis C", "Syphilis", "Concern about possible HIV exposure", "Injected recreational drugs",
-    "Shared needles", "High-risk sexual behaviour", "Diagnosed with a sexually transmitted infection",
-    "Partner with a sexually transmitted infection or concern",
-]
-RECENT_SYMPTOMS = ["Persistent fever", "Night sweats", "Unexplained weight loss", "Diarrhea", "Swollen lymph nodes", "Unusual fatigue"]
-CURRENT_SYMPTOMS = ["Fever", "Cough", "Cold", "Sore throat", "Flu symptoms"]
-COMPLICATIONS = ["Fainting", "Dizziness", "Excessive bleeding", "Allergic reaction", "Other"]
+def _p(pid: str, label: str, ptype: str, **kwargs) -> PartDefinition:
+    if ptype == "yes_no":
+        kwargs.setdefault("options", YES_NO)
+    return PartDefinition(id=pid, label=label, type=ptype, **kwargs)
 
 
-def _q(qid: str, section: int, text: str, qtype: str = "yes_no", **kwargs) -> QuestionDefinition:
-    options = kwargs.pop("options", YES_NO if qtype == "yes_no" else None)
-    return QuestionDefinition(question_id=qid, section=SECTIONS[section], section_index=section, question_text=text,
-                              question_type=qtype, options=options, **kwargs)
-
-
-QUESTION_BANK: List[QuestionDefinition] = [
-    # Section 1 - Personal Information (pre-filled from the profile where LifeLink has it)
-    _q("P_NAME", 1, "Is your full name {value}?", "confirm", prefill_key="fullName"),
-    _q("P_NIC", 1, "What is your NIC or passport number?", "text", help="Your National Identity Card (or passport) number, used by the blood bank to identify you."),
-    _q("P_DOB", 1, "What is your date of birth?", "date", prefill_key="dateOfBirth", help="Use the format YYYY-MM-DD. Your age is worked out from it."),
-    _q("P_GENDER", 1, "What is your gender?", "select", options=["Male", "Female", "Other"], prefill_key="gender",
-       help="Some questions (such as pregnancy) are only asked to female donors."),
-    _q("P_ADDRESS", 1, "Is your address {value}?", "confirm", prefill_key="address"),
-    _q("P_MOBILE", 1, "Is your mobile number {value}?", "confirm", prefill_key="phoneNumber"),
-    _q("P_EMAIL", 1, "Is your email address {value}?", "confirm", prefill_key="email"),
-    _q("P_BLOOD_GROUP", 1, "What is your blood group, if you know it?", "select",
-       options=["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Don't know"], prefill_key="bloodGroup",
-       help="If you are not sure, choose \"Don't know\"; the blood bank tests it when you donate."),
-    _q("P_OCCUPATION", 1, "What is your occupation?", "text",
-       help="Some jobs (for example pilots, drivers of public transport or people working at heights) need a rest period after donating."),
-    _q("P_EMERGENCY_NAME", 1, "Who should we contact in an emergency? (name)", "text"),
-    _q("P_EMERGENCY_PHONE", 1, "What is your emergency contact's phone number?", "text"),
-
-    # Section 2 - Previous Donation History
-    _q("DH_BEFORE", 2, "Have you donated blood before?"),
-    _q("DH_LAST_DATE", 2, "When was your last donation? (YYYY-MM-DD, or YYYY-MM if you only know the month)", "date", parent_id="DH_BEFORE", trigger_answer="yes"),
-    _q("DH_COUNT", 2, "About how many times have you donated blood?", "number", parent_id="DH_BEFORE", trigger_answer="yes"),
-    _q("DH_COMPLICATIONS", 2, "Did you have any of these problems after a donation? Choose any that apply, or None.", "checklist",
-       options=COMPLICATIONS, parent_id="DH_BEFORE", trigger_answer="yes",
-       help="Problems during or after a previous donation help the staff take extra care this time."),
-    _q("DH_COMPLICATIONS_DETAILS", 2, "Please describe the problem you had after donating.", "text", parent_id="DH_COMPLICATIONS", trigger_answer="any"),
-    _q("DH_ADVISED_NOT", 2, "Has a doctor or blood bank ever advised you not to donate blood?"),
-    _q("DH_120_DAYS", 2, "Have at least 120 days (about 4 months) passed since your last donation?", parent_id="DH_BEFORE", trigger_answer="yes",
-       help="Whole blood donors must wait at least 120 days so the body can rebuild its red cells and iron."),
-
-    # Section 3 - Current Health Status
-    _q("CH_WELL", 3, "Are you feeling well today?"),
-    _q("CH_ATE_4H", 3, "Have you eaten a meal in the last 4 hours?", help="Donating on an empty stomach makes fainting more likely."),
-    _q("CH_SLEPT_6H", 3, "Did you sleep at least 6 hours last night?"),
-    _q("CH_SYMPTOMS", 3, "Do you have any of these right now? Choose any that apply, or None.", "checklist", options=CURRENT_SYMPTOMS),
-    _q("CH_TREATMENT", 3, "Are you currently under medical treatment?"),
-    _q("CH_TREATMENT_DETAILS", 3, "What treatment are you receiving, and for what?", "text", parent_id="CH_TREATMENT", trigger_answer="yes"),
-    _q("CH_ALCOHOL_24H", 3, "Have you had alcohol in the last 24 hours?"),
-
-    # Section 4 - Basic Eligibility
-    _q("BE_AGE_18_60", 4, "Are you between 18 and 60 years old?"),
-    _q("BE_WEIGHT_50", 4, "Do you weigh more than 50 kg?"),
-    _q("BE_PREGNANT", 4, "Are you pregnant?", female_only=True),
-    _q("BE_BREASTFEEDING", 4, "Are you breastfeeding?", female_only=True),
-    _q("BE_ABORTION_6M", 4, "Have you had an abortion in the last 6 months?", female_only=True),
-
-    # Section 5 - Medical History
-    _q("MH_CONDITIONS", 5, "Have you ever had any of these conditions? Choose any that apply, or None.", "checklist", options=MEDICAL_CONDITIONS,
-       help="These conditions can affect your safety when donating or the safety of the patient. Ask about any term you don't know."),
-    _q("MH_DETAILS", 5, "Please give details for each condition you selected (when it was diagnosed and any treatment).", "text",
-       parent_id="MH_CONDITIONS", trigger_answer="any"),
-
-    # Section 6 - Recent Medical Events (past 12 months)
-    _q("RE_EVENTS", 6, "In the past 12 months, have you had any of these? Choose any that apply, or None.", "checklist", options=RECENT_EVENTS),
-    _q("RE_DETAILS", 6, "Please give details and approximate dates for the items you selected.", "text", parent_id="RE_EVENTS", trigger_answer="any"),
-
-    # Section 7 - Recent Diseases (past 12 months)
-    _q("RD_DISEASES", 7, "In the past 12 months, have you had any of these illnesses? Choose any that apply, or None.", "checklist", options=RECENT_DISEASES),
-    _q("RD_DETAILS", 7, "Please give details and approximate dates for the illnesses you selected.", "text", parent_id="RD_DISEASES", trigger_answer="any"),
-    _q("RD_HEPATITIS_CONTACT", 7, "Have you been in close contact with someone who had hepatitis or jaundice in the past 12 months?"),
-    _q("RD_ANTIMALARIAL_3Y", 7, "Have you taken anti-malarial medication in the last 3 years?"),
-
-    # Section 8 - Dental & Medication History
-    _q("DM_ITEMS", 8, "Recently, have you had or taken any of these? Choose any that apply, or None.", "checklist", options=DENTAL_MEDICATION,
-       help="Dental treatment and some medicines (for example antibiotics or blood thinners) can mean waiting before donating."),
-    _q("DM_MEDICATIONS", 8, "Please list any medicines you currently take (or type None).", "text"),
-
-    # Section 9 - Travel History
-    _q("TR_ABROAD", 9, "Have you travelled outside Sri Lanka in the past 3 years?"),
-    _q("TR_MALARIA", 9, "Did you travel to a country where malaria is common?", parent_id="TR_ABROAD", trigger_answer="yes"),
-    _q("TR_COUNTRIES", 9, "Which countries did you visit?", "text", parent_id="TR_ABROAD", trigger_answer="yes"),
-    _q("TR_DATES", 9, "When did you travel? (approximate dates)", "text", parent_id="TR_ABROAD", trigger_answer="yes"),
-
-    # Section 10 - Infectious Disease Risk Assessment (confidential)
-    _q("IR_ITEMS", 10, "This section is confidential and seen only by the doctor. Does any of the following apply to you? Choose any that apply, or None.",
-       "checklist", options=INFECTION_RISKS, confidential=True,
-       help="These questions are asked of every donor because some infections cannot be detected straight after exposure. Your answer is private and does not judge you."),
-
-    # Section 11 - Recent Symptoms (past 6 months)
-    _q("RS_SYMPTOMS", 11, "In the past 6 months, have you had any of these? Choose any that apply, or None.", "checklist", options=RECENT_SYMPTOMS),
-
-    # Section 12 - Female Donors (pregnancy, breastfeeding and abortion were asked in Section 4)
-    _q("FD_DELIVERED_1Y", 12, "Have you given birth in the past 12 months?", female_only=True),
-    _q("FD_MISCARRIAGE", 12, "Have you had a miscarriage in the past 6 months?", female_only=True),
-
-    # Consent
-    _q("CONSENT", 12, "Do you confirm your answers are true and agree to share this report with the reviewing doctor?"),
+QUESTIONS: List[QuestionDefinition] = [
+    QuestionDefinition(question_id="Q1", number=1, title="About you",
+                       text="Please confirm your full name, date of birth and gender.",
+                       parts=[_p("P_NAME", "Full name", "text", prefill_key="fullName"),
+                              _p("P_DOB", "Date of birth", "date", prefill_key="dateOfBirth"),
+                              _p("P_GENDER", "Gender", "select", options=["Male", "Female", "Other"], prefill_key="gender")]),
+    QuestionDefinition(question_id="Q2", number=2, title="Weight and contact",
+                       text="What is your weight in kilograms, and a contact number we can reach you on?",
+                       parts=[_p("P_WEIGHT_KG", "Weight (kg)", "number", min=20, max=250),
+                              _p("P_CONTACT", "Contact number", "text", prefill_key="phoneNumber")]),
+    QuestionDefinition(question_id="Q3", number=3, title="Donation history",
+                       text="Have you donated blood before? If yes, when was your last donation?",
+                       parts=[_p("DH_BEFORE", "Donated blood before?", "yes_no"),
+                              _p("DH_LAST_DATE", "Date of your last donation", "date", allow_unknown=True,
+                                 show_if={"field": "DH_BEFORE", "equals": "Yes"})]),
+    QuestionDefinition(question_id="Q4", number=4, title="Today's health",
+                       text=("Are you feeling well today? Have you had a fever, cold, cough or any infection in the last 2 weeks? "
+                             "Have you eaten a main meal in the last 4 hours, slept at least 6 hours, and have you had any alcohol in the last 24 hours?"),
+                       parts=[_p("CH_WELL", "Feeling well today?", "yes_no"),
+                              _p("CH_INFECTION_2W", "Fever, cold, cough or infection in the last 2 weeks?", "yes_no"),
+                              _p("CH_MEAL_4H", "Main meal in the last 4 hours?", "yes_no"),
+                              _p("CH_SLEEP_6H", "Slept at least 6 hours?", "yes_no"),
+                              _p("CH_ALCOHOL_24H", "Alcohol in the last 24 hours?", "yes_no")]),
+    QuestionDefinition(question_id="Q5", number=5, title="Illness and medicines",
+                       text=("Do you have any serious or long-term illness: heart disease, diabetes, high blood pressure, epilepsy, "
+                             "hepatitis, cancer or a bleeding disorder? Are you taking any medicines now?"),
+                       parts=[_p("MH_CONDITIONS", "Serious or long-term illness", "checklist", options=CONDITIONS, allow_none=True),
+                              _p("MH_MEDICINES", "Taking any medicines now?", "yes_no"),
+                              _p("MH_MEDICINES_DETAILS", "Which medicines?", "text", required=False,
+                                 show_if={"field": "MH_MEDICINES", "equals": "Yes"})]),
+    QuestionDefinition(question_id="Q6", number=6, title="Tattoos, surgery and travel",
+                       text=("In the last 2 years, have you had a tattoo, surgery or a blood transfusion? "
+                             "In the last 3 years, have you travelled abroad? If so, which country and when did you come back?"),
+                       parts=[_p("RE_EVENTS", "In the last 2 years", "checklist", options=RECENT_EVENTS, allow_none=True),
+                              _p("RE_TATTOO_DATE", "Date of the tattoo", "date", allow_unknown=True, show_if={"field": "RE_EVENTS", "includes": "Tattoo"}),
+                              _p("RE_SURGERY_DATE", "Date of the surgery", "date", allow_unknown=True, show_if={"field": "RE_EVENTS", "includes": "Surgery"}),
+                              _p("RE_TRANSFUSION_DATE", "Date of the blood transfusion", "date", allow_unknown=True,
+                                 show_if={"field": "RE_EVENTS", "includes": "Blood transfusion"}),
+                              _p("TR_ABROAD", "Travelled abroad in the last 3 years?", "yes_no"),
+                              _p("TR_TRIPS", "Country and return date", "trips", show_if={"field": "TR_ABROAD", "equals": "Yes"})]),
+    QuestionDefinition(question_id="Q7", number=7, title="Final questions (confidential)", confidential=True,
+                       text=("These answers are confidential and seen only by the doctor. "
+                             "Do any of the National Blood Transfusion Service's risk behaviours apply to you? For example: ever injecting drugs, "
+                             "sex for money or drugs, more than one sexual partner in the last 12 months, or a partner who has HIV or hepatitis. "
+                             "Answer yes or no only; no details are recorded."),
+                       parts=[_p("FD_STATUS", "Pregnant, breastfeeding, or gave birth in the last year?", "checklist", options=FEMALE_STATUS,
+                                 allow_none=True, female_only=True),
+                              _p("IR_RISK", "Do any of these risk behaviours apply to you?", "yes_no")]),
 ]
 
-QUESTIONS_BY_ID = {q.question_id: q for q in QUESTION_BANK}
+QUESTIONS_BY_ID = {q.question_id: q for q in QUESTIONS}
+PARTS_BY_ID = {p.id: p for q in QUESTIONS for p in q.parts}
+CONFIRM_ID = "CONFIRM_TRUE"
+CONFIRM_TEXT = "I confirm my answers are true"
+NIC_REMINDER = "Please remember to bring your NIC (National Identity Card) when you come to donate."
 
 
-def _is_female(profile: Dict, answers: Dict[str, str]) -> bool:
+def is_female(profile: Dict[str, Any], answers: Dict[str, str]) -> bool:
     gender = answers.get("P_GENDER") or profile.get("gender") or ""
     return gender.strip().lower() == "female"
 
 
-def get_applicable_questions(profile: Optional[Dict] = None, answers: Optional[Dict[str, str]] = None) -> List[QuestionDefinition]:
-    """Questions that apply to this donor right now (gender and follow-up rules applied to the answers so far)."""
-    profile = profile or {}
-    answers = answers or {}
-    female = _is_female(profile, answers)
-    applicable: List[QuestionDefinition] = []
-    for q in QUESTION_BANK:
-        if q.female_only and not female:
+def _list(value: Optional[str]) -> List[str]:
+    import json
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+        return [str(v) for v in parsed] if isinstance(parsed, list) else []
+    except (ValueError, TypeError):
+        return []
+
+
+def part_applies(part: PartDefinition, profile: Dict[str, Any], answers: Dict[str, str]) -> bool:
+    if part.female_only and not is_female(profile, answers):
+        return False
+    if not part.show_if:
+        return True
+    parent = answers.get(part.show_if["field"])
+    if "equals" in part.show_if:
+        return (parent or "") == part.show_if["equals"]
+    return part.show_if.get("includes") in _list(parent)
+
+
+def applicable_parts(question: QuestionDefinition, profile: Dict[str, Any], answers: Dict[str, str]) -> List[PartDefinition]:
+    return [p for p in question.parts if part_applies(p, profile, answers)]
+
+
+def missing_parts(question: QuestionDefinition, profile: Dict[str, Any], answers: Dict[str, str]) -> List[PartDefinition]:
+    """Required parts of a question that still have no answer (follow-up parts appear once their trigger is answered)."""
+    return [p for p in applicable_parts(question, profile, answers) if p.required and p.id not in answers]
+
+
+def render_question(question: QuestionDefinition, profile: Dict[str, Any], answers: Dict[str, str],
+                    previous: Optional[Dict[str, str]] = None, follow_up: bool = False) -> Dict[str, Any]:
+    """The question as shown in the chat bubble: its text, every part (with defaults) and which parts are still missing."""
+    previous = previous or {}
+    female = is_female(profile, answers)
+    text = question.text
+    if question.question_id == "Q7" and female:
+        text = "Are you pregnant or breastfeeding, or have you given birth in the last year? And for everyone: " + text[0].lower() + text[1:]
+    missing = [p.id for p in missing_parts(question, profile, answers)]
+    parts = []
+    for p in question.parts:
+        if p.female_only and not female:
             continue
-        if q.parent_id:
-            parent_answer = (answers.get(q.parent_id) or "").strip().lower()
-            if q.trigger_answer == "any":
-                if parent_answer in ("", "none", "[]"):
-                    continue
-            elif parent_answer != (q.trigger_answer or "yes"):
-                continue
-        applicable.append(q)
-    return applicable
+        default = answers.get(p.id) or previous.get(p.id) or (profile.get(p.prefill_key) if p.prefill_key else None)
+        parts.append({**p.model_dump(exclude={"prefill_key", "female_only"}), "default": default})
+    return {"question_id": question.question_id, "number": question.number, "count": len(QUESTIONS), "title": question.title,
+            "text": text, "parts": parts, "missing": missing, "follow_up": follow_up, "confidential": question.confidential, "type": "parts"}
 
 
-def render_question(q: QuestionDefinition, profile: Dict, previous: Optional[str] = None) -> Dict:
-    """The question as shown to the donor, with pre-filled values and the previous answer when updating."""
-    text = q.question_text
-    prefill = profile.get(q.prefill_key) if q.prefill_key else None
-    if q.question_type == "confirm":
-        if prefill:
-            text = text.replace("{value}", str(prefill)) + " Reply yes to confirm, or type the correct value."
-        else:
-            text = text.replace("Is your", "What is your").replace(" {value}", "").rstrip("?") + "?"
-    elif prefill and q.question_type in ("date", "select"):
-        text += f" (Your profile says: {prefill}. Reply yes to keep it.)"
-    if previous:
-        text += f" (Your previous answer: {previous}. Reply \"same\" to keep it.)"
-    return {
-        "question_id": q.question_id,
-        "section": q.section,
-        "section_index": q.section_index,
-        "text": text,
-        "type": q.question_type,
-        "options": q.options,
-        "confidential": q.confidential,
-        "help": q.help,
-    }
+def render_confirm() -> Dict[str, Any]:
+    return {"question_id": CONFIRM_ID, "number": None, "count": len(QUESTIONS), "title": "Confirm", "type": "confirm",
+            "text": "Finally, please tick the box to confirm your answers and send them to the doctor.",
+            "parts": [{"id": CONFIRM_ID, "label": CONFIRM_TEXT, "type": "confirm", "required": True}], "missing": [CONFIRM_ID],
+            "follow_up": False, "confidential": False}
+
+
+def questionnaire_schema() -> List[Dict[str, Any]]:
+    """The question and part definitions, stored in each report so the edit form shows exactly what was asked."""
+    return [{"question_id": q.question_id, "number": q.number, "title": q.title, "text": q.text, "confidential": q.confidential,
+             "parts": [p.model_dump(exclude={"prefill_key"}) for p in q.parts]} for q in QUESTIONS]

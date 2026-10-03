@@ -23,6 +23,8 @@ namespace LifeLink.DTOs.Complaints
         public string? AssignedAdminEmail { get; set; }
         public DateTime? ResolvedAt { get; set; }
         public string? ResolutionNotes { get; set; }
+        // Set when the creator deleted the complaint (only the Admin still sees it, read-only)
+        public DateTime? DeletedAt { get; set; }
         public int ActivityReportsCount { get; set; }
         public List<ActivityReportResponseDto> ActivityReports { get; set; } = new List<ActivityReportResponseDto>();
         public List<ComplaintAuditLogDto> AuditLogs { get; set; } = new List<ComplaintAuditLogDto>();

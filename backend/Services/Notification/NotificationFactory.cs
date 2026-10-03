@@ -37,7 +37,7 @@ namespace LifeLink.Services.Notification
         public static Task<Guid?> DoctorUserIdAsync(AppDbContext context, Guid? doctorId) =>
             doctorId == null
                 ? Task.FromResult<Guid?>(null)
-                : context.Doctors.Where(d => d.DoctorId == doctorId).Select(d => d.UserId).FirstOrDefaultAsync();
+                : context.Doctors.Where(d => d.DoctorId == doctorId && d.DeletedAt == null).Select(d => d.UserId).FirstOrDefaultAsync();
 
         public static string ShortId(Guid id) => id.ToString()[..8];
     }

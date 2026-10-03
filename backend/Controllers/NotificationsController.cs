@@ -92,7 +92,7 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Dismisses (permanently deletes) one of the caller's own notifications.
+        /// Dismisses one of the caller's own notifications (hidden from their lists; kept in the database).
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize]

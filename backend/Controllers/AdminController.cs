@@ -238,7 +238,7 @@ namespace LifeLink.Controllers
 
             try
             {
-                var result = await _adminService.SuspendHospitalAsync(id, dto);
+                var result = await _adminService.SuspendHospitalAsync(id, dto, _currentUserService.UserId);
                 return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Hospital suspended successfully."));
             }
             catch (KeyNotFoundException ex)

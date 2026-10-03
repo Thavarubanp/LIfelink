@@ -47,8 +47,9 @@ class AgentClients:
     async def screening_start(self, acceptance_id: str) -> Dict[str, Any]:
         return await self._call("RequestManagementAgent", "POST", f"{self.screening_url}/api/agent/screening/start/{acceptance_id}", {})
 
-    async def screening_turn(self, acceptance_id: str, message: str) -> Dict[str, Any]:
-        return await self._call("RequestManagementAgent", "POST", f"{self.screening_url}/api/agent/screening/turn/{acceptance_id}", {"message": message})
+    async def screening_turn(self, acceptance_id: str, message: str, structured: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return await self._call("RequestManagementAgent", "POST", f"{self.screening_url}/api/agent/screening/turn/{acceptance_id}",
+                                {"message": message, "structured": structured})
 
     async def screening_session(self, acceptance_id: str) -> Dict[str, Any]:
         return await self._call("RequestManagementAgent", "GET", f"{self.screening_url}/api/agent/screening/session/{acceptance_id}")

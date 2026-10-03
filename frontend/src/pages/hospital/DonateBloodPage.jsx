@@ -206,22 +206,28 @@ export const DonateBloodPage = () => {
         ) : (
           <div className="space-y-3">
             {donations.map((d) => {
-              const status = DONATION_STATUS[d.status] || { label: d.status, variant: 'default' };
+              // A deleted request: the offer stays closed in the history, without the request's details
+              const deleted = d.requestDeleted;
+              const status = deleted ? { label: 'Closed', variant: 'default' } : DONATION_STATUS[d.status] || { label: d.status, variant: 'default' };
               return (
                 <div key={d.acceptanceId} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                   <div className="space-y-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="blood" size="sm">{d.requestBloodGroup}</Badge>
-                      <span className="font-bold text-slate-900 dark:text-slate-100">{d.packets?.length || 0} packet(s) to {d.hospitalName}</span>
+                      {!deleted && <Badge variant="blood" size="sm">{d.requestBloodGroup}</Badge>}
+                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                        {deleted ? `${d.packets?.length || 0} packet(s) offered to a deleted request` : `${d.packets?.length || 0} packet(s) to ${d.hospitalName}`}
+                      </span>
                       <Badge variant={status.variant} size="sm">{status.label}</Badge>
                     </div>
                     <p className="text-[11px] text-slate-500">
-                      Request #{String(d.bloodRequestId).substring(0, 8)} - offered {fmt(d.acceptedAt)}
+                      {deleted
+                        ? `Offered ${fmt(d.acceptedAt)} - Closed – the request was deleted by its creator.`
+                        : `Request #${String(d.bloodRequestId).substring(0, 8)} - offered ${fmt(d.acceptedAt)}`}
                     </p>
                     <p className="font-mono text-[11px] text-slate-600 dark:text-slate-300 break-words">
                       {(d.packets || []).map((p) => p.trackingNumber).join(', ')}
                     </p>
-                    {d.rejectionReason && d.status !== 'Matched' && (
+                    {!deleted && d.rejectionReason && d.status !== 'Matched' && (
                       <p className="text-[11px] text-rose-600 dark:text-rose-400"><span className="font-semibold">Reason:</span> {d.rejectionReason}</p>
                     )}
                   </div>

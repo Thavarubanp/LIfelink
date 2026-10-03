@@ -25,6 +25,7 @@ namespace LifeLink.Services.BloodRequests
 
             var expiredIds = await _context.BloodRequests
                 .Where(r => r.ExpiryDate <= now &&
+                            r.AdminSuspendedAt == null && // suspended requests are skipped (Q7)
                             r.Status != BloodRequestStatus.Completed &&
                             r.Status != BloodRequestStatus.Cancelled &&
                             r.Status != BloodRequestStatus.Rejected &&

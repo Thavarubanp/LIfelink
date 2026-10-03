@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, CheckCircle2, FileText, Loader2, LogOut, PencilLine, Stethoscope, XCircle } from 'lucide-react';
 import { acceptanceApi } from '../../api';
-import { Badge } from '../../components/common/Badge';
+import { Badge, SuspendedBadge } from '../../components/common/Badge';
+import { ScreeningAnswersForm } from '../../components/screening/ScreeningAnswersForm';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 
@@ -48,6 +49,7 @@ export const MyAcceptancesPage = () => {
   const [acceptances, setAcceptances] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(null);
+  const [answersView, setAnswersView] = useState(null); // { data, mode: 'view' | 'edit' }
   const { addToast } = useNotification();
   const navigate = useNavigate();
 
@@ -86,14 +88,37 @@ export const MyAcceptancesPage = () => {
     }
   };
 
-  const updateAnswers = async (a) => {
-    if (!window.confirm('Update your answers? Your current report is kept in the history and a new version will be sent to the doctor.')) return;
+  // 7.3: everything the donor submitted (latest version), read-only
+  const viewAnswers = async (a) => {
     setBusy(a.acceptanceId);
     try {
+      setAnswersView({ data: await acceptanceApi.getScreeningAnswers(a.acceptanceId), mode: 'view' });
+    } catch (err) {
+      addToast({ title: 'Could not load your answers', message: getApiErrorMessage(err), type: 'error' });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // 7.2: a normal form prefilled with the submitted answers (no new chat). Answers from the earlier questionnaire are
+  // updated in the chat instead, as before.
+  const updateAnswers = async (a) => {
+    setBusy(a.acceptanceId);
+    try {
+      const data = await acceptanceApi.getScreeningAnswers(a.acceptanceId);
+      if (Array.isArray(data.questionnaire)) {
+        setAnswersView({ data, mode: 'edit' });
+        setBusy(null);
+        return;
+      }
+      if (!window.confirm('Update your answers? Your current report is kept in the history and a new version will be sent to the doctor.')) {
+        setBusy(null);
+        return;
+      }
       await acceptanceApi.reopenScreening(a.acceptanceId);
       navigate(`/donor/acceptances/${a.acceptanceId}/screening`);
     } catch (err) {
-      addToast({ title: 'Could not reopen screening', message: getApiErrorMessage(err), type: 'error' });
+      addToast({ title: 'Could not update your answers', message: getApiErrorMessage(err), type: 'error' });
       if (isConflictError(err)) setReloadKey((k) => k + 1);
       setBusy(null);
     }
@@ -119,35 +144,51 @@ export const MyAcceptancesPage = () => {
       ) : (
         <div className="space-y-4">
           {acceptances.map((a) => {
-            const status = STATUS[a.status] || { label: a.status, variant: 'default' };
+            // A deleted request: the acceptance stays closed in the history, without the request's details
+            const deleted = a.requestDeleted;
+            const status = deleted ? { label: 'Closed', variant: 'default' } : STATUS[a.status] || { label: a.status, variant: 'default' };
             const latest = a.screeningHistory?.[a.screeningHistory.length - 1];
-            const canUpdate = a.status === 'ScreeningCompleted' && latest?.status === 'Pending';
+            const canUpdate = !a.requestSuspended && a.status === 'ScreeningCompleted' && latest?.status === 'Pending';
             return (
               <div key={a.acceptanceId} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
                 <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-red-600 text-white font-black flex items-center justify-center shrink-0">{a.requestBloodGroup || '?'}</div>
+                    <div className={`w-11 h-11 rounded-xl font-black flex items-center justify-center shrink-0 ${deleted ? 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400' : 'bg-red-600 text-white'}`}>
+                      {deleted ? '—' : a.requestBloodGroup || '?'}
+                    </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{a.hospitalName || 'Hospital'}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{deleted ? 'Blood request deleted' : a.hospitalName || 'Hospital'}</h3>
                         <Badge variant={status.variant} size="sm">{status.label}</Badge>
-                        {a.requestStatus === 'Deleted' && <Badge variant="default" size="sm">Request deleted</Badge>}
+                        {!deleted && a.requestSuspended && <SuspendedBadge />}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Request #{String(a.bloodRequestId).substring(0, 8)} - accepted {fmt(a.acceptedAt)} - {a.fulfilledUnits}/{a.unitsRequired} donated, {a.reservedUnits} reserved
+                        {deleted
+                          ? `Accepted ${fmt(a.acceptedAt)} - Closed – the request was deleted by its creator.`
+                          : `Request #${String(a.bloodRequestId).substring(0, 8)} - accepted ${fmt(a.acceptedAt)} - ${a.fulfilledUnits}/${a.unitsRequired} donated, ${a.reservedUnits} reserved`}
                       </p>
-                      {status.next && <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5">{status.next}</p>}
-                      {a.rejectionReason && (a.status === 'Rejected' || a.status === 'Cancelled') && (
+                      {!deleted && a.requestSuspended ? (
+                        <p className="text-xs text-rose-600 dark:text-rose-400 mt-1.5">The administrator has temporarily suspended this request. You can still withdraw; everything else waits until the suspension is lifted.</p>
+                      ) : (
+                        !deleted && status.next && <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5">{status.next}</p>
+                      )}
+                      {!deleted && a.rejectionReason && (a.status === 'Rejected' || a.status === 'Cancelled') && (
                         <p className="text-xs text-rose-600 dark:text-rose-400 mt-1.5"><span className="font-semibold">Reason:</span> {a.rejectionReason}</p>
                       )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2 shrink-0">
-                    {(a.status === 'Accepted' || a.status === 'ScreeningPending') && (
+                    {!a.requestSuspended && (a.status === 'Accepted' || a.status === 'ScreeningPending') && (
                       <Link to={`/donor/acceptances/${a.acceptanceId}/screening`}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700">
                         <Stethoscope className="w-3.5 h-3.5" /> {a.status === 'Accepted' ? 'Start screening' : 'Continue screening'}
                       </Link>
+                    )}
+                    {!deleted && a.screeningHistory?.length > 0 && (
+                      <button type="button" disabled={busy === a.acceptanceId} onClick={() => viewAnswers(a)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
+                        <FileText className="w-3.5 h-3.5" /> View my answers
+                      </button>
                     )}
                     {canUpdate && (
                       <button type="button" disabled={busy === a.acceptanceId} onClick={() => updateAnswers(a)}
@@ -168,6 +209,18 @@ export const MyAcceptancesPage = () => {
             );
           })}
         </div>
+      )}
+      {answersView && (
+        <ScreeningAnswersForm
+          data={answersView.data}
+          mode={answersView.mode}
+          onClose={() => setAnswersView(null)}
+          onSaved={() => {
+            setAnswersView(null);
+            addToast({ title: 'Answers sent', message: 'Your updated answers were sent. The doctor will receive the new version shortly.', type: 'success' });
+            setReloadKey((k) => k + 1);
+          }}
+        />
       )}
     </div>
   );

@@ -68,6 +68,9 @@ namespace LifeLink.Services.Assistant
                     .TakeLast(MaxHistoryTurns)
                     .Select(t => new { role = t.Role == "assistant" ? "assistant" : "user", content = (t.Content ?? string.Empty).Length > 2000 ? t.Content![..2000] : t.Content ?? string.Empty }),
                 acceptanceId = dto.AcceptanceId?.ToString(),
+                // Screening answers from the question bubble (only with an acceptance; size-limited)
+                structured = dto.AcceptanceId.HasValue && dto.Structured is { Count: > 0 and <= 40 } &&
+                             JsonSerializer.Serialize(dto.Structured).Length <= 10_000 ? dto.Structured : null,
                 user = new { role, firstName = user.FirstName },
                 snapshot
             };

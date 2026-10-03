@@ -20,9 +20,20 @@ namespace LifeLink.Entities
         public DateTime ExpiryDate { get; set; }
         public DateTime? CancelledAt { get; set; }
 
+        /// <summary>Set when the creator deletes the request (Status = Deleted). Nothing is removed; only the Admin still sees it.</summary>
+        public DateTime? DeletedAt { get; set; }
+
         /// <summary>
         /// Message shown to the creator when the hospital, the assigned doctor, or expiry rejects the request.
         /// </summary>
         public string? RejectionReason { get; set; }
+
+        /// <summary>
+        /// Admin suspension (Phase 3B): while set, nobody can act on it (refused with 409), except the Q7 exceptions for
+        /// blood requests (a donor withdrawing and the creator deleting). Cleared when the admin lifts it.
+        /// </summary>
+        public DateTime? AdminSuspendedAt { get; set; }
+        public Guid? AdminSuspendedByUserId { get; set; }
+        public string? AdminSuspensionReason { get; set; }
     }
 }

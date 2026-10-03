@@ -16,6 +16,8 @@ namespace LifeLink.DTOs.Doctors
         public string Specialization { get; set; } = string.Empty;
         public bool IsActive { get; set; }
         public bool MustChangePassword { get; set; }
+        // Set when the hospital removed the doctor (only the Admin still sees removed doctors)
+        public DateTime? DeletedAt { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

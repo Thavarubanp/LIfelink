@@ -15,6 +15,9 @@ namespace LifeLink.DTOs.Assistant
 
         /// <summary>Set for the donor screening interview of this acceptance.</summary>
         public Guid? AcceptanceId { get; set; }
+
+        /// <summary>Screening only: values from the inputs inside the question bubble (field id -> value).</summary>
+        public Dictionary<string, JsonElement>? Structured { get; set; }
     }
 
     public class AssistantTurnDto

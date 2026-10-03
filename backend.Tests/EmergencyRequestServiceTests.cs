@@ -208,5 +208,28 @@ namespace LifeLink.Tests
             Assert.Single(criticalRequests);
             Assert.Equal("Critical", criticalRequests.First().Priority);
         }
+
+        [Fact]
+        public async Task Emergency_Alerts_Go_Only_To_Hospitals_Holding_The_Exact_Blood_Group()
+        {
+            var context = GetInMemoryDbContext();
+            Hospital H(string name, bool suspended = false) => new() { HospitalId = Guid.NewGuid(), Name = name, Email = $"{Guid.NewGuid():N}@example.test", IsVerified = true, IsSuspended = suspended, ApprovalStatus = ApprovalStatus.Approved };
+            var requester = H("Requester");
+            var exact = H("Exact");
+            var compatible = H("Compatible only");
+            var suspended = H("Suspended", suspended: true);
+            context.Hospitals.AddRange(requester, exact, compatible, suspended);
+            BloodPacket P(Hospital h, string group, int days = 30) => new() { HospitalId = h.HospitalId, CreatedByHospitalId = h.HospitalId, BloodGroup = group,
+                TrackingNumber = $"PKT-T{Guid.NewGuid():N}"[..12], CollectionDate = DateTime.UtcNow.AddDays(-1), ExpiryDate = DateTime.UtcNow.AddDays(days) };
+            context.BloodPackets.AddRange(P(exact, "A+"), P(exact, "A+"), P(compatible, "O-"), P(suspended, "A+"), P(requester, "A+"), P(compatible, "A+", days: -1));
+            await context.SaveChangesAsync();
+
+            var holders = await new EmergencyRequestService(context).FindHospitalsWithExactGroupStockAsync(
+                new EmergencyRequest { HospitalId = requester.HospitalId, BloodGroup = "A+", UnitsRequired = 2 });
+
+            var holder = Assert.Single(holders); // O- can be given to A+, but only the exact group counts; expired packets do not
+            Assert.Equal(exact.HospitalId, holder.HospitalId);
+            Assert.Equal(2, holder.Units);
+        }
     }
 }

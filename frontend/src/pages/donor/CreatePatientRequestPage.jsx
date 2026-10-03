@@ -47,14 +47,14 @@ export const CreatePatientRequestPage = () => {
   const [error, setError] = useState('');
   const { addToast } = useNotification();
 
-  // Hospital staff: their own doctors with an active login (the backend enforces the same rule)
+  // Hospital staff: their own doctors with an active login who have completed their first login (the backend enforces the same rule)
   const [doctors, setDoctors] = useState([]);
   useEffect(() => {
     if (!isHospitalStaff) return;
     doctorApi.getDoctors()
       .then((res) => {
         const list = res?.data || (Array.isArray(res) ? res : []);
-        setDoctors(list.filter((d) => d.isActive && d.userId));
+        setDoctors(list.filter((d) => d.isActive && d.userId && !d.mustChangePassword));
       })
       .catch(() => setDoctors([]));
   }, [isHospitalStaff]);
@@ -325,7 +325,7 @@ export const CreatePatientRequestPage = () => {
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                 {doctors.length === 0
-                  ? 'Add a doctor under Doctor Management first.'
+                  ? 'No doctor can be assigned yet: add a doctor under Doctor Management, and the doctor must sign in and change the temporary password first.'
                   : 'This doctor approves the request and any hospital donation to it.'}
               </p>
             </div>

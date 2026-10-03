@@ -79,6 +79,7 @@ builder.Services.AddScoped<IBloodInventoryService, BloodInventoryService>();
 builder.Services.AddScoped<IEmergencyRequestService, EmergencyRequestService>();
 builder.Services.AddScoped<ITransferRequestService, TransferRequestService>();
 builder.Services.AddScoped<InventoryMonitor>();
+builder.Services.AddScoped<InventoryAnalysisService>();
 
 // Student 2 Services Injection
 builder.Services.AddHttpClient<INotificationAgentService, NotificationAgentService>();
@@ -91,6 +92,7 @@ builder.Services.AddScoped<IMatchingService, MatchingService>();
 // Student 1 Services Injection
 builder.Services.AddScoped<IBloodCompatibilityService, BloodCompatibilityService>();
 builder.Services.AddScoped<IBloodRequestService, BloodRequestService>();
+builder.Services.AddHttpClient<IScreeningAgentClient, ScreeningAgentClient>(client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddScoped<IAcceptanceService, AcceptanceService>();
 builder.Services.AddScoped<IRequestExpiryService, RequestExpiryService>();
 builder.Services.AddHostedService<RequestExpiryBackgroundService>();
@@ -99,6 +101,7 @@ builder.Services.AddHostedService<RequestExpiryBackgroundService>();
 builder.Services.AddHttpClient<IPlanningAgentService, PlanningAgentService>();
 builder.Services.AddScoped<IAdminNotificationService, AdminNotificationService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
+builder.Services.AddScoped<IAdminOversightActionsService, AdminOversightActionsService>();
 builder.Services.AddScoped<IComplaintService, ComplaintService>();
 builder.Services.AddScoped<IHospitalActivityService, HospitalActivityService>();
 builder.Services.AddScoped<IAppealService, AppealService>();

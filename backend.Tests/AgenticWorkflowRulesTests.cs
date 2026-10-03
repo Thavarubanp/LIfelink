@@ -50,7 +50,7 @@ namespace LifeLink.Tests
 
             var hospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "General Hospital", Email = "gh@h.org", IsVerified = true };
             var other = new Hospital { HospitalId = Guid.NewGuid(), Name = "Other Hospital", Email = "oh@h.org", IsVerified = true };
-            Doctor NewDoctor(Hospital h, string name) => new() { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = h.HospitalId, FirstName = name, LastName = "MD", Email = $"{name}@h.org", IsActive = true };
+            Doctor NewDoctor(Hospital h, string name) => new() { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = h.HospitalId, FirstName = name, LastName = "MD", Email = $"{name}@h.org", IsActive = true, MustChangePassword = false };
             var assigned = NewDoctor(hospital, "Assigned");
             var fallback = NewDoctor(hospital, "Fallback");
             var outsider = NewDoctor(other, "Outsider");
@@ -323,7 +323,8 @@ namespace LifeLink.Tests
         public async Task Emergency_Donor_Candidates_Follow_Every_Eligibility_Rule()
         {
             var w = await CreateWorldAsync();
-            var eligible = await AddDonorAsync(w, "O-");
+            var eligible = await AddDonorAsync(w, "O+");
+            await AddDonorAsync(w, "O-");                                                            // compatible with O+, but alerts are exact-group only
             await AddDonorAsync(w, "A+");                                                            // incompatible with O+
             await AddDonorAsync(w, "O+", u => u.LastDonationDate = DateTime.UtcNow.AddDays(-100));    // inside 120 days
             await AddDonorAsync(w, "O+", u => { u.IsSuspended = true; u.AccountStatus = AccountStatus.Suspended; });

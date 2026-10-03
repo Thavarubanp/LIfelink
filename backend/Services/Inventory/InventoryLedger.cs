@@ -23,24 +23,42 @@ namespace LifeLink.Services.Inventory
 
         private static long _nonRelationalTrackingCounter; // in-memory test databases have no sequences
 
-        /// <summary>Returns the tracked (hospital, blood group) inventory row, creating an empty one when missing.</summary>
+        // Threshold and capacity of a blood group created (or restored) automatically by adding packets; staff can
+        // change them later with "Thresholds". A threshold above 0 lets the below-threshold alerts work for it.
+        public const int DefaultMinimumThreshold = 5;
+        public const int DefaultMaximumCapacity = 100;
+
+        /// <summary>
+        /// Returns the tracked (hospital, blood group) inventory row, creating an empty one when missing. A deleted
+        /// (unused) group is restored with the default threshold (5) and capacity (100), as if it were created now.
+        /// </summary>
         public static async Task<BloodInventory> GetOrCreateInventoryAsync(AppDbContext context, Guid hospitalId, string bloodGroup)
         {
             var inventory = context.BloodInventories.Local
                                 .FirstOrDefault(i => i.HospitalId == hospitalId && i.BloodGroup == bloodGroup)
                             ?? await context.BloodInventories
                                 .FirstOrDefaultAsync(i => i.HospitalId == hospitalId && i.BloodGroup == bloodGroup);
-            if (inventory != null) return inventory;
-
             var now = DateTime.UtcNow;
+            if (inventory != null)
+            {
+                if (inventory.DeletedAt != null)
+                {
+                    inventory.DeletedAt = null;
+                    inventory.MinimumThreshold = DefaultMinimumThreshold;
+                    inventory.MaximumCapacity = DefaultMaximumCapacity;
+                    inventory.UpdatedAt = now;
+                }
+                return inventory;
+            }
+
             inventory = new BloodInventory
             {
                 InventoryId = Guid.NewGuid(),
                 HospitalId = hospitalId,
                 BloodGroup = bloodGroup,
                 UnitsAvailable = 0,
-                MinimumThreshold = 0,
-                MaximumCapacity = 100,
+                MinimumThreshold = DefaultMinimumThreshold,
+                MaximumCapacity = DefaultMaximumCapacity,
                 LastUpdated = now,
                 CreatedAt = now,
                 UpdatedAt = now

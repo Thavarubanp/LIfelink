@@ -18,6 +18,8 @@ namespace LifeLink.Entities
         public Guid? AssignedAdminId { get; set; }
         public DateTime? ResolvedAt { get; set; }
         public string? ResolutionNotes { get; set; }
+        /// <summary>Set when the creator deletes the complaint. It stays in the database (with its thread) for the Admin.</summary>
+        public DateTime? DeletedAt { get; set; }
 
         // Navigation properties
         public User? User { get; set; }

@@ -84,8 +84,8 @@ namespace LifeLink.Tests
                 Donor2 = new User { UserId = Guid.NewGuid(), FirstName = "Don", LastName = "Two", Email = "donor2@h.org", BloodGroup = "O+" },
                 Admin = new User { UserId = Guid.NewGuid(), FirstName = "Ad", LastName = "Min", Email = "admin@h.org" }
             };
-            w.DoctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = w.A.HospitalId, FirstName = "Ann", LastName = "Doc", Email = "ann@a.org", IsActive = true };
-            w.FallbackDoctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = w.A.HospitalId, FirstName = "Ola", LastName = "Doc", Email = "ola@a.org", IsActive = true };
+            w.DoctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = w.A.HospitalId, FirstName = "Ann", LastName = "Doc", Email = "ann@a.org", IsActive = true, MustChangePassword = false };
+            w.FallbackDoctorA = new Doctor { DoctorId = Guid.NewGuid(), UserId = Guid.NewGuid(), HospitalId = w.A.HospitalId, FirstName = "Ola", LastName = "Doc", Email = "ola@a.org", IsActive = true, MustChangePassword = false };
 
             await db.Hospitals.AddRangeAsync(w.A, w.B);
             await db.Users.AddRangeAsync(w.StaffA, w.StaffB, w.Patient, w.Donor, w.Donor2, w.Admin);

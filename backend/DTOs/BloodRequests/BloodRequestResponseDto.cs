@@ -21,6 +21,12 @@ namespace LifeLink.DTOs.BloodRequests
         public DateTime UpdatedAt { get; set; }
         public DateTime ExpiryDate { get; set; }
         public DateTime? CancelledAt { get; set; }
+        public DateTime? DeletedAt { get; set; } // set when the creator deleted it (only the Admin still sees it)
+
+        // Admin suspension (Phase 3B): while suspended nobody can act on it (see SuspensionGuard)
+        public bool IsSuspended { get; set; }
+        public DateTime? SuspendedAt { get; set; }
+        public string? SuspensionReason { get; set; }
         public string? RejectionReason { get; set; }
 
         // Display details resolved from related records

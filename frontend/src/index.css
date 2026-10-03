@@ -164,6 +164,72 @@
   :root:not(.dark) .ll-auth-page .fixed.inset-0[class*='bg-slate-950'] {
     background-color: rgb(2 6 23 / 0.72) !important;
   }
+
+  /* Register pages and the hospital waiting page (light theme): the remaining dark-only colours, so every text stays readable on the
+     light surfaces mapped above. */
+  :root:not(.dark) .ll-register-page :is(a, button, span, label, strong, div).text-white[class*='bg-slate-'],
+  :root:not(.dark) .ll-register-page :is(span, label, strong, a).text-white:not([class*='bg-']) {
+    color: var(--color-slate-900) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class*='hover:bg-slate-7']:hover {
+    background-color: var(--color-slate-200) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class*='hover:text-white']:hover {
+    color: var(--color-slate-900) !important;
+  }
+
+  :root:not(.dark) .ll-register-page :is([class~='text-cyan-300'], [class~='text-cyan-400']) {
+    color: var(--color-cyan-700) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class~='text-blue-400'] {
+    color: var(--color-blue-700) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class~='text-rose-400'] {
+    color: var(--color-rose-700) !important;
+  }
+
+  :root:not(.dark) .ll-register-page :is([class*='bg-cyan-950'], [class*='bg-blue-950']) {
+    background-color: var(--color-sky-50) !important;
+    border-color: var(--color-sky-200) !important;
+  }
+
+  :root:not(.dark) .ll-register-page :is([class~='text-cyan-100'], [class~='text-blue-100']) {
+    color: var(--color-slate-800) !important;
+  }
+
+  :root:not(.dark) .ll-register-page :is([class~='text-amber-300'], [class~='text-amber-400']) {
+    color: var(--color-amber-700) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class~='text-emerald-400'] {
+    color: var(--color-emerald-700) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class~='text-red-400'] {
+    color: var(--color-red-600) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class*='bg-red-950'] {
+    background-color: var(--color-red-50) !important;
+    border-color: var(--color-red-200) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class~='text-red-200'] {
+    color: var(--color-red-800) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class*='bg-emerald-950'] {
+    background-color: var(--color-emerald-50) !important;
+    border-color: var(--color-emerald-200) !important;
+  }
+
+  :root:not(.dark) .ll-register-page [class~='text-emerald-200'] {
+    color: var(--color-emerald-800) !important;
+  }
 }
 
 @media (max-width: 639px) {

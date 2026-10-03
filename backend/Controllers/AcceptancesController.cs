@@ -178,6 +178,64 @@ namespace LifeLink.Controllers
             }
         }
 
+        /// <summary>7.3: the donor's own submitted screening answers (latest version; no AI risk level, flags or summary).</summary>
+        [HttpGet("{id:guid}/screening-answers")]
+        [ProducesResponseType(typeof(ScreeningAnswersDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetScreeningAnswers(Guid id)
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue) return Unauthorized();
+            try
+            {
+                return Ok(await _acceptanceService.GetScreeningAnswersAsync(id, userId.Value));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// 7.2: the donor saves the edit form while their report waits for the doctor. The answers are checked first; the
+        /// current version is then superseded and the new one is built in the background (no chat). 400 lists what to fix.
+        /// </summary>
+        [HttpPut("{id:guid}/screening-answers")]
+        [ProducesResponseType(typeof(AcceptanceResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status409Conflict)]
+        [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+        public async Task<IActionResult> UpdateScreeningAnswers(Guid id, [FromBody] UpdateScreeningAnswersDto dto)
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue) return Unauthorized();
+            try
+            {
+                return Ok(await _acceptanceService.UpdateScreeningAnswersAsync(id, userId.Value, dto.Answers));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (ScreeningAgentUnavailableException ex)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         /// <summary>
         /// Screening status changes. The Request Management agent opens the interview (Accepted → ScreeningPending);
         /// the donor reopens their own answers while the report awaits the doctor (ScreeningCompleted → ScreeningPending,

@@ -42,5 +42,6 @@ class ChatRequest(BaseModel):
     message: str = ""
     history: List[ChatTurn] = Field(default_factory=list)
     acceptanceId: Optional[str] = None
+    structured: Optional[Dict[str, Any]] = None  # screening: values from the inputs inside the question bubble
     user: ChatUser = Field(default_factory=ChatUser)
     snapshot: Dict[str, Any] = Field(default_factory=dict)

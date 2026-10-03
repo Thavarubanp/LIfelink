@@ -128,6 +128,10 @@ namespace LifeLink.Controllers
 
             var userRoles = _currentUserService.Roles.ToList();
 
+            // A removed doctor is visible to the Admin only
+            if (doctor.DeletedAt != null && !userRoles.Contains("Admin"))
+                return NotFound(ApiResponse<object>.Fail($"Doctor with ID {id} not found."));
+
             // Hospital staff: verify the doctor belongs to their hospital
             if (userRoles.Contains("HospitalStaff") && !userRoles.Contains("Admin"))
             {
@@ -148,8 +152,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Deletes a doctor created by the authenticated hospital, including the doctor's login account.
-        /// Blood request history handled by the doctor is preserved.
+        /// Removes a doctor created by the authenticated hospital (soft delete): the doctor disappears from the hospital's
+        /// lists and pickers and can no longer sign in; history shows "Removed doctor" and the Admin still sees the record.
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize(Roles = "HospitalStaff")]

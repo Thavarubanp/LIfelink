@@ -23,5 +23,10 @@ namespace LifeLink.DTOs.Transfer
         public DateTime? RejectedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+
+        // Admin suspension (Phase 3B): while suspended nobody can act on it (see SuspensionGuard)
+        public bool IsSuspended { get; set; }
+        public DateTime? SuspendedAt { get; set; }
+        public string? SuspensionReason { get; set; }
     }
 }

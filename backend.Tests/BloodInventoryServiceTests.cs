@@ -223,7 +223,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task DeleteInventoryAsync_Removes_An_Unused_Category_But_Keeps_Categories_With_History()
+        public async Task DeleteInventoryAsync_Soft_Deletes_An_Unused_Category_But_Keeps_Categories_With_History()
         {
             using var context = GetInMemoryDbContext();
             var service = new BloodInventoryService(context);
@@ -233,8 +233,54 @@ namespace LifeLink.Tests
             var withHistory = await context.BloodInventories.SingleAsync(i => i.BloodGroup == "O+");
 
             Assert.True(await service.DeleteInventoryAsync(empty.InventoryId));
-            Assert.Null(await context.BloodInventories.FindAsync(empty.InventoryId));
+            // Soft delete: the row stays but is hidden from every list
+            Assert.NotNull((await context.BloodInventories.FindAsync(empty.InventoryId))!.DeletedAt);
+            Assert.DoesNotContain(await service.GetHospitalInventoryAsync(hospitalId), i => i.InventoryId == empty.InventoryId);
+            Assert.Null(await service.GetInventoryByIdAsync(empty.InventoryId));
+            Assert.False(await service.DeleteInventoryAsync(empty.InventoryId));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteInventoryAsync(withHistory.InventoryId));
+        }
+
+        [Fact]
+        public async Task A_Group_Created_By_Adding_Packets_Gets_Threshold_5_And_Capacity_100()
+        {
+            using var context = GetInMemoryDbContext();
+            var hospitalId = await AddHospitalAsync(context);
+
+            await AddPacketsAsync(context, hospitalId, "B-", 2);
+
+            var created = await context.BloodInventories.SingleAsync(i => i.HospitalId == hospitalId && i.BloodGroup == "B-");
+            Assert.Equal(5, created.MinimumThreshold);
+            Assert.Equal(100, created.MaximumCapacity);
+            Assert.Equal(2, created.UnitsAvailable);
+        }
+
+        [Fact]
+        public async Task Adding_A_Deleted_Group_Again_Restores_The_Row_With_The_New_Threshold_And_Capacity()
+        {
+            using var context = GetInMemoryDbContext();
+            var service = new BloodInventoryService(context);
+            var hospitalId = await AddHospitalAsync(context);
+            var first = await service.CreateInventoryAsync(new CreateInventoryDto { HospitalId = hospitalId, BloodGroup = "AB-", MinimumThreshold = 5, MaximumCapacity = 50 });
+            await service.DeleteInventoryAsync(first.InventoryId);
+
+            var again = await service.CreateInventoryAsync(new CreateInventoryDto { HospitalId = hospitalId, BloodGroup = "AB-", MinimumThreshold = 8, MaximumCapacity = 70 });
+
+            Assert.Equal(first.InventoryId, again.InventoryId); // same row restored, no duplicate
+            Assert.Equal(8, again.MinimumThreshold);
+            Assert.Equal(70, again.MaximumCapacity);
+            Assert.Null((await context.BloodInventories.FindAsync(first.InventoryId))!.DeletedAt);
+            Assert.Equal(1, await context.BloodInventories.CountAsync(i => i.HospitalId == hospitalId && i.BloodGroup == "AB-"));
+
+            // Adding packets of a deleted group also restores it (with the default threshold 5 and capacity 100)
+            await service.DeleteInventoryAsync(first.InventoryId);
+            await AddPacketsAsync(context, hospitalId, "AB-", 1);
+            var restored = await context.BloodInventories.SingleAsync(i => i.HospitalId == hospitalId && i.BloodGroup == "AB-");
+            Assert.Null(restored.DeletedAt);
+            Assert.Equal(InventoryLedger.DefaultMinimumThreshold, restored.MinimumThreshold);
+            Assert.Equal(5, restored.MinimumThreshold);
+            Assert.Equal(100, restored.MaximumCapacity);
+            Assert.Equal(1, restored.UnitsAvailable);
         }
     }
 }

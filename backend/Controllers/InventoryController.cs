@@ -88,7 +88,41 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Retrieves low-stock blood inventory records (units available <= minimum threshold).
+        /// Starts the inventory analysis now (hospital staff only; there is no admin button). Same code and lock as the
+        /// scheduled run: 409 "Analysis is already running" or "Analysis ran moments ago — try again in N s" (2-minute
+        /// global cooldown). Returns the run: alerts sent per kind and repeated alerts skipped.
+        /// </summary>
+        [HttpPost("analysis/run")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<InventoryAnalysisRunDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> RunAnalysis([FromServices] InventoryAnalysisService analysis)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+            var run = await analysis.RunAsync(LifeLink.Entities.InventoryAnalysisTriggers.Manual, hospitalId, _currentUserService.UserId);
+            if (run.Status == LifeLink.Entities.InventoryAnalysisStatuses.Failed)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, ApiResponse<object>.Fail("The analysis failed. Please try again later."));
+            }
+            return Ok(ApiResponse<InventoryAnalysisRunDto>.Ok(run, "Inventory analysis complete."));
+        }
+
+        /// <summary>
+        /// Lock state, last run (with who started it) and the next scheduled run: the same answer for every hospital.
+        /// Polled every 15 s in the background (does not extend the session).
+        /// </summary>
+        [HttpGet("analysis/status")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<InventoryAnalysisStatusDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAnalysisStatus([FromServices] InventoryAnalysisService analysis) =>
+            Ok(ApiResponse<InventoryAnalysisStatusDto>.Ok(await analysis.GetStatusAsync(), "Inventory analysis status."));
+
+        /// <summary>
+        /// Retrieves low-stock blood inventory records (units available &lt; minimum threshold, the single rule in InventoryRules).
         /// </summary>
         [HttpGet("low-stock")]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryResponseDto>>), StatusCodes.Status200OK)]

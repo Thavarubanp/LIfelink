@@ -31,7 +31,7 @@ The other hospital accepts or rejects; no doctor or AI approval is needed. When 
 
 # Emergency Center
 
-The Emergency Center is for hospital-to-hospital support: raising an emergency alerts other approved hospitals that hold compatible blood so they can offer a transfer. To ask donors for help, create a **Critical** blood request (there is a shortcut on the Emergency Center page); it goes through the normal hospital and doctor approval.
+The Emergency Center is for hospital-to-hospital support: raising an emergency alerts other approved hospitals that hold the same blood group so they can offer a transfer. To ask donors for help, create a **Critical** blood request (there is a shortcut on the Emergency Center page); it goes through the normal hospital and doctor approval.
 
 # Donate Blood (hospitals)
 

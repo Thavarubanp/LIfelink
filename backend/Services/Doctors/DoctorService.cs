@@ -44,7 +44,7 @@ namespace LifeLink.Services.Doctors
             {
                 throw new InvalidOperationException("SLMC number is required.");
             }
-            if (await SlmcUniquenessHelper.IsSlmcTakenAsync(_context, normalizedSlmc))
+            if (await SlmcUniquenessHelper.IsSlmcTakenAsync(_context, normalizedSlmc, dto.HospitalId))
             {
                 throw new InvalidOperationException(SlmcUniquenessHelper.DuplicateMessage);
             }
@@ -98,6 +98,8 @@ namespace LifeLink.Services.Doctors
             };
 
             await _context.Doctors.AddAsync(doctor);
+            await ActivityLogger.AddForHospitalAsync(_context, dto.HospitalId, "Doctor.Added", ActivityLogger.Types.Doctor, doctor.DoctorId,
+                $"Added Dr. {doctor.FirstName} {doctor.LastName} (SLMC {doctor.LicenseNumber}).");
 
             // Save atomically
             try
@@ -120,7 +122,8 @@ namespace LifeLink.Services.Doctors
 
             if (hospitalId.HasValue)
             {
-                query = query.Where(d => d.HospitalId == hospitalId.Value);
+                // A hospital no longer sees its removed doctors (lists and pickers); the Admin sees every doctor
+                query = query.Where(d => d.HospitalId == hospitalId.Value && d.DeletedAt == null);
             }
 
             var list = await query.OrderByDescending(d => d.CreatedAt).ToListAsync();
@@ -137,17 +140,19 @@ namespace LifeLink.Services.Doctors
         }
 
         /// <summary>
-        /// Hospital deletes one of its doctors, whatever the doctor's state (first login, history, decisions, matches).
-        /// - Undecided assignments are removed and their requests return to Pending for reassignment.
-        /// - Decided verifications, screenings, matches, acceptances and request statuses are kept
-        ///   (DoctorId is set to null by the FK; nothing else changes).
-        /// - The doctor's login is removed. If that same account also holds personal donor/requester history,
-        ///   the account row is kept (so the history stays intact) but loses the Doctor role and is deactivated.
+        /// Hospital removes one of its doctors, whatever the doctor's state (first login, history, decisions, matches).
+        /// It is a soft delete: the doctor row stays (DeletedAt set, no longer active), so past history shows
+        /// "Removed doctor" and the Admin still sees the record. Nothing is physically removed.
+        /// - Undecided assignments are closed (kept as history) and their requests return to Pending for reassignment.
+        /// - Decided verifications, screenings, matches, acceptances and request statuses are unchanged.
+        /// - The doctor's login stops working: its role rows and reset tokens are removed (housekeeping) and the account
+        ///   is anonymised, so the email can be used again. If that same account also holds personal donor/requester
+        ///   history, it is only deactivated instead (Inactive, no roles), as before.
         /// </summary>
         public async Task DeleteDoctorAsync(Guid doctorId, Guid hospitalId)
         {
             var doctor = await _context.Doctors.FindAsync(doctorId);
-            if (doctor == null)
+            if (doctor == null || doctor.DeletedAt != null)
             {
                 throw new KeyNotFoundException($"Doctor with ID {doctorId} was not found.");
             }
@@ -159,7 +164,7 @@ namespace LifeLink.Services.Doctors
 
             var now = DateTime.UtcNow;
 
-            // Undecided assignments carry no decision history; drop them and send the requests back to the hospital
+            // Undecided assignments carry no decision: close them (kept as history) and send the requests back to the hospital
             var pendingAssignments = await _context.BloodRequestVerifications
                 .Where(v => v.DoctorId == doctorId && v.Status == VerificationStatus.Pending)
                 .ToListAsync();
@@ -172,7 +177,12 @@ namespace LifeLink.Services.Doctors
                 request.Status = BloodRequestStatus.Pending;
                 request.UpdatedAt = now;
             }
-            _context.BloodRequestVerifications.RemoveRange(pendingAssignments);
+            foreach (var assignment in pendingAssignments)
+            {
+                assignment.Status = VerificationStatus.Closed;
+                assignment.Notes = "The assigned doctor was removed by the hospital.";
+                assignment.UpdatedAt = now;
+            }
 
             if (doctor.UserId.HasValue)
             {
@@ -180,31 +190,37 @@ namespace LifeLink.Services.Doctors
                 var user = await _context.Users.FindAsync(userId);
                 if (user != null)
                 {
-                    // Donor/requester history references this account by id (DonorPatientMatches with a
-                    // Restrict FK; Acceptances, fulfilment history and requests with no FK at all).
+                    // Donor/requester history references this account by id (matches, acceptances, fulfilment history, requests)
                     var hasPersonalHistory =
                         await _context.DonorPatientMatches.AnyAsync(m => m.DonorUserId == userId) ||
                         await _context.Acceptances.AnyAsync(a => a.DonorUserId == userId) ||
                         await _context.RequestFulfillmentHistories.AnyAsync(h => h.DonorUserId == userId) ||
                         await _context.BloodRequests.AnyAsync(r => r.PatientUserId == userId);
 
+                    _context.UserRoles.RemoveRange(_context.UserRoles.Where(ur => ur.UserId == userId));
+                    _context.PasswordResetTokens.RemoveRange(_context.PasswordResetTokens.Where(t => t.UserId == userId));
+                    user.UpdatedAt = now;
                     if (hasPersonalHistory)
                     {
-                        // Keep the row so that history stays intact; remove all doctor access and disable sign-in
-                        _context.UserRoles.RemoveRange(_context.UserRoles.Where(ur => ur.UserId == userId));
-                        _context.PasswordResetTokens.RemoveRange(_context.PasswordResetTokens.Where(t => t.UserId == userId));
+                        // Keep the account so that history stays intact; it can no longer sign in as a doctor
                         user.AccountStatus = AccountStatus.Inactive;
-                        user.UpdatedAt = now;
                     }
                     else
                     {
-                        // Removing the User removes login access; its roles and reset tokens cascade
-                        _context.Users.Remove(user);
+                        // The login is retired: no sign-in, and the email is freed for a new account
+                        user.Email = $"removed-doctor-{user.UserId:N}@deleted.lifelink.invalid";
+                        user.PasswordHash = string.Empty;
+                        user.AccountStatus = AccountStatus.Deleted;
                     }
                 }
             }
 
-            _context.Doctors.Remove(doctor);
+            doctor.IsActive = false;
+            doctor.DeletedAt = now;
+            doctor.UpdatedAt = now;
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Doctor.Removed", ActivityLogger.Types.Doctor, doctor.DoctorId,
+                $"Removed Dr. {doctor.FirstName} {doctor.LastName} (SLMC {doctor.LicenseNumber})" +
+                (awaitingRequests.Count > 0 ? $"; {awaitingRequests.Count} request(s) went back to Pending." : "."));
             await _context.SaveChangesAsync();
         }
 
@@ -224,6 +240,7 @@ namespace LifeLink.Services.Doctors
                 Specialization = doctor.Specialization,
                 IsActive = doctor.IsActive,
                 MustChangePassword = doctor.MustChangePassword,
+                DeletedAt = doctor.DeletedAt,
                 CreatedAt = doctor.CreatedAt
             };
         }

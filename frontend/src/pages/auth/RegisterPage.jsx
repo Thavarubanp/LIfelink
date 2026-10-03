@@ -15,7 +15,8 @@ export const RegisterPage = () => {
     password: '',
     phoneNumber: '',
     gender: 'Other',
-    address: ''
+    address: '',
+    bloodGroup: ''
   });
 
   const [error, setError] = useState('');
@@ -97,7 +98,8 @@ export const RegisterPage = () => {
     setLoading(true);
 
     try {
-      const res = await authApi.register(formData);
+      // Blood group is optional: "I don't know" sends nothing
+      const res = await authApi.register({ ...formData, bloodGroup: formData.bloodGroup || null });
       if (res?.success) {
         setSuccess(true);
         setTimeout(() => navigate('/login'), 2500);
@@ -115,7 +117,7 @@ export const RegisterPage = () => {
   };
 
   return (
-    <div className="ll-auth-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden">
+    <div className="ll-auth-page ll-register-page min-h-screen bg-slate-950 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden">
       <div className="max-w-lg w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-2xl relative z-10">
         <div className="text-center mb-6">
           <BrandLogo size="md" tagline={null} className="mb-4 justify-center" />
@@ -284,6 +286,30 @@ export const RegisterPage = () => {
             />
             {fieldErrors.address && (
               <span className="text-[11px] text-red-400 mt-1 block font-medium">{fieldErrors.address}</span>
+            )}
+          </div>
+
+          <div>
+            <label htmlFor="register-blood-group" className="block text-slate-300 font-semibold mb-1">
+              Blood Group <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <select
+              id="register-blood-group"
+              name="bloodGroup"
+              value={formData.bloodGroup}
+              onChange={handleChange}
+              className="w-full px-3 py-2.5 bg-slate-800/80 border border-slate-700 rounded-xl text-white focus:outline-none focus:border-red-500"
+            >
+              <option value="">I don't know</option>
+              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((group) => (
+                <option key={group} value={group}>{group}</option>
+              ))}
+            </select>
+            <p className="text-[11px] mt-1 text-slate-400">
+              Used for blood donation alerts. You can add or change it later in your profile.
+            </p>
+            {fieldErrors.bloodGroup && (
+              <span className="text-[11px] text-red-400 mt-1 block font-medium">{fieldErrors.bloodGroup}</span>
             )}
           </div>
 
