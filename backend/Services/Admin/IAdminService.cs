@@ -18,7 +18,9 @@ namespace LifeLink.Services.Admin
         Task<AdminUserResponseDto> ReinstateUserAsync(Guid userId, Guid? actingAdminId = null);
         Task<AdminUserResponseDto> BlockUserAsync(Guid userId, Guid actingAdminId);
         Task PromoteToAdminAsync(Guid userId, Guid actingAdminId);
-        Task<AdminHospitalResponseDto> SuspendHospitalAsync(Guid hospitalId, SuspendHospitalDto dto);
-        Task<AdminHospitalResponseDto> ReinstateHospitalAsync(Guid hospitalId);
+        Task<AdminHospitalResponseDto> SuspendHospitalAsync(Guid hospitalId, SuspendHospitalDto dto, Guid? actingAdminId = null);
+        Task<AdminAttentionDto> GetAttentionCountsAsync(Guid adminId);
+        Task MarkAreaSeenAsync(Guid adminId, string area);
+        Task<AdminHospitalResponseDto> ReinstateHospitalAsync(Guid hospitalId, Guid? actingAdminId = null);
     }
 }

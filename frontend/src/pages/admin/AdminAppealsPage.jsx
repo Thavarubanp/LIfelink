@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { adminApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
+import { isConflictError } from '../../utils/errorUtils';
 import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import {
@@ -11,7 +12,7 @@ import {
 const StatusBadge = ({ status }) => {
   const cfg = {
     PENDING: { label: 'Pending', cls: 'text-amber-400 bg-amber-950/60 border-amber-700', Icon: Clock },
-    APPROVED: { label: 'Approved', cls: 'text-emerald-400 bg-emerald-950/60 border-emerald-700', Icon: CheckCircle2 },
+    APPROVED: { label: 'Approved', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800', Icon: CheckCircle2 },
     REJECTED: { label: 'Rejected (open)', cls: 'text-rose-400 bg-rose-950/60 border-rose-700', Icon: XCircle },
     CLOSED: { label: 'Closed', cls: 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600', Icon: Lock },
   }[status] || { label: status, cls: 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700', Icon: Clock };
@@ -134,13 +135,23 @@ export const AdminAppealsPage = () => {
         message: err.response?.data?.message || err.message,
         type: 'error'
       });
+      // The appellant replied or another decision was saved at the same moment: show the current thread
+      if (isConflictError(err)) {
+        await fetchAppeals();
+        return;
+      }
       throw err; // Let modal handle it
     }
   };
 
   // Admin reply (the appellant replies next); errors are shown inside the modal
   const handleReply = async (dto) => {
-    await adminApi.replyToAppeal(replyTarget.appealId, dto);
+    try {
+      await adminApi.replyToAppeal(replyTarget.appealId, dto);
+    } catch (err) {
+      if (isConflictError(err)) await fetchAppeals(); // the thread changed at the same moment
+      throw err;
+    }
     addToast({ title: 'Reply Sent', message: 'The appellant has been notified.', type: 'success' });
     setReplyTarget(null);
     await fetchAppeals();
@@ -238,14 +249,14 @@ export const AdminAppealsPage = () => {
                     {/* Action Buttons (any open thread, including a rejected one) */}
                     {isOpen && (
                       <div className="flex flex-wrap gap-2 pt-1">
-                        {appeal.awaitingAdminReply ? (
-                          <button
-                            onClick={() => setReplyTarget(appeal)}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5" /> Reply
-                          </button>
-                        ) : (
+                        {/* The admin may send several messages in a row (the appellant answers after an admin message) */}
+                        <button
+                          onClick={() => setReplyTarget(appeal)}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> {appeal.awaitingAdminReply ? 'Reply' : 'Send another message'}
+                        </button>
+                        {!appeal.awaitingAdminReply && (
                           <span className="text-xs font-semibold text-amber-700 dark:text-amber-300 px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1.5">
                             <Clock className="w-3.5 h-3.5" /> Waiting for appellant response
                           </span>
@@ -256,11 +267,14 @@ export const AdminAppealsPage = () => {
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Reinstate
                         </button>
+                        {/* An appeal can be rejected only once (enforced by the backend: a second reject gets 409) */}
                         <button
                           onClick={() => setModal({ appeal, actionType: 'reject' })}
-                          className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm"
+                          disabled={!appeal.canReject}
+                          title={appeal.canReject ? undefined : 'This appeal has already been rejected.'}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
                         >
-                          <XCircle className="w-3.5 h-3.5" /> Reject Appeal
+                          <XCircle className="w-3.5 h-3.5" /> {appeal.canReject ? 'Reject Appeal' : 'Already Rejected'}
                         </button>
                         <button
                           onClick={() => setModal({ appeal, actionType: 'close' })}

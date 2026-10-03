@@ -9,6 +9,7 @@ using LifeLink.DTOs.HospitalActivity;
 using LifeLink.Entities;
 using LifeLink.Services.Admin;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Complaints
 {
@@ -81,6 +82,8 @@ namespace LifeLink.Services.Complaints
 
             await _context.Complaints.AddAsync(complaint);
             await _context.ComplaintAuditLogs.AddAsync(auditLog);
+            await ActivityLogger.AddAsync(_context, userId.Value, "Complaint.Filed", ActivityLogger.Types.Complaint, complaint.ComplaintId,
+                $"Filed complaint \"{complaint.Subject}\" ({complaint.ComplaintType}).");
             await _context.SaveChangesAsync();
 
             return await GetComplaintByIdAsync(complaint.ComplaintId) ?? MapToDto(complaint);
@@ -101,7 +104,8 @@ namespace LifeLink.Services.Complaints
 
         public async Task<List<ComplaintResponseDto>> GetMyComplaintsAsync(Guid userId)
         {
-            var list = await WithDetails().Where(c => c.UserId == userId).OrderByDescending(c => c.CreatedAt).ToListAsync();
+            // Deleted complaints are hidden from their creator; only the Admin still sees them
+            var list = await WithDetails().Where(c => c.UserId == userId && c.DeletedAt == null).OrderByDescending(c => c.CreatedAt).ToListAsync();
             return list.Select(MapToDto).ToList();
         }
 
@@ -171,6 +175,8 @@ namespace LifeLink.Services.Complaints
                 Notes = resolutionNotes,
                 CreatedAt = DateTime.UtcNow
             });
+            await ActivityLogger.AddAsync(_context, userId, "Complaint.Solved", ActivityLogger.Types.Complaint, complaint.ComplaintId,
+                $"Marked complaint \"{complaint.Subject}\" as solved.");
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyComplaintAdminsAsync(complaint,
@@ -180,23 +186,24 @@ namespace LifeLink.Services.Complaints
             return await GetComplaintByIdAsync(complaintId) ?? MapToDto(complaint);
         }
 
-        /// <summary>Creator permanently deletes the complaint (any status) with its audit log and activity reports.</summary>
+        /// <summary>
+        /// Creator deletes the complaint (any status). Soft delete: the complaint, its replies and activity reports stay
+        /// in the database, hidden from the creator; the Admin still sees it (read-only, marked deleted).
+        /// </summary>
         public async Task DeleteComplaintAsync(Guid complaintId, Guid userId)
         {
-            var complaint = await _context.Complaints
-                .Include(c => c.AuditLogs)
-                .Include(c => c.ActivityReports)
-                .FirstOrDefaultAsync(c => c.ComplaintId == complaintId);
+            var complaint = await _context.Complaints.FirstOrDefaultAsync(c => c.ComplaintId == complaintId);
 
-            if (complaint == null)
+            if (complaint == null || complaint.DeletedAt != null)
             {
                 throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
             }
             EnsureCreator(complaint, userId, "delete");
 
-            _context.ComplaintAuditLogs.RemoveRange(complaint.AuditLogs);
-            _context.HospitalActivityReports.RemoveRange(complaint.ActivityReports);
-            _context.Complaints.Remove(complaint);
+            complaint.DeletedAt = DateTime.UtcNow;
+            // A reply or "solved" arriving at the same moment changes the concurrency token: one save fails (409)
+            await ActivityLogger.AddAsync(_context, userId, "Complaint.Deleted", ActivityLogger.Types.Complaint, complaint.ComplaintId,
+                $"Deleted complaint \"{complaint.Subject}\".");
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyComplaintAdminsAsync(complaint,
@@ -217,6 +224,8 @@ namespace LifeLink.Services.Complaints
             await _context.Complaints.Include(c => c.AuditLogs).FirstOrDefaultAsync(c => c.ComplaintId == complaintId)
             ?? throw new KeyNotFoundException($"Complaint with ID {complaintId} was not found.");
 
+        public const string DeletedComplaintMessage = "This complaint was deleted by its creator and is read-only.";
+
         private static void EnsureCreator(Complaint complaint, Guid userId, string action)
         {
             if (complaint.UserId != userId)
@@ -225,9 +234,14 @@ namespace LifeLink.Services.Complaints
             }
         }
 
-        // Resolved (and legacy rejected/cancelled) complaints are read-only
+        // Resolved (and legacy rejected/cancelled) and deleted complaints are read-only
         private static void EnsureOpen(Complaint complaint)
         {
+            if (complaint.DeletedAt != null)
+            {
+                throw new InvalidOperationException(DeletedComplaintMessage);
+            }
+
             if (complaint.Status is ComplaintStatus.RESOLVED or ComplaintStatus.REJECTED or ComplaintStatus.CANCELLED)
             {
                 throw new InvalidOperationException("This complaint is closed and read-only.");
@@ -266,6 +280,16 @@ namespace LifeLink.Services.Complaints
                 AttachmentName = hasAttachment ? (string.IsNullOrWhiteSpace(dto.AttachmentName) ? "attachment" : dto.AttachmentName.Trim()) : null,
                 CreatedAt = DateTime.UtcNow
             });
+            if (adminId.HasValue)
+            {
+                await ActivityLogger.AddAsync(_context, adminId, "Complaint.AdminReplied", ActivityLogger.Types.Complaint, complaint.ComplaintId,
+                    $"Replied to complaint \"{complaint.Subject}\".", subjectUserId: complaint.UserId);
+            }
+            else
+            {
+                await ActivityLogger.AddAsync(_context, complaint.UserId, "Complaint.Replied", ActivityLogger.Types.Complaint, complaint.ComplaintId,
+                    $"Replied in complaint \"{complaint.Subject}\".");
+            }
             await _context.SaveChangesAsync();
         }
 
@@ -302,7 +326,8 @@ namespace LifeLink.Services.Complaints
 
         private static ComplaintResponseDto MapToDto(Complaint complaint)
         {
-            var isOpen = complaint.Status is not (ComplaintStatus.RESOLVED or ComplaintStatus.REJECTED or ComplaintStatus.CANCELLED);
+            var isOpen = complaint.DeletedAt == null &&
+                         complaint.Status is not (ComplaintStatus.RESOLVED or ComplaintStatus.REJECTED or ComplaintStatus.CANCELLED);
             var adminTurn = IsAdminTurn(complaint);
 
             return new ComplaintResponseDto
@@ -324,6 +349,7 @@ namespace LifeLink.Services.Complaints
                 AssignedAdminEmail = complaint.AssignedAdmin?.Email,
                 ResolvedAt = complaint.ResolvedAt,
                 ResolutionNotes = complaint.ResolutionNotes,
+                DeletedAt = complaint.DeletedAt,
                 AwaitingAdminReply = isOpen && adminTurn,
                 CanCreatorReply = isOpen && !adminTurn,
                 ActivityReportsCount = complaint.ActivityReports?.Count ?? 0,

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
@@ -120,7 +121,7 @@ namespace LifeLink.Tests
         [Theory]
         [InlineData(false)]
         [InlineData(true)]
-        public async Task Only_Creator_Deletes_In_Any_Status_And_Related_Rows_Go(bool solveFirst)
+        public async Task Only_Creator_Deletes_In_Any_Status_And_Everything_Is_Kept_For_The_Admin(bool solveFirst)
         {
             var s = await SeedAsync();
             var c = await s.Service.CreateComplaintAsync(s.Creator, null, Dto("Other"));
@@ -131,14 +132,22 @@ namespace LifeLink.Tests
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => s.Service.DeleteComplaintAsync(c.ComplaintId, s.Admin1));
             await s.Service.DeleteComplaintAsync(c.ComplaintId, s.Creator);
 
-            Assert.Equal(0, await s.Context.Complaints.CountAsync());
-            Assert.Equal(0, await s.Context.ComplaintAuditLogs.CountAsync());
+            // Soft delete: the complaint and its thread stay; the creator no longer sees it, the Admin still does (read-only)
+            Assert.NotNull((await s.Context.Complaints.SingleAsync()).DeletedAt);
+            Assert.NotEqual(0, await s.Context.ComplaintAuditLogs.CountAsync());
+            Assert.Empty(await s.Service.GetMyComplaintsAsync(s.Creator));
+            var forAdmin = Assert.Single(await s.Service.GetComplaintsAsync());
+            Assert.NotNull(forAdmin.DeletedAt);
+            Assert.False(forAdmin.AwaitingAdminReply);
+            Assert.False(forAdmin.CanCreatorReply);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.AdminReplyAsync(c.ComplaintId, s.Admin1, Reply("After delete")));
+            await Assert.ThrowsAsync<KeyNotFoundException>(() => s.Service.DeleteComplaintAsync(c.ComplaintId, s.Creator));
             Assert.Equal(adminNotificationsBefore + 1, await NotificationsFor(s, s.Admin1)); // assigned admin told about the deletion
             Assert.Equal(1, await NotificationsFor(s, s.Creator)); // creator's earlier notification untouched
         }
 
         [Fact]
-        public async Task Dismiss_Deletes_Only_Own_Notification()
+        public async Task Dismiss_Hides_Only_Own_Notification()
         {
             var s = await SeedAsync();
             var mine = new Notification { NotificationId = Guid.NewGuid(), UserId = s.Creator, Title = "a", Message = "a" };
@@ -150,7 +159,14 @@ namespace LifeLink.Tests
 
             Assert.False(await service.DeleteNotificationAsync(other.NotificationId, s.Creator));
             Assert.True(await service.DeleteNotificationAsync(mine.NotificationId, s.Creator));
-            Assert.Equal(new[] { other.NotificationId }, await s.Context.Notifications.Select(n => n.NotificationId).ToArrayAsync());
+            // Soft delete: both rows stay; the dismissed one is hidden from its owner's list and unread count
+            Assert.Equal(2, await s.Context.Notifications.CountAsync());
+            Assert.NotNull((await s.Context.Notifications.FindAsync(mine.NotificationId))!.DismissedAt);
+            Assert.Null((await s.Context.Notifications.FindAsync(other.NotificationId))!.DismissedAt);
+            Assert.Empty(await service.GetNotificationsForCallerAsync(s.Creator));
+            Assert.Equal(0, await service.GetUnreadCountAsync(s.Creator));
+            Assert.Single(await service.GetNotificationsForCallerAsync(s.Staff));
+            Assert.False(await service.DeleteNotificationAsync(mine.NotificationId, s.Creator)); // already dismissed
         }
     }
 }

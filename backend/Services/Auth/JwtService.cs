@@ -18,7 +18,7 @@ namespace LifeLink.Services.Auth
             _configuration = configuration;
         }
 
-        public (string Token, DateTime ExpiresAt) GenerateToken(User user, IEnumerable<string> roles)
+        public (string Token, DateTime ExpiresAt) GenerateToken(User user, IEnumerable<string> roles, Guid? sessionId = null)
         {
             var jwtSettings = _configuration.GetSection("Jwt");
             var keyString = jwtSettings["Key"] ?? throw new InvalidOperationException("Jwt:Key configuration is missing.");
@@ -41,6 +41,11 @@ namespace LifeLink.Services.Auth
                 new Claim(ClaimTypes.Surname, user.LastName),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
+
+            if (sessionId.HasValue)
+            {
+                claims.Add(new Claim(SessionSettings.SessionClaim, sessionId.Value.ToString()));
+            }
 
             foreach (var role in roles)
             {

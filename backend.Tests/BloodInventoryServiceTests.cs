@@ -31,7 +31,7 @@ namespace LifeLink.Tests
             return hospital.HospitalId;
         }
 
-        // Stock only ever arrives as packets (donations / transfers); tests use the seeder path of the ledger
+        // Stock only ever arrives as packets; tests use the seeder path of the ledger
         private static async Task AddPacketsAsync(AppDbContext context, Guid hospitalId, string group, int count, DateTime? collected = null)
         {
             await InventoryLedger.AddCollectedPacketsAsync(context, hospitalId, group, count, collected ?? DateTime.UtcNow,
@@ -117,11 +117,11 @@ namespace LifeLink.Tests
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateInventoryAsync(inventory.InventoryId,
                 new UpdateInventoryDto { UnitsAvailable = 10, MinimumThreshold = 1, MaximumCapacity = 100, AuditNotes = "Restock" }));
-            Assert.Contains("donations or completed hospital transfers", ex.Message);
+            Assert.Contains("Add blood packets", ex.Message);
         }
 
         [Fact]
-        public async Task UpdateInventoryAsync_Lower_Count_Issues_Earliest_Expiring_Packets_With_A_Reason()
+        public async Task UpdateInventoryAsync_Issues_Only_The_Selected_Packets_With_A_Reason()
         {
             using var context = GetInMemoryDbContext();
             var service = new BloodInventoryService(context);
@@ -129,19 +129,25 @@ namespace LifeLink.Tests
             await AddPacketsAsync(context, hospitalId, "O-", 1, DateTime.UtcNow.AddDays(-20)); // expires first
             await AddPacketsAsync(context, hospitalId, "O-", 2);
             var inventory = await context.BloodInventories.SingleAsync();
-            var oldest = await context.BloodPackets.OrderBy(p => p.ExpiryDate).FirstAsync();
+            var newest = await context.BloodPackets.OrderByDescending(p => p.ExpiryDate).FirstAsync(); // not the earliest-expiring one
 
+            // A lower count is no longer accepted: staff pick the packets
+            var typed = await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateInventoryAsync(inventory.InventoryId,
+                new UpdateInventoryDto { UnitsAvailable = 2, MinimumThreshold = 1, MaximumCapacity = 100, AuditNotes = "x" }));
+            Assert.Contains("Select the packets", typed.Message);
+
+            // A reason is required
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.UpdateInventoryAsync(inventory.InventoryId,
-                new UpdateInventoryDto { UnitsAvailable = 2, MinimumThreshold = 1, MaximumCapacity = 100 }));
+                new UpdateInventoryDto { MinimumThreshold = 1, MaximumCapacity = 100, IssuePacketIds = new() { newest.PacketId } }));
 
             var updated = await service.UpdateInventoryAsync(inventory.InventoryId,
-                new UpdateInventoryDto { UnitsAvailable = 2, MinimumThreshold = 4, MaximumCapacity = 100, AuditNotes = "Issued to theatre" });
+                new UpdateInventoryDto { MinimumThreshold = 4, MaximumCapacity = 100, AuditNotes = "Issued to theatre", IssuePacketIds = new() { newest.PacketId } });
 
             Assert.Equal(2, updated.UnitsAvailable);
             Assert.Equal(4, updated.MinimumThreshold);
-            Assert.Equal(BloodPacketStatus.Issued, (await context.BloodPackets.FindAsync(oldest.PacketId))!.Status);
+            Assert.Equal(BloodPacketStatus.Issued, (await context.BloodPackets.FindAsync(newest.PacketId))!.Status);
             var issued = await context.InventoryTransactions.SingleAsync(t => t.TransactionType == TransactionType.Issued);
-            Assert.Equal(oldest.PacketId, issued.PacketId);
+            Assert.Equal(newest.PacketId, issued.PacketId);
             Assert.Equal("Issued to theatre", issued.Notes);
         }
 
@@ -217,7 +223,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task DeleteInventoryAsync_Removes_An_Unused_Category_But_Keeps_Categories_With_History()
+        public async Task DeleteInventoryAsync_Soft_Deletes_An_Unused_Category_But_Keeps_Categories_With_History()
         {
             using var context = GetInMemoryDbContext();
             var service = new BloodInventoryService(context);
@@ -227,8 +233,54 @@ namespace LifeLink.Tests
             var withHistory = await context.BloodInventories.SingleAsync(i => i.BloodGroup == "O+");
 
             Assert.True(await service.DeleteInventoryAsync(empty.InventoryId));
-            Assert.Null(await context.BloodInventories.FindAsync(empty.InventoryId));
+            // Soft delete: the row stays but is hidden from every list
+            Assert.NotNull((await context.BloodInventories.FindAsync(empty.InventoryId))!.DeletedAt);
+            Assert.DoesNotContain(await service.GetHospitalInventoryAsync(hospitalId), i => i.InventoryId == empty.InventoryId);
+            Assert.Null(await service.GetInventoryByIdAsync(empty.InventoryId));
+            Assert.False(await service.DeleteInventoryAsync(empty.InventoryId));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteInventoryAsync(withHistory.InventoryId));
+        }
+
+        [Fact]
+        public async Task A_Group_Created_By_Adding_Packets_Gets_Threshold_5_And_Capacity_100()
+        {
+            using var context = GetInMemoryDbContext();
+            var hospitalId = await AddHospitalAsync(context);
+
+            await AddPacketsAsync(context, hospitalId, "B-", 2);
+
+            var created = await context.BloodInventories.SingleAsync(i => i.HospitalId == hospitalId && i.BloodGroup == "B-");
+            Assert.Equal(5, created.MinimumThreshold);
+            Assert.Equal(100, created.MaximumCapacity);
+            Assert.Equal(2, created.UnitsAvailable);
+        }
+
+        [Fact]
+        public async Task Adding_A_Deleted_Group_Again_Restores_The_Row_With_The_New_Threshold_And_Capacity()
+        {
+            using var context = GetInMemoryDbContext();
+            var service = new BloodInventoryService(context);
+            var hospitalId = await AddHospitalAsync(context);
+            var first = await service.CreateInventoryAsync(new CreateInventoryDto { HospitalId = hospitalId, BloodGroup = "AB-", MinimumThreshold = 5, MaximumCapacity = 50 });
+            await service.DeleteInventoryAsync(first.InventoryId);
+
+            var again = await service.CreateInventoryAsync(new CreateInventoryDto { HospitalId = hospitalId, BloodGroup = "AB-", MinimumThreshold = 8, MaximumCapacity = 70 });
+
+            Assert.Equal(first.InventoryId, again.InventoryId); // same row restored, no duplicate
+            Assert.Equal(8, again.MinimumThreshold);
+            Assert.Equal(70, again.MaximumCapacity);
+            Assert.Null((await context.BloodInventories.FindAsync(first.InventoryId))!.DeletedAt);
+            Assert.Equal(1, await context.BloodInventories.CountAsync(i => i.HospitalId == hospitalId && i.BloodGroup == "AB-"));
+
+            // Adding packets of a deleted group also restores it (with the default threshold 5 and capacity 100)
+            await service.DeleteInventoryAsync(first.InventoryId);
+            await AddPacketsAsync(context, hospitalId, "AB-", 1);
+            var restored = await context.BloodInventories.SingleAsync(i => i.HospitalId == hospitalId && i.BloodGroup == "AB-");
+            Assert.Null(restored.DeletedAt);
+            Assert.Equal(InventoryLedger.DefaultMinimumThreshold, restored.MinimumThreshold);
+            Assert.Equal(5, restored.MinimumThreshold);
+            Assert.Equal(100, restored.MaximumCapacity);
+            Assert.Equal(1, restored.UnitsAvailable);
         }
     }
 }

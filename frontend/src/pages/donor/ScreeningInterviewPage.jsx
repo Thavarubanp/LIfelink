@@ -1,21 +1,51 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Loader2, Lock, Send, ShieldCheck, Stethoscope } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Lock, PauseCircle, Send, Stethoscope } from 'lucide-react';
 import { assistantApi } from '../../api';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { ChatThread } from '../../components/assistant/ChatThread';
+import { ScreeningParts } from '../../components/screening/ScreeningParts';
+import { collectAnswers, partApplies, summarise, toInputValue } from '../../components/screening/screeningValues';
+
+const initialValues = (question) => {
+  const values = {};
+  (question?.parts || []).forEach((p) => {
+    values[p.id] = toInputValue(p, p.default);
+  });
+  return values;
+};
+
+/** The current question's inputs, shown inside its chat bubble. Free text below the thread still works. */
+const QuestionInputs = ({ question, thinking, onSend }) => {
+  const [values, setValues] = useState(() => initialValues(question));
+  const parts = question.parts || [];
+  const answers = collectAnswers(parts, values);
+  const ready = Object.keys(answers).length > 0;
+  return (
+    <div className="pt-2 border-t border-slate-200 dark:border-slate-700 space-y-2.5">
+      {question.follow_up && <p className="text-[11px] font-semibold text-red-700 dark:text-red-300">Just the highlighted part, please:</p>}
+      <ScreeningParts parts={parts} values={values} missing={question.missing || []} disabled={thinking}
+        onChange={(id, v) => setValues((prev) => ({ ...prev, [id]: v }))} />
+      <button type="button" disabled={thinking || !ready}
+        onClick={() => onSend(answers, summarise(parts.filter((p) => partApplies(p, values)), values))}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">
+        <Send className="w-3.5 h-3.5" /> {question.type === 'confirm' ? 'Send my answers to the doctor' : 'Send answer'}
+      </button>
+    </div>
+  );
+};
 
 /**
- * Donor screening interview with the Request Management agent (through the Supervisor). The agent asks the
- * 12 sections step by step, explains anything the donor asks, and sends the report to the doctor at the end.
+ * Donor screening interview with the Request Management agent (through the Supervisor): 7 questions and a final
+ * "I confirm my answers are true" tick. Each question shows its inputs inside the chat bubble (7.8); the donor can also
+ * type, and can ask what anything means (explained in simple words, then the question continues).
  */
 export const ScreeningInterviewPage = () => {
   const { id } = useParams();
   const [messages, setMessages] = useState([]);
   const [screening, setScreening] = useState(null);
   const [input, setInput] = useState('');
-  const [checked, setChecked] = useState([]);
-  const [thinking, setThinking] = useState(false);
+  const [thinking, setThinking] = useState(true);
   const [error, setError] = useState('');
 
   const question = screening?.question;
@@ -23,37 +53,35 @@ export const ScreeningInterviewPage = () => {
   const apply = useCallback((reply) => {
     setMessages((prev) => [...prev, { role: 'assistant', text: reply.reply, segments: reply.segments }]);
     if (reply.screening) setScreening(reply.screening);
-    setChecked([]);
   }, []);
 
   useEffect(() => {
-    const resume = async () => {
-      setThinking(true);
-      try {
-        const reply = await assistantApi.chat({ acceptanceId: id, message: '' });
+    let active = true;
+    assistantApi.chat({ acceptanceId: id, message: '' })
+      .then((reply) => {
+        if (!active) return;
         const transcript = (reply.screening?.transcript || []).flatMap((t) => [
           { role: 'assistant', segments: [{ type: 'screening', text: t.question }] },
           { role: 'user', text: t.answer }
         ]);
         setMessages(transcript);
         apply(reply);
-      } catch (err) {
-        setError(getApiErrorMessage(err));
-      } finally {
-        setThinking(false);
-      }
+      })
+      .catch((err) => active && setError(getApiErrorMessage(err)))
+      .finally(() => active && setThinking(false));
+    return () => {
+      active = false;
     };
-    resume();
   }, [id, apply]);
 
-  const send = async (text) => {
+  const send = async (text, structured = null) => {
     const message = String(text ?? '').trim();
-    if (!message || thinking) return;
-    setMessages((prev) => [...prev, { role: 'user', text: message }]);
+    if ((!message && !structured) || thinking) return;
+    setMessages((prev) => [...prev, { role: 'user', text: message || 'Answered' }]);
     setInput('');
     setThinking(true);
     try {
-      apply(await assistantApi.chat({ acceptanceId: id, message }));
+      apply(await assistantApi.chat({ acceptanceId: id, message: structured ? '' : message, structured }));
     } catch (err) {
       setMessages((prev) => [...prev, { role: 'assistant', text: getApiErrorMessage(err) }]);
     } finally {
@@ -61,13 +89,16 @@ export const ScreeningInterviewPage = () => {
     }
   };
 
-  const toggle = (option) =>
-    setChecked((prev) => (prev.includes(option) ? prev.filter((o) => o !== option) : [...prev, option]));
-
   const finished = screening?.isComplete || screening?.status === 'Submitted';
   const closed = screening?.status === 'Closed';
-  const sectionIndex = screening?.sectionIndex || 1;
+  const paused = screening?.status === 'Paused';
+  const count = screening?.sectionCount || 7;
   const percent = screening?.total ? Math.round((screening.answered / screening.total) * 100) : 0;
+  const stepLabel = finished
+    ? 'All questions answered'
+    : question?.type === 'confirm'
+      ? `All ${count} questions answered - please confirm`
+      : `Question ${screening?.sectionIndex || 1} of ${count}${screening?.section ? `: ${screening.section}` : ''}`;
 
   return (
     <div className="max-w-3xl mx-auto space-y-4">
@@ -82,7 +113,7 @@ export const ScreeningInterviewPage = () => {
               <Stethoscope className="w-5 h-5 text-red-600" /> Donor Health Screening
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Answer honestly and ask about anything you're unsure of. Only the reviewing doctor sees your report, and the doctor makes the decision.
+              {count} short questions. Answer honestly and ask about anything you're unsure of. Only the reviewing doctor sees your answers, and the doctor makes the decision.
             </p>
           </div>
           {question?.confidential && (
@@ -91,10 +122,10 @@ export const ScreeningInterviewPage = () => {
             </span>
           )}
         </div>
-        {screening && !closed && (
+        {screening && !closed && !paused && (
           <div className="space-y-1">
             <div className="flex justify-between text-[11px] text-slate-500">
-              <span>{finished ? 'All sections complete' : `Section ${sectionIndex} of ${screening.sectionCount || 12}: ${screening.section || ''}`}</span>
+              <span>{stepLabel}</span>
               <span>{finished ? 100 : percent}%</span>
             </div>
             <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
@@ -108,87 +139,51 @@ export const ScreeningInterviewPage = () => {
         <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-xs text-red-700 dark:text-red-300">{error}</div>
       ) : (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm flex flex-col" style={{ minHeight: '55vh' }}>
-          <div className="flex-1 p-4 overflow-y-auto" style={{ maxHeight: '60vh' }}>
-            <ChatThread messages={messages} thinking={thinking} />
+          <div className="flex-1 p-4 overflow-y-auto" style={{ maxHeight: '65vh' }}>
+            <ChatThread
+              messages={messages}
+              thinking={thinking}
+              lastAssistantExtra={question && !finished && !closed && !paused ? (
+                <QuestionInputs key={`${question.question_id}-${question.missing?.join(',')}-${messages.length}`} question={question} thinking={thinking}
+                  onSend={(answers, summary) => send(summary, answers)} />
+              ) : null}
+            />
           </div>
 
           {finished ? (
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-emerald-50/60 dark:bg-emerald-950/20 rounded-b-2xl">
               <div className="flex items-center gap-2 text-xs text-emerald-800 dark:text-emerald-300">
-                <CheckCircle2 className="w-4 h-4" /> Your report has been sent to the doctor. You will be notified of the decision.
+                <CheckCircle2 className="w-4 h-4" /> Your answers have been sent to the doctor. Remember to bring your NIC when you donate.
               </div>
-              <Link to="/donor/acceptances" className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700">View status</Link>
+              <Link to="/donor/acceptances" className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 shrink-0">View status</Link>
             </div>
           ) : closed ? (
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500">Screening is closed for this donation.</div>
-          ) : question ? (
-            <div className="p-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
-              {question.type === 'yes_no' && (
-                <div className="flex gap-2">
-                  {['Yes', 'No'].map((o) => (
-                    <button key={o} type="button" disabled={thinking} onClick={() => send(o)}
-                      className="px-4 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-red-400 disabled:opacity-50">{o}</button>
-                  ))}
-                </div>
-              )}
-              {(question.type === 'confirm' || (question.type === 'select' && /profile says/i.test(question.text))) && (
-                <button type="button" disabled={thinking} onClick={() => send('Yes')}
-                  className="px-4 py-1.5 rounded-lg text-xs font-semibold border border-emerald-300 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 hover:border-emerald-500 disabled:opacity-50">
-                  <ShieldCheck className="w-3.5 h-3.5 inline mr-1" /> Yes, that's correct
-                </button>
-              )}
-              {question.type === 'select' && (
-                <div className="flex flex-wrap gap-1.5">
-                  {(question.options || []).map((o) => (
-                    <button key={o} type="button" disabled={thinking} onClick={() => send(o)}
-                      className="px-3 py-1 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:border-red-400 disabled:opacity-50">{o}</button>
-                  ))}
-                </div>
-              )}
-              {question.type === 'checklist' && (
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-44 overflow-y-auto">
-                    {(question.options || []).map((o) => (
-                      <label key={o} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800">
-                        <input type="checkbox" checked={checked.includes(o)} onChange={() => toggle(o)} className="accent-red-600" />
-                        <span className="text-slate-700 dark:text-slate-200">{o}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" disabled={thinking} onClick={() => send('None')}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-700 hover:border-red-400 disabled:opacity-50">None of these</button>
-                    <button type="button" disabled={thinking || checked.length === 0} onClick={() => send(JSON.stringify(checked))}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">Submit selected ({checked.length})</button>
-                  </div>
-                </div>
-              )}
-              {question.type === 'date' && (
-                <input type="date" max={new Date().toISOString().slice(0, 10)} onChange={(e) => e.target.value && send(e.target.value)} disabled={thinking}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs" />
-              )}
-              <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="flex items-center gap-2">
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  maxLength={1000}
-                  placeholder={question.type === 'checklist' ? 'Or type your answer, or ask what a term means...' : 'Type your answer, or ask what the question means...'}
-                  className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-red-500/40"
-                />
-                <button type="submit" disabled={thinking || !input.trim()} aria-label="Send"
-                  className="p-2 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50">
-                  {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                </button>
-              </form>
-              {question.help && <p className="text-[10px] text-slate-400">{question.help}</p>}
+          ) : paused ? (
+            <div className="p-4 border-t border-slate-100 dark:border-slate-800 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
+              <PauseCircle className="w-4 h-4" /> Screening is paused while the administrator has this request suspended. Your answers are saved.
             </div>
+          ) : question ? (
+            <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                maxLength={1000}
+                placeholder="Or type your answer, or ask what something means..."
+                className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-red-500/40"
+              />
+              <button type="submit" disabled={thinking || !input.trim()} aria-label="Send"
+                className="p-2 rounded-xl bg-red-600 hover:bg-red-700 text-white disabled:opacity-50">
+                {thinking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              </button>
+            </form>
           ) : screening && (
-            // Every answer is saved but the report did not reach the doctor (the service was unavailable): retry
+            // Every answer is saved and confirmed but the report did not reach the doctor (the service was unavailable): retry
             <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
-              <span className="text-xs text-slate-500">All your answers are saved. The report has not reached the doctor yet.</span>
-              <button type="button" disabled={thinking} onClick={() => send('Submit my report')}
+              <span className="text-xs text-slate-500">All your answers are saved. They have not reached the doctor yet.</span>
+              <button type="button" disabled={thinking} onClick={() => send('Submit my answers')}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 shrink-0">
-                Submit report
+                Send to the doctor
               </button>
             </div>
           )}

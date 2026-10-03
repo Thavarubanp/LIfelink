@@ -2,9 +2,10 @@ import client from './client';
 
 // Inter-Hospital Blood Transfer: the acting hospital always comes from the signed-in account
 export const transferApi = {
-  // dto: { transferType: 'Request' | 'Offer', counterpartHospitalId, bloodGroup, unitsRequested, notes }
-  createTransferRequest: async (dto) => {
-    const response = await client.post('/transfers', dto);
+  // dto: { transferType: 'Request' | 'Offer', counterpartHospitalId, bloodGroup, unitsRequested, notes, packetIds (offers) }
+  // idempotencyKey: one per form, so a double submit never creates the transfer twice
+  createTransferRequest: async (dto, { idempotencyKey } = {}) => {
+    const response = await client.post('/transfers', dto, { idempotencyKey });
     return response.data;
   },
 
@@ -23,9 +24,9 @@ export const transferApi = {
     return response.data;
   },
 
-  // Counterpart hospital accepts: packets move immediately
-  approveTransferRequest: async (id) => {
-    const response = await client.put(`/transfers/${id}/approve`);
+  // Counterpart hospital accepts: packets move immediately. A sender accepting a request passes the packets it sends.
+  approveTransferRequest: async (id, packetIds = []) => {
+    const response = await client.put(`/transfers/${id}/approve`, { packetIds });
     return response.data;
   },
 

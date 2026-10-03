@@ -1,8 +1,9 @@
 import client from './client';
 
 export const emergencyApi = {
-  createEmergencyRequest: async (dto) => {
-    const response = await client.post('/emergencyrequests', dto);
+  // idempotencyKey: one per form, so a double submit never raises the emergency twice
+  createEmergencyRequest: async (dto, { idempotencyKey } = {}) => {
+    const response = await client.post('/emergencyrequests', dto, { idempotencyKey });
     return response.data;
   },
 

@@ -2,7 +2,7 @@ using System;
 
 namespace LifeLink.Entities
 {
-    public class Appeal
+    public class Appeal : IConcurrencyVersioned
     {
         public Guid AppealId { get; set; } = Guid.NewGuid();
         public Guid? UserId { get; set; }
@@ -13,6 +13,11 @@ namespace LifeLink.Entities
         public Guid? ReviewedByAdminId { get; set; }
         public DateTime? ReviewedAt { get; set; }
         public string? AdminResponse { get; set; }
+        // Set by the first rejection; an appeal can be rejected only once
+        public DateTime? RejectedAt { get; set; }
+        // Bumped on every change to the appeal or a new message in its thread (AppDbContext), so a reply and an admin
+        // decision/reinstatement at the same moment cannot both succeed: the later save fails (409)
+        public int ConcurrencyToken { get; set; }
 
         // Navigation properties
         public User? User { get; set; }

@@ -116,7 +116,7 @@ namespace LifeLink.Controllers
             {
                 return Conflict(ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -145,7 +145,7 @@ namespace LifeLink.Controllers
             {
                 return Conflict(ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -238,7 +238,7 @@ namespace LifeLink.Controllers
 
             try
             {
-                var result = await _adminService.SuspendHospitalAsync(id, dto);
+                var result = await _adminService.SuspendHospitalAsync(id, dto, _currentUserService.UserId);
                 return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Hospital suspended successfully."));
             }
             catch (KeyNotFoundException ex)
@@ -254,7 +254,7 @@ namespace LifeLink.Controllers
         {
             try
             {
-                var result = await _adminService.ReinstateHospitalAsync(id);
+                var result = await _adminService.ReinstateHospitalAsync(id, GetAdminId());
                 return Ok(ApiResponse<AdminHospitalResponseDto>.Ok(result, "Hospital reinstated successfully."));
             }
             catch (KeyNotFoundException ex)
@@ -325,7 +325,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

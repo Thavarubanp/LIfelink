@@ -137,10 +137,34 @@ async def answer_from_knowledge(domain: str, question: str) -> Dict[str, Any]:
     return {"type": domain, "text": text, "sources": sources if domain == "medical" else sources[:1]}
 
 
+GENERAL_INFO_LABEL = "General information, not from LifeLink's knowledge base; ask the reviewing doctor."
+SCREENING_EXPLAIN_SYSTEM = (
+    "You explain a blood donor screening question or term to a donor in simple, everyday words (at most 80 words). "
+    "Give general information only. Never say whether the donor can or cannot donate, never give a medical decision or "
+    "advice about their own situation: the reviewing doctor decides. Do not ask the donor anything.")
+
+
+async def answer_screening_question(question: str) -> Dict[str, Any]:
+    """
+    A donor's question during screening (7.6, Q15): the knowledge base first; if it has nothing, a guarded general
+    explanation in simple words, labelled as not from the knowledge base. The interview question is repeated after it.
+    """
+    chunks = knowledge_store.search("medical", question)
+    if chunks:
+        answer = await answer_from_knowledge("medical", question + " Please explain in simple words.")
+        return answer
+    text = await llm.complete(SCREENING_EXPLAIN_SYSTEM, question)
+    if not text:
+        return {"type": "medical", "text": NO_ANSWER, "sources": []}
+    text = guardrails.enforce_authority(text)
+    return {"type": "medical", "text": f"{text.rstrip()}\n\n{GENERAL_INFO_LABEL}", "sources": []}
+
+
 async def knowledge_node(state: SupervisorState) -> Dict[str, Any]:
     segments = list(state.get("segments") or [])
     for item in state.get("knowledge_queries") or []:
-        segments.append(await answer_from_knowledge(item["domain"], item["query"]))
+        segments.append(await (answer_screening_question(item["query"]) if item.get("screening")
+                               else answer_from_knowledge(item["domain"], item["query"])))
     return {"segments": segments, "knowledge_queries": [], "agents_invoked": _add(state, "agents_invoked", "Knowledge")}
 
 
@@ -156,7 +180,9 @@ async def request_management_node(state: SupervisorState) -> Dict[str, Any]:
     chat = state.get("chat") or {}
     acceptance_id = str(chat.get("acceptanceId") or "")
     message = (chat.get("message") or "").strip()
-    result = await (agent_clients.screening_turn(acceptance_id, message) if message else agent_clients.screening_session(acceptance_id))
+    structured = chat.get("structured") or None
+    result = await (agent_clients.screening_turn(acceptance_id, message, structured) if message or structured
+                    else agent_clients.screening_session(acceptance_id))
     update = _record(state, "RequestManagementAgent", result)
     if not result.get("success"):
         update["segments"] = _add(state, "segments", {"type": "screening", "sources": [],
@@ -167,7 +193,7 @@ async def request_management_node(state: SupervisorState) -> Dict[str, Any]:
     update["screening"] = data.get("screening") or {}
     if data.get("kind") == "question" and data.get("query"):
         # The donor asked something mid-interview: explain it from the knowledge base, then repeat the question
-        update["knowledge_queries"] = [{"domain": "medical", "query": data["query"]}]
+        update["knowledge_queries"] = [{"domain": "medical", "query": data["query"], "screening": True}]
         update["queue"] = ["knowledge"] + list(state.get("queue") or [])
         update["pending_screening_reply"] = data.get("reply") or ""
     else:
@@ -216,6 +242,7 @@ async def notification_node(state: SupervisorState) -> Dict[str, Any]:
             "recipientId": n.get("recipient_id") or "",
             "notificationType": n.get("notification_type") or "InventoryAlert",
             "title": n.get("title", ""), "message": n.get("message", ""),
+            "dedupeKey": n.get("dedupe_key"),  # stable key from the Inventory agent, passed through unchanged
         } for n in (result.get("data") or {}).get("notifications", [])] if result.get("success") else []
 
     update = _record(state, "NotificationAgent", result)

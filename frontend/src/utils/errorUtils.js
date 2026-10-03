@@ -123,3 +123,12 @@ export const getApiFieldErrors = (error) => {
 
   return fieldErrors;
 };
+
+/**
+ * True when the backend answered 409: someone else changed the same record at the same moment (or the same form was
+ * already submitted). Pages show the message and reload their data.
+ *
+ * @param {any} error
+ * @returns {boolean}
+ */
+export const isConflictError = (error) => error?.response?.status === 409;

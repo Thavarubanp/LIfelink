@@ -35,7 +35,8 @@ def test_medical_question_is_answered_from_medical_guidance_with_sources(client)
 def test_platform_question_is_answered_from_the_lifelink_guide(client):
     body = chat(client, "How do I offer blood to another hospital through LifeLink?")
     platform = [s for s in body["segments"] if s["type"] == "platform"]
-    assert platform and "transfer" in platform[0]["text"].lower()
+    assert platform and "offer" in platform[0]["text"].lower()
+    assert "transfer" in platform[0]["sources"][0]["title"].lower()
     assert all(s["type"] != "medical" for s in body["segments"])
 
 
@@ -52,7 +53,7 @@ def test_screening_question_is_explained_then_the_interview_question_repeats(cli
                "screening": {"status": "InProgress", "section": "Medical History", "sectionIndex": 5, "answered": 20, "total": 60}})
     with patch("services.agent_clients.agent_clients.screening_turn", new=AsyncMock(return_value=turn)) as call:
         body = chat(client, "What is G6PD?", mode="screening", acceptanceId="a-1")
-    call.assert_awaited_once_with("a-1", "What is G6PD?")
+    call.assert_awaited_once_with("a-1", "What is G6PD?", None)
     types = [s["type"] for s in body["segments"]]
     assert types == ["medical", "screening"]
     assert "G6PD" in body["segments"][0]["text"]
@@ -89,3 +90,15 @@ def test_guardrails_hide_details_not_in_the_snapshot():
 def test_guardrails_remove_ai_approval_claims():
     assert "I have approved" not in guardrails.enforce_authority("Good news, I have approved your donation.")
     assert "the doctor" in guardrails.enforce_authority("You are approved to donate tomorrow.")
+
+
+def test_screening_question_without_knowledge_gets_a_labelled_general_answer():
+    import asyncio
+    from unittest.mock import AsyncMock, patch
+    from graph import nodes
+    with patch.object(nodes.knowledge_store, "search", return_value=[]), \
+         patch.object(nodes.llm, "complete", AsyncMock(return_value="A tattoo is a permanent design made with ink under the skin.")):
+        answer = asyncio.run(nodes.answer_screening_question("What is a tattoo?"))
+    assert answer["text"].endswith(nodes.GENERAL_INFO_LABEL) and answer["sources"] == []
+    with patch.object(nodes.knowledge_store, "search", return_value=[]), patch.object(nodes.llm, "complete", AsyncMock(return_value=None)):
+        assert asyncio.run(nodes.answer_screening_question("What is a tattoo?"))["text"] == nodes.NO_ANSWER

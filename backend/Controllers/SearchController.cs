@@ -78,9 +78,9 @@ namespace LifeLink.Controllers
                 var callerUserId = _currentUserService.UserId;
                 bool isDoctor = callerRoles.Contains("Doctor");
 
-                doctorsQuery = doctorsQuery.Where(d =>
+                doctorsQuery = doctorsQuery.Where(d => d.DeletedAt == null && (
                     (staffHospitalId != null && d.HospitalId == staffHospitalId) ||
-                    (isDoctor && callerUserId != null && d.UserId == callerUserId));
+                    (isDoctor && callerUserId != null && d.UserId == callerUserId)));
             }
 
             var doctors = await doctorsQuery

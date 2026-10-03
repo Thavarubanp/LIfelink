@@ -45,13 +45,14 @@ namespace LifeLink.Services.Assistant
         {
             var now = DateTime.UtcNow;
             var acceptances = await _context.Acceptances
-                .Where(a => a.DonorUserId == user.UserId)
+                .Where(a => a.DonorUserId == user.UserId &&
+                            !_context.BloodRequests.Any(r => r.BloodRequestId == a.BloodRequestId && r.Status == BloodRequestStatus.Deleted))
                 .OrderByDescending(a => a.AcceptedAt)
                 .Take(5)
                 .ToListAsync();
             var requestIds = acceptances.Select(a => a.BloodRequestId).ToList();
             var ownRequests = await _context.BloodRequests
-                .Where(r => r.PatientUserId == user.UserId)
+                .Where(r => r.PatientUserId == user.UserId && r.Status != BloodRequestStatus.Deleted)
                 .OrderByDescending(r => r.CreatedAt)
                 .Take(5)
                 .ToListAsync();
@@ -116,7 +117,7 @@ namespace LifeLink.Services.Assistant
             var doctor = await _context.Doctors.Include(d => d.Hospital).FirstOrDefaultAsync(d => d.UserId == userId);
             if (doctor == null) return new Dictionary<string, object?> { ["role"] = "Doctor" };
 
-            var hospitalRequestIds = _context.BloodRequests.Where(r => r.HospitalId == doctor.HospitalId).Select(r => r.BloodRequestId);
+            var hospitalRequestIds = _context.BloodRequests.Where(r => r.HospitalId == doctor.HospitalId && r.Status != BloodRequestStatus.Deleted).Select(r => r.BloodRequestId);
             var hospitalAcceptances = _context.Acceptances.Where(a => hospitalRequestIds.Contains(a.BloodRequestId));
             var pending = await _context.DonorVerifications
                 .Where(v => v.Status == VerificationStatus.Pending && hospitalAcceptances.Any(a => a.AcceptanceId == v.AcceptanceId))
@@ -165,7 +166,7 @@ namespace LifeLink.Services.Assistant
             if (hospital == null) return new Dictionary<string, object?> { ["role"] = "HospitalStaff" };
 
             var now = DateTime.UtcNow;
-            var inventory = await _context.BloodInventories.Where(i => i.HospitalId == hospital.HospitalId).OrderBy(i => i.BloodGroup).ToListAsync();
+            var inventory = await _context.BloodInventories.Where(i => i.HospitalId == hospital.HospitalId && i.DeletedAt == null).OrderBy(i => i.BloodGroup).ToListAsync();
             var packets = await _context.BloodPackets
                 .Where(p => p.HospitalId == hospital.HospitalId && p.Status == BloodPacketStatus.Available)
                 .Select(p => new { p.BloodGroup, p.ExpiryDate })
@@ -174,7 +175,7 @@ namespace LifeLink.Services.Assistant
                 .Include(t => t.SenderHospital).Include(t => t.ReceiverHospital)
                 .Where(t => (t.SenderHospitalId == hospital.HospitalId || t.ReceiverHospitalId == hospital.HospitalId) && t.Status == TransferRequestStatus.Pending.ToString())
                 .ToListAsync();
-            var hospitalRequestIds = _context.BloodRequests.Where(r => r.HospitalId == hospital.HospitalId).Select(r => r.BloodRequestId);
+            var hospitalRequestIds = _context.BloodRequests.Where(r => r.HospitalId == hospital.HospitalId && r.Status != BloodRequestStatus.Deleted).Select(r => r.BloodRequestId);
 
             return new Dictionary<string, object?>
             {
@@ -218,13 +219,13 @@ namespace LifeLink.Services.Assistant
         {
             ["role"] = "Admin",
             ["pendingHospitalRegistrations"] = await _context.Hospitals.CountAsync(LifeLink.Services.Hospitals.RegistrationThread.NeedsAdminReview),
-            ["openComplaints"] = await _context.Complaints.CountAsync(c => c.Status == ComplaintStatus.OPEN || c.Status == ComplaintStatus.UNDER_REVIEW || c.Status == ComplaintStatus.AWAITING_INFORMATION),
+            ["openComplaints"] = await _context.Complaints.CountAsync(c => c.DeletedAt == null && (c.Status == ComplaintStatus.OPEN || c.Status == ComplaintStatus.UNDER_REVIEW || c.Status == ComplaintStatus.AWAITING_INFORMATION)),
             ["pendingAppeals"] = await _context.Appeals.CountAsync(a => a.Status == AppealStatus.PENDING)
         };
 
         private async Task<Dictionary<string, object?>> NotificationSummaryAsync(System.Linq.Expressions.Expression<Func<LifeLink.Entities.Notification, bool>> mine)
         {
-            var query = _context.Notifications.Where(mine);
+            var query = _context.Notifications.Where(mine).Where(n => n.DismissedAt == null);
             return new Dictionary<string, object?>
             {
                 ["unread"] = await query.CountAsync(n => !n.IsRead),

@@ -17,11 +17,13 @@ namespace LifeLink.Controllers
     {
         private readonly IAuthService _authService;
         private readonly ICurrentUserService _currentUserService;
+        private readonly ISessionService _sessions;
 
-        public AuthController(IAuthService authService, ICurrentUserService currentUserService)
+        public AuthController(IAuthService authService, ICurrentUserService currentUserService, ISessionService sessions)
         {
             _authService = authService;
             _currentUserService = currentUserService;
+            _sessions = sessions;
         }
 
         /// <summary>
@@ -64,9 +66,33 @@ namespace LifeLink.Controllers
         [HttpPost("logout")]
         [AllowSuspendedAccess]
         [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
-        public IActionResult Logout()
+        public async Task<IActionResult> Logout([FromQuery] string? reason = null)
         {
+            // Ends the server-side session, so this token (in every tab, or copied elsewhere) stops working at once.
+            // A token whose session already ended (idle) is not authenticated here; there is nothing left to end.
+            if (Guid.TryParse(User.FindFirst(SessionSettings.SessionClaim)?.Value, out var sessionId))
+            {
+                await _sessions.EndAsync(sessionId, string.Equals(reason, "idle", StringComparison.OrdinalIgnoreCase)
+                    ? LifeLink.Entities.SessionEndReasons.Idle
+                    : LifeLink.Entities.SessionEndReasons.SignedOut);
+            }
             return Ok(ApiResponse<string>.Ok("Logout successful.", "Logged out successfully. Tokens can be cleared on client."));
+        }
+
+        /// <summary>
+        /// Heartbeat: the signed-in user is active (mouse, keyboard, touch, scroll, or "Stay signed in"). The session's
+        /// last activity is recorded while the token is validated; returns the idle timeout settings.
+        /// </summary>
+        [HttpPost("activity")]
+        [Authorize]
+        [AllowSuspendedAccess]
+        public IActionResult RecordActivity()
+        {
+            return Ok(ApiResponse<object>.Ok(new
+            {
+                idleTimeoutMinutes = _sessions.Settings.IdleTimeout.TotalMinutes,
+                warningMinutes = _sessions.Settings.WarningPeriod.TotalMinutes
+            }, "Activity recorded."));
         }
 
         /// <summary>

@@ -14,22 +14,34 @@ import {
   Users,
   AlertTriangle,
   UserCheck,
+  HeartHandshake,
+  History,
   X
 } from 'lucide-react';
 import BrandLogo from './BrandLogo';
+import { useAdminAttention, badgeText } from '../../context/useAdminAttention';
 
 export const Sidebar = ({ mobileOpen = false, onClose }) => {
   const { user } = useAuth();
   const { pathname } = useLocation();
   const userRoles = user?.roles ? (Array.isArray(user.roles) ? user.roles : [user.roles]) : ['User'];
+  const isAdmin = userRoles.includes('Admin');
+  // Admin badges: new requests/transfers (Activity log) and items waiting for the admin
+  const attention = useAdminAttention(isAdmin);
+  const badgeFor = (key) => {
+    if (!attention || !key) return null;
+    if (key === 'activity') return badgeText((attention.newBloodRequests || 0) + (attention.newTransfers || 0));
+    return badgeText(attention[key]);
+  };
 
   const getNavItems = () => {
     if (userRoles.includes('Admin')) {
       return [
         { label: 'Admin Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-        { label: 'Hospital Registration Requests', path: '/admin/hospitals/pending', icon: Building2 },
-        { label: 'Complaints Hub', path: '/admin/complaints', icon: AlertTriangle },
-        { label: 'Suspension Appeals', path: '/admin/appeals', icon: FileText },
+        { label: 'Activity Log', path: '/admin/activity', icon: History, badge: 'activity', badgeTitle: 'new blood requests and transfers' },
+        { label: 'Hospital Registration Requests', path: '/admin/hospitals/pending', icon: Building2, badge: 'pendingRegistrations', badgeTitle: 'registrations waiting for review' },
+        { label: 'Complaints Hub', path: '/admin/complaints', icon: AlertTriangle, badge: 'pendingComplaints', badgeTitle: 'complaints waiting for a reply' },
+        { label: 'Suspension Appeals', path: '/admin/appeals', icon: FileText, badge: 'pendingAppeals', badgeTitle: 'appeals waiting for a reply' },
         { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
         { label: 'Donate Blood', path: '/donor/requests', icon: Droplet }
       ];
@@ -43,6 +55,7 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
         { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
         { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck },
         { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight },
+        { label: 'Donate Blood', path: '/hospital/donate', icon: HeartHandshake },
         { label: 'Doctor Management', path: '/hospital/doctors', icon: Stethoscope },
         { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle },
         { label: 'My Appeals', path: '/appeals/history', icon: FileText }
@@ -114,7 +127,16 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {badgeFor(item.badge) && (
+                <span
+                  className="ml-auto inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white"
+                  title={`${badgeFor(item.badge)} ${item.badgeTitle}`}
+                  aria-label={`${badgeFor(item.badge)} ${item.badgeTitle}`}
+                >
+                  {badgeFor(item.badge)}
+                </span>
+              )}
             </Link>
           );
         })}

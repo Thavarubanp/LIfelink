@@ -3,9 +3,10 @@ using System.Collections.Generic;
 
 namespace LifeLink.Entities
 {
-    public class Complaint
+    public class Complaint : IConcurrencyVersioned
     {
         public Guid ComplaintId { get; set; } = Guid.NewGuid();
+        public int ConcurrencyToken { get; set; } // optimistic concurrency (see AppDbContext)
         public Guid? UserId { get; set; }          // Complainant
         public Guid? HospitalId { get; set; }      // Hospital complained about (also used for doctor-caused issues)
         public Guid? TargetUserId { get; set; }    // Individual user complained about
@@ -17,6 +18,8 @@ namespace LifeLink.Entities
         public Guid? AssignedAdminId { get; set; }
         public DateTime? ResolvedAt { get; set; }
         public string? ResolutionNotes { get; set; }
+        /// <summary>Set when the creator deletes the complaint. It stays in the database (with its thread) for the Admin.</summary>
+        public DateTime? DeletedAt { get; set; }
 
         // Navigation properties
         public User? User { get; set; }

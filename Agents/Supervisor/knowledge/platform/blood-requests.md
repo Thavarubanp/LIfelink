@@ -11,7 +11,7 @@ Donors, patients, hospital staff and the Admin can create a blood request from *
 1. The request is **Pending** until the hospital reviews it.
 2. The hospital **verifies** it and assigns one of its doctors (status **Verified**), or rejects it with a reason.
 3. The assigned doctor **approves** it (status **Approved**) or rejects it with a reason.
-4. Approved requests appear in **Donate Blood / Available Requests**, and eligible donors with a compatible blood group are notified.
+4. Approved requests appear in **Donate Blood / Available Requests**. Normal and High (Urgent) priority requests send no alerts: donors find them in that list. For Critical requests, eligible donors whose saved blood group is exactly the request's group are notified, and the hospitals holding that group.
 
 # Donated, reserved and remaining units
 
@@ -31,4 +31,4 @@ If a request is not fulfilled within 7 days it expires. Donors still in progress
 
 # Critical requests
 
-For urgent donor needs, create a request with **Critical** priority. It follows the same hospital and doctor approval, and once approved LifeLink alerts eligible donors (compatible blood group, at least 120 days since their last donation, active account) and nearby hospitals.
+For urgent donor needs, create a request with **Critical** priority. It follows the same hospital and doctor approval, and once approved LifeLink alerts eligible donors (saved blood group exactly the same as the request's, at least 120 days since their last donation, active account) and the hospitals that hold that exact blood group. Users who have not saved their blood group are not alerted.

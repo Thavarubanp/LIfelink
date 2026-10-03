@@ -16,7 +16,9 @@ namespace LifeLink.Services.Inventory
         Task<IEnumerable<InventoryResponseDto>> GetLowStockInventoryAsync();
         Task<IEnumerable<InventoryResponseDto>> GetSurplusInventoryAsync();
         Task<IEnumerable<InventoryTransactionResponseDto>> GetInventoryTransactionsAsync(Guid inventoryId);
-        Task<IEnumerable<BloodPacketResponseDto>> GetPacketsAsync(Guid? hospitalId, string? bloodGroup, string? status, Guid? packetId);
+        Task<IEnumerable<BloodPacketResponseDto>> GetPacketsAsync(Guid? hospitalId, string? bloodGroup, string? status, Guid? packetId, Guid? viewerHospitalId = null);
+        Task<List<BloodPacketResponseDto>> CreatePacketsAsync(Guid hospitalId, CreateBloodPacketsDto dto, Guid? performedByUserId);
+        Task<BloodPacketResponseDto> UpdatePacketAsync(Guid packetId, Guid hospitalId, UpdateBloodPacketDto dto, Guid? performedByUserId);
         Task<int> ProcessExpiredPacketsAsync();
     }
 }

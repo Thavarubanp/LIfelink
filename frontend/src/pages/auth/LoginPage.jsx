@@ -19,7 +19,8 @@ import {
   ArrowRight,
   ShieldAlert,
   Stethoscope,
-  UserPlus
+  UserPlus,
+  Clock
 } from 'lucide-react';
 
 export const LoginPage = () => {
@@ -34,6 +35,12 @@ export const LoginPage = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
+
+  // Signed out by the idle timeout (the minutes come from the backend setting)
+  const searchParams = new URLSearchParams(location.search);
+  const idleMinutes = Number(searchParams.get('m'));
+  const signedOutForInactivity = searchParams.get('reason') === 'idle';
+  const inactivityMessage = `You were signed out after ${idleMinutes > 0 ? idleMinutes : 10} minute${idleMinutes === 1 ? '' : 's'} of inactivity.`;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -111,6 +118,14 @@ export const LoginPage = () => {
             Enter your credentials to access your LifeLink portal
           </p>
         </div>
+
+        {/* Idle sign-out notice */}
+        {signedOutForInactivity && !error && (
+          <div role="status" className="mb-6 p-3.5 bg-amber-50 border border-amber-200 text-amber-800 dark:bg-amber-950/80 dark:border-amber-900 dark:text-amber-200 rounded-xl flex items-start gap-2.5 text-xs shadow-md animate-in fade-in">
+            <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <span className="leading-relaxed font-medium">{inactivityMessage}</span>
+          </div>
+        )}
 
         {/* Error Alert */}
         {error && (

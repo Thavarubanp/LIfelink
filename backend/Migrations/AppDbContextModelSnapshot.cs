@@ -22,6 +22,8 @@ namespace backend.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("BloodPacketTrackingNumbers");
+
             modelBuilder.Entity("LifeLink.Entities.Acceptance", b =>
                 {
                     b.Property<Guid>("AcceptanceId")
@@ -36,6 +38,15 @@ namespace backend.Migrations
 
                     b.Property<DateTime?>("CancelledAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<Guid?>("DonorHospitalId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("DonorUserId")
                         .HasColumnType("uuid");
@@ -54,11 +65,87 @@ namespace backend.Migrations
 
                     b.HasIndex("BloodRequestId");
 
+                    b.HasIndex("DonorHospitalId");
+
                     b.HasIndex("DonorUserId");
 
                     b.HasIndex("Status");
 
                     b.ToTable("Acceptances");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.ActivityLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("ActorName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("ActorRole")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<Guid?>("HospitalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("SubjectUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId", "OccurredAt");
+
+                    b.HasIndex("HospitalId", "OccurredAt");
+
+                    b.HasIndex("SubjectUserId", "OccurredAt");
+
+                    b.ToTable("ActivityLogs");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.AdminSeenMarker", b =>
+                {
+                    b.Property<Guid>("AdminUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Area")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)");
+
+                    b.Property<DateTime>("SeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("AdminUserId", "Area");
+
+                    b.ToTable("AdminSeenMarkers");
                 });
 
             modelBuilder.Entity("LifeLink.Entities.Appeal", b =>
@@ -71,6 +158,12 @@ namespace backend.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<Guid?>("HospitalId")
                         .HasColumnType("uuid");
 
@@ -78,6 +171,9 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
+
+                    b.Property<DateTime?>("RejectedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("ReviewedAt")
                         .HasColumnType("timestamp with time zone");
@@ -107,6 +203,14 @@ namespace backend.Migrations
                     b.HasIndex("SubmittedAt");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex(new[] { "HospitalId" }, "IX_Appeals_OneOpenPerHospital")
+                        .IsUnique()
+                        .HasFilter("\"HospitalId\" IS NOT NULL AND \"Status\" IN ('PENDING', 'REJECTED')");
+
+                    b.HasIndex(new[] { "UserId" }, "IX_Appeals_OneOpenPerUser")
+                        .IsUnique()
+                        .HasFilter("\"HospitalId\" IS NULL AND \"Status\" IN ('PENDING', 'REJECTED')");
 
                     b.ToTable("Appeals");
                 });
@@ -147,6 +251,25 @@ namespace backend.Migrations
                     b.ToTable("AppealMessages");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.BackgroundJobLease", b =>
+                {
+                    b.Property<string>("Name")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Holder")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("LeasedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Name");
+
+                    b.ToTable("BackgroundJobLeases");
+                });
+
             modelBuilder.Entity("LifeLink.Entities.BloodInventory", b =>
                 {
                     b.Property<Guid>("InventoryId")
@@ -165,6 +288,9 @@ namespace backend.Migrations
                         .HasDefaultValue(0);
 
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("HospitalId")
@@ -220,8 +346,14 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("CreatedByHospitalId")
+                        .HasColumnType("uuid");
+
                     b.Property<DateTime>("ExpiryDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("HeldForReferenceId")
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("HospitalId")
                         .HasColumnType("uuid");
@@ -239,6 +371,11 @@ namespace backend.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("TrackingNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -249,9 +386,16 @@ namespace backend.Migrations
 
                     b.HasKey("PacketId");
 
+                    b.HasIndex("CreatedByHospitalId");
+
                     b.HasIndex("ExpiryDate");
 
+                    b.HasIndex("HeldForReferenceId");
+
                     b.HasIndex("SourceReferenceId");
+
+                    b.HasIndex("TrackingNumber")
+                        .IsUnique();
 
                     b.HasIndex("HospitalId", "BloodGroup", "Status");
 
@@ -263,6 +407,16 @@ namespace backend.Migrations
                     b.Property<Guid>("BloodRequestId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AdminSuspendedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AdminSuspendedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AdminSuspensionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<string>("BloodGroup")
                         .IsRequired()
@@ -277,6 +431,9 @@ namespace backend.Migrations
                         .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("ExpiryDate")
@@ -335,6 +492,10 @@ namespace backend.Migrations
                     b.HasIndex("PatientUserId");
 
                     b.HasIndex("Status");
+
+                    b.HasIndex(new[] { "PatientUserId", "HospitalId", "BloodGroup" }, "IX_BloodRequests_OneActivePerCreatorHospitalGroup")
+                        .IsUnique()
+                        .HasFilter("\"Status\" IN ('Pending', 'Verified', 'Approved')");
 
                     b.ToTable("BloodRequests", t =>
                         {
@@ -397,7 +558,16 @@ namespace backend.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
@@ -504,6 +674,9 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -554,14 +727,16 @@ namespace backend.Migrations
                     b.HasKey("DoctorId");
 
                     b.HasIndex("Email")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.HasIndex("HospitalId");
 
-                    b.HasIndex("LicenseNumber")
-                        .IsUnique();
-
                     b.HasIndex("UserId");
+
+                    b.HasIndex(new[] { "HospitalId", "LicenseNumber" }, "IX_Doctors_HospitalId_LicenseNumber")
+                        .IsUnique()
+                        .HasFilter("\"DeletedAt\" IS NULL");
 
                     b.ToTable("Doctors");
                 });
@@ -678,6 +853,12 @@ namespace backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -748,6 +929,12 @@ namespace backend.Migrations
 
                     b.Property<string>("City")
                         .HasColumnType("text");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<string>("ContactNumber")
                         .IsRequired()
@@ -945,6 +1132,16 @@ namespace backend.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<DateTime?>("AdminSuspendedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("AdminSuspendedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AdminSuspensionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<DateTime?>("ApprovedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -952,6 +1149,12 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
+
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1007,6 +1210,76 @@ namespace backend.Migrations
                     b.ToTable("HospitalTransferRequests");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.IdempotencyKey", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Endpoint")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.ToTable("IdempotencyKeys");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.InventoryAnalysisRun", b =>
+                {
+                    b.Property<Guid>("RunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ExpiringAlerts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("LowStockAlerts")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("SkippedDuplicates")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("TriggeredByHospitalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("TriggeredByUserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("RunId");
+
+                    b.HasIndex("StartedAt");
+
+                    b.HasIndex("Trigger", "StartedAt");
+
+                    b.ToTable("InventoryAnalysisRuns");
+                });
+
             modelBuilder.Entity("LifeLink.Entities.InventoryTransaction", b =>
                 {
                     b.Property<Guid>("TransactionId")
@@ -1060,6 +1333,13 @@ namespace backend.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("DedupeKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("DismissedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("HospitalId")
                         .HasColumnType("uuid");
 
@@ -1092,6 +1372,8 @@ namespace backend.Migrations
                     b.HasIndex("HospitalId");
 
                     b.HasIndex("UserId");
+
+                    b.HasIndex("HospitalId", "DedupeKey");
 
                     b.ToTable("Notifications");
                 });
@@ -1232,6 +1514,12 @@ namespace backend.Migrations
                         .HasMaxLength(10)
                         .HasColumnType("character varying(10)");
 
+                    b.Property<int>("ConcurrencyToken")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1315,6 +1603,44 @@ namespace backend.Migrations
                     b.ToTable("UserRoles");
                 });
 
+            modelBuilder.Entity("LifeLink.Entities.UserSession", b =>
+                {
+                    b.Property<Guid>("SessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("LastActivityAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("SessionId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserSessions");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.Acceptance", b =>
+                {
+                    b.HasOne("LifeLink.Entities.BloodRequest", null)
+                        .WithMany()
+                        .HasForeignKey("BloodRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeLink.Entities.Appeal", b =>
                 {
                     b.HasOne("LifeLink.Entities.Hospital", "Hospital")
@@ -1370,11 +1696,19 @@ namespace backend.Migrations
 
             modelBuilder.Entity("LifeLink.Entities.BloodPacket", b =>
                 {
+                    b.HasOne("LifeLink.Entities.Hospital", "CreatedByHospital")
+                        .WithMany()
+                        .HasForeignKey("CreatedByHospitalId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("LifeLink.Entities.Hospital", "Hospital")
                         .WithMany()
                         .HasForeignKey("HospitalId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("CreatedByHospital");
 
                     b.Navigation("Hospital");
                 });
@@ -1629,6 +1963,17 @@ namespace backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeLink.Entities.UserSession", b =>
+                {
+                    b.HasOne("LifeLink.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.Navigation("User");
                 });

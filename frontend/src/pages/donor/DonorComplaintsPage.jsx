@@ -5,6 +5,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
+import { isConflictError } from '../../utils/errorUtils';
+import { newIdempotencyKey } from '../../session/sessionActivity';
 import {
   MessageSquare,
   Trash2,
@@ -59,6 +61,8 @@ export const DonorComplaintsPage = () => {
   const [myComplaints, setMyComplaints] = useState([]);
   const [loadingComplaints, setLoadingComplaints] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // One key per complaint form: a double submit or retry never files the same complaint twice
+  const submitKeyRef = useRef(null);
   const [expandedComplaintIds, setExpandedComplaintIds] = useState(new Set());
   const [deletingId, setDeletingId] = useState(null);
   const [replyTarget, setReplyTarget] = useState(null);
@@ -104,6 +108,11 @@ export const DonorComplaintsPage = () => {
         message: err.response?.data?.message || 'Could not mark complaint as solved.',
         type: 'error'
       });
+      // The administrator replied at the same moment: show the current thread
+      if (isConflictError(err)) {
+        setSolveModal({ isOpen: false, complaint: null, notes: '' });
+        await loadComplaintsHistory();
+      }
     } finally {
       setSolvingId(null);
     }
@@ -113,7 +122,7 @@ export const DonorComplaintsPage = () => {
     const complaintId = complaint.complaintId || complaint.id;
     if (
       !window.confirm(
-        `Are you sure you want to delete this complaint ("${complaint.subject}")? The complaint and its entire reply history will be permanently deleted.`
+        `Are you sure you want to delete this complaint ("${complaint.subject}")? It will be removed from your list, together with its reply history.`
       )
     ) {
       return;
@@ -124,7 +133,7 @@ export const DonorComplaintsPage = () => {
       await complaintApi.deleteComplaint(complaintId);
       addToast({
         title: 'Complaint Deleted',
-        message: 'Your complaint has been permanently deleted.',
+        message: 'Your complaint has been deleted and removed from your list.',
         type: 'info'
       });
       await loadComplaintsHistory();
@@ -134,6 +143,7 @@ export const DonorComplaintsPage = () => {
         message: err.response?.data?.message || 'Could not delete complaint.',
         type: 'error'
       });
+      if (isConflictError(err)) await loadComplaintsHistory();
     } finally {
       setDeletingId(null);
     }
@@ -141,7 +151,12 @@ export const DonorComplaintsPage = () => {
 
   // Creator reply (only after an admin reply; replies alternate)
   const handleSendReply = async (dto) => {
-    await complaintApi.replyToComplaint(replyTarget.complaintId, dto);
+    try {
+      await complaintApi.replyToComplaint(replyTarget.complaintId, dto);
+    } catch (err) {
+      if (isConflictError(err)) await loadComplaintsHistory(); // the administrator acted at the same moment
+      throw err;
+    }
     addToast({ title: 'Reply Sent', message: 'The administrator has been notified.', type: 'success' });
     setReplyTarget(null);
     await loadComplaintsHistory();
@@ -290,6 +305,7 @@ export const DonorComplaintsPage = () => {
     setSubmitting(true);
 
     try {
+      submitKeyRef.current ??= newIdempotencyKey();
       const payload = {
         complaintType: formData.complaintType || categories[0],
         subject: selectedTarget
@@ -300,7 +316,8 @@ export const DonorComplaintsPage = () => {
         targetUserId: formData.targetUserId
       };
 
-      await complaintApi.createComplaint(payload);
+      await complaintApi.createComplaint(payload, { idempotencyKey: submitKeyRef.current });
+      submitKeyRef.current = newIdempotencyKey();
 
       addToast({
         title: 'Report Submitted Successfully',
@@ -319,6 +336,11 @@ export const DonorComplaintsPage = () => {
         message: err.response?.data?.message || err.message || 'Could not file complaint.',
         type: 'error'
       });
+      // 409: this form was already submitted; show it and start a new form key
+      if (isConflictError(err)) {
+        submitKeyRef.current = newIdempotencyKey();
+        await loadComplaintsHistory();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -329,7 +351,7 @@ export const DonorComplaintsPage = () => {
     const normalized = (status || 'OPEN').toUpperCase();
     if (normalized === 'RESOLVED') {
       return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 shrink-0">
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30 flex items-center gap-1.5 shrink-0">
           <CheckCircle2 className="w-3 h-3" />
           <span>Resolved</span>
         </span>
@@ -337,7 +359,7 @@ export const DonorComplaintsPage = () => {
     }
     if (normalized === 'UNDER_REVIEW' || normalized === 'AWAITING_INFORMATION' || normalized === 'IN PROGRESS') {
       return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/30 flex items-center gap-1.5 shrink-0">
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30 flex items-center gap-1.5 shrink-0">
           <Clock className="w-3 h-3 animate-spin" />
           <span>Under Investigation</span>
         </span>
@@ -345,7 +367,7 @@ export const DonorComplaintsPage = () => {
     }
     if (normalized === 'CANCELLED') {
       return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 flex items-center gap-1.5 shrink-0">
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30 flex items-center gap-1.5 shrink-0">
           <XCircle className="w-3 h-3" />
           <span>Closed / Cancelled</span>
         </span>
@@ -353,14 +375,14 @@ export const DonorComplaintsPage = () => {
     }
     if (normalized === 'REJECTED') {
       return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-500/10 text-red-400 border border-red-500/30 flex items-center gap-1.5 shrink-0">
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30 flex items-center gap-1.5 shrink-0">
           <X className="w-3 h-3" />
           <span>Rejected</span>
         </span>
       );
     }
     return (
-      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1.5 shrink-0">
+      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30 flex items-center gap-1.5 shrink-0">
         <Clock className="w-3 h-3 animate-pulse" />
         <span>Pending Review</span>
       </span>
@@ -375,11 +397,11 @@ export const DonorComplaintsPage = () => {
     if (norm === 'RESOLVED' || norm === 'REJECTED' || hasReply) step = 3;
 
     return (
-      <div className="pt-3 pb-1 border-t border-slate-800/80">
-        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-400 mb-1.5">
-          <span className={step >= 1 ? 'text-cyan-400' : ''}>1. Submitted</span>
-          <span className={step >= 2 ? 'text-blue-400' : ''}>2. In Review</span>
-          <span className={step >= 3 ? (norm === 'REJECTED' ? 'text-red-400' : 'text-emerald-400') : ''}>
+      <div className="pt-3 pb-1 border-t border-slate-200 dark:border-slate-800/80">
+        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
+          <span className={step >= 1 ? 'text-cyan-700 dark:text-cyan-400' : ''}>1. Submitted</span>
+          <span className={step >= 2 ? 'text-blue-700 dark:text-blue-400' : ''}>2. In Review</span>
+          <span className={step >= 3 ? (norm === 'REJECTED' ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400') : ''}>
             3. Action Taken
           </span>
         </div>
@@ -442,7 +464,7 @@ export const DonorComplaintsPage = () => {
             <div className="relative" ref={dropdownRef}>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-slate-700 dark:text-slate-300 font-semibold uppercase tracking-wider text-[11px]">
-                  Target Entity
+                  Target (optional)
                 </label>
                 <div className="flex items-center gap-1">
                   <button
@@ -508,6 +530,12 @@ export const DonorComplaintsPage = () => {
                   </button>
                 ) : null}
               </div>
+
+              {!selectedTarget && (
+                <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  Leave this empty to ask the administrator a general question or raise a doubt.
+                </p>
+              )}
 
               {/* Selected Target Badge Callout */}
               {selectedTarget && (
@@ -644,7 +672,7 @@ export const DonorComplaintsPage = () => {
           <button
             type="button"
             onClick={loadComplaintsHistory}
-            className="text-xs text-cyan-400 hover:underline flex items-center gap-1 font-medium"
+            className="text-xs text-cyan-700 dark:text-cyan-400 hover:underline flex items-center gap-1 font-medium"
           >
             <span>Refresh Complaints</span>
           </button>
@@ -657,8 +685,8 @@ export const DonorComplaintsPage = () => {
           </div>
         ) : myComplaints.length === 0 ? (
           <div className="p-8 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
-            <ShieldCheck className="w-10 h-10 text-slate-600 mx-auto mb-2" />
-            <h3 className="text-sm font-bold text-slate-300">No Complaints Submitted Yet</h3>
+            <ShieldCheck className="w-10 h-10 text-slate-400 dark:text-slate-600 mx-auto mb-2" />
+            <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No Complaints Submitted Yet</h3>
             <p className="text-xs text-slate-500 mt-1">No complaint records found for your account in the database.</p>
           </div>
         ) : (
@@ -675,7 +703,7 @@ export const DonorComplaintsPage = () => {
                   key={complaintId}
                   className={`rounded-2xl p-5 border transition-all duration-300 shadow-md ${
                     hasAdminReply
-                      ? 'bg-gradient-to-b from-purple-950/20 via-slate-900 to-slate-900 border-purple-500/40 shadow-purple-950/10'
+                      ? 'bg-gradient-to-b from-purple-50 via-white to-white border-purple-200 dark:from-purple-950/20 dark:via-slate-900 dark:to-slate-900 dark:border-purple-500/40 dark:shadow-purple-950/10'
                       : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                   }`}
                 >
@@ -690,16 +718,16 @@ export const DonorComplaintsPage = () => {
                       </span>
 
                       {(item.hospitalName || item.targetName) && (
-                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 flex items-center gap-1">
+                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-cyan-50 text-cyan-700 border border-cyan-200 dark:bg-cyan-500/10 dark:text-cyan-400 dark:border-cyan-500/20 flex items-center gap-1">
                           <Building2 className="w-3 h-3" />
                           <span>Target: {item.hospitalName || item.targetName}</span>
                         </span>
                       )}
 
                       {hasAdminReply && (
-                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1.5 animate-pulse">
-                          <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping shrink-0" />
-                          <Sparkles className="w-3 h-3 text-purple-300" />
+                        <span className="px-2.5 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/40 flex items-center gap-1.5 animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-purple-500 dark:bg-purple-400 animate-ping shrink-0" />
+                          <Sparkles className="w-3 h-3 text-purple-600 dark:text-purple-300" />
                           <span>Admin Replied</span>
                         </span>
                       )}
@@ -710,9 +738,9 @@ export const DonorComplaintsPage = () => {
 
                   <div className="mb-3">
                     <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{item.subject}</h3>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                       Submitted on{' '}
-                      <span className="font-semibold text-slate-300">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">
                         {new Date(item.createdAt).toLocaleDateString(undefined, {
                           year: 'numeric',
                           month: 'short',
@@ -755,7 +783,7 @@ export const DonorComplaintsPage = () => {
                           </button>
                         </>
                       ) : (
-                        <span className="text-xs font-semibold text-slate-400 italic px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 italic px-2.5 py-1 bg-slate-100 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700">
                           {statusUpper === 'RESOLVED' ? 'Resolved (Read-Only)' : 'Closed (Read-Only)'}
                         </span>
                       )}
@@ -801,16 +829,16 @@ export const DonorComplaintsPage = () => {
 
                       {/* Official Admin Reply */}
                       {hasAdminReply && (
-                        <div className="p-4 bg-purple-950/40 border border-purple-500/40 rounded-xl relative overflow-hidden shadow-inner">
-                          <div className="flex items-center gap-2 mb-2 text-xs font-bold text-purple-300">
-                            <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
+                        <div className="p-4 bg-purple-50 border border-purple-200 dark:bg-purple-950/40 dark:border-purple-500/40 rounded-xl relative overflow-hidden shadow-inner">
+                          <div className="flex items-center gap-2 mb-2 text-xs font-bold text-purple-800 dark:text-purple-300">
+                            <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0" />
                             <span>Official LifeLink System Admin Response</span>
                           </div>
-                          <p className="text-xs text-slate-200 leading-relaxed font-medium">
+                          <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
                             {item.resolutionNotes || item.adminResponse || 'Your complaint has been formally reviewed and addressed by System Governance Administration.'}
                           </p>
                           {item.assignedAdminEmail && (
-                            <p className="text-[10px] text-purple-300/80 mt-2 italic">
+                            <p className="text-[10px] text-purple-700 dark:text-purple-300/80 mt-2 italic">
                               Reviewed by: {item.assignedAdminEmail}
                             </p>
                           )}
@@ -821,7 +849,7 @@ export const DonorComplaintsPage = () => {
                       {Array.isArray(item.activityReports) && item.activityReports.length > 0 && (
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <Building2 className="w-4 h-4 text-cyan-400" />
+                            <Building2 className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
                             <h4 className="text-xs font-bold text-slate-900 dark:text-slate-100">
                               Hospital Activity Evidence Reports ({item.activityReports.length})
                             </h4>
@@ -833,12 +861,12 @@ export const DonorComplaintsPage = () => {
                                 className="p-3 bg-slate-50 dark:bg-slate-950/60 border border-cyan-500/30 rounded-xl text-xs space-y-1"
                               >
                                 <div className="flex items-center justify-between">
-                                  <span className="font-bold text-cyan-400">{report.title}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono">
+                                  <span className="font-bold text-cyan-700 dark:text-cyan-400">{report.title}</span>
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                                     {new Date(report.submittedAt).toLocaleDateString()}
                                   </span>
                                 </div>
-                                <p className="text-slate-300">{report.description}</p>
+                                <p className="text-slate-700 dark:text-slate-300">{report.description}</p>
                               </div>
                             ))}
                           </div>

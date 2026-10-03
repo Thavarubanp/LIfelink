@@ -115,7 +115,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }

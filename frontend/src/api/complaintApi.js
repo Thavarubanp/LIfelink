@@ -1,8 +1,9 @@
 import client from './client';
 
 export const complaintApi = {
-  createComplaint: async (dto) => {
-    const response = await client.post('/Complaints', dto);
+  // idempotencyKey: one per form, so a double submit never files the complaint twice
+  createComplaint: async (dto, { idempotencyKey } = {}) => {
+    const response = await client.post('/Complaints', dto, { idempotencyKey });
     return response.data;
   },
 

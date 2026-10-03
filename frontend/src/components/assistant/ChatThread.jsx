@@ -41,10 +41,12 @@ const Segment = ({ segment }) => {
 /**
  * Conversation thread shared by the assistant panel and the screening interview page, styled like the
  * complaint and appeal threads. messages: [{ role: 'user' | 'assistant', text?, segments?, actions? }]
+ * lastAssistantExtra: optional content shown inside the latest assistant bubble (the screening question's inputs).
  */
-export const ChatThread = ({ messages, thinking = false, onAction, className = '' }) => {
+export const ChatThread = ({ messages, thinking = false, onAction, className = '', lastAssistantExtra = null }) => {
   const navigate = useNavigate();
   const endRef = useRef(null);
+  const lastAssistant = messages.map((m) => m.role).lastIndexOf('assistant');
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -60,7 +62,7 @@ export const ChatThread = ({ messages, thinking = false, onAction, className = '
             </div>
           )}
           <div
-            className={`max-w-[85%] rounded-xl p-3 border shadow-sm space-y-3 ${
+            className={`${index === lastAssistant && lastAssistantExtra ? 'w-full max-w-[92%]' : 'max-w-[85%]'} rounded-xl p-3 border shadow-sm space-y-3 ${
               m.role === 'user'
                 ? 'bg-red-600 text-white border-red-700'
                 : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60'
@@ -73,6 +75,7 @@ export const ChatThread = ({ messages, thinking = false, onAction, className = '
             ) : (
               <p className="text-xs text-slate-700 dark:text-slate-200 whitespace-pre-line">{m.text}</p>
             )}
+            {index === lastAssistant && lastAssistantExtra}
             {m.actions?.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {m.actions.map((a) => (

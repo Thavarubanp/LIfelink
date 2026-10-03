@@ -74,7 +74,7 @@ namespace LifeLink.Tests
             var service = new DoctorService(context, new PasswordHasherService());
 
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => service.CreateDoctorAsync(NewDoctor(hospital.HospitalId, slmc)));
-            Assert.Equal("A doctor with this SLMC number already exists.", ex.Message);
+            Assert.Equal("A doctor with this SLMC number already exists at this hospital.", ex.Message);
             Assert.Equal(1, await context.Doctors.CountAsync());
         }
 
@@ -125,7 +125,7 @@ namespace LifeLink.Tests
                 .UpdateDoctorProfile(second.DoctorId, EditDto("Slmc/2006/1234"));
 
             var bad = Assert.IsType<BadRequestObjectResult>(result);
-            Assert.Equal("A doctor with this SLMC number already exists.", Assert.IsType<ApiResponse<object>>(bad.Value).Message);
+            Assert.Equal("A doctor with this SLMC number already exists at this hospital.", Assert.IsType<ApiResponse<object>>(bad.Value).Message);
             Assert.Equal("SLMC/2010/0001", (await context.Doctors.AsNoTracking().FirstAsync(d => d.DoctorId == second.DoctorId)).LicenseNumber);
         }
 

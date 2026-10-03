@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Inventory;
@@ -65,7 +66,7 @@ namespace LifeLink.Controllers
                 var result = await _inventoryService.CreateInventoryAsync(request);
                 return CreatedAtAction(nameof(GetInventoryById), new { id = result.InventoryId }, ApiResponse<InventoryResponseDto>.Ok(result, "Inventory created successfully."));
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 if (ex.Message.Contains("already exists"))
                 {
@@ -87,7 +88,41 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Retrieves low-stock blood inventory records (units available <= minimum threshold).
+        /// Starts the inventory analysis now (hospital staff only; there is no admin button). Same code and lock as the
+        /// scheduled run: 409 "Analysis is already running" or "Analysis ran moments ago — try again in N s" (2-minute
+        /// global cooldown). Returns the run: alerts sent per kind and repeated alerts skipped.
+        /// </summary>
+        [HttpPost("analysis/run")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<InventoryAnalysisRunDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> RunAnalysis([FromServices] InventoryAnalysisService analysis)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+            var run = await analysis.RunAsync(LifeLink.Entities.InventoryAnalysisTriggers.Manual, hospitalId, _currentUserService.UserId);
+            if (run.Status == LifeLink.Entities.InventoryAnalysisStatuses.Failed)
+            {
+                return StatusCode(StatusCodes.Status503ServiceUnavailable, ApiResponse<object>.Fail("The analysis failed. Please try again later."));
+            }
+            return Ok(ApiResponse<InventoryAnalysisRunDto>.Ok(run, "Inventory analysis complete."));
+        }
+
+        /// <summary>
+        /// Lock state, last run (with who started it) and the next scheduled run: the same answer for every hospital.
+        /// Polled every 15 s in the background (does not extend the session).
+        /// </summary>
+        [HttpGet("analysis/status")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<InventoryAnalysisStatusDto>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAnalysisStatus([FromServices] InventoryAnalysisService analysis) =>
+            Ok(ApiResponse<InventoryAnalysisStatusDto>.Ok(await analysis.GetStatusAsync(), "Inventory analysis status."));
+
+        /// <summary>
+        /// Retrieves low-stock blood inventory records (units available &lt; minimum threshold, the single rule in InventoryRules).
         /// </summary>
         [HttpGet("low-stock")]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryResponseDto>>), StatusCodes.Status200OK)]
@@ -137,7 +172,8 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Updates thresholds of the hospital's own category. A lower unit count issues packets (earliest expiry first).
+        /// Updates thresholds of the hospital's own category and issues the packets listed in IssuePacketIds
+        /// (with AuditNotes as the reason). The unit count cannot be typed in.
         /// </summary>
         [HttpPut("{id:guid}")]
         [Authorize(Roles = "HospitalStaff")]
@@ -165,7 +201,11 @@ namespace LifeLink.Controllers
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -190,7 +230,7 @@ namespace LifeLink.Controllers
             {
                 success = await _inventoryService.DeleteInventoryAsync(id);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
@@ -210,6 +250,7 @@ namespace LifeLink.Controllers
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<BloodPacketResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetPackets([FromQuery] Guid? hospitalId, [FromQuery] string? bloodGroup, [FromQuery] string? status, [FromQuery] Guid? packetId)
         {
+            Guid? viewerHospitalId = null;
             if (_currentUserService.Roles.Contains("HospitalStaff"))
             {
                 hospitalId = await CallerHospitalIdAsync();
@@ -217,10 +258,79 @@ namespace LifeLink.Controllers
                 {
                     return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
                 }
+                viewerHospitalId = hospitalId;
             }
 
-            var result = await _inventoryService.GetPacketsAsync(hospitalId, bloodGroup, status, packetId);
+            var result = await _inventoryService.GetPacketsAsync(hospitalId, bloodGroup, status, packetId, viewerHospitalId);
             return Ok(ApiResponse<IEnumerable<BloodPacketResponseDto>>.Ok(result, "Blood packets retrieved successfully."));
+        }
+
+        /// <summary>
+        /// Hospital staff enter collected blood as packets (blood group, mandatory collected date that is not in the
+        /// future, quantity 1-20). Each packet gets a unique tracking number; the hospital comes from the account.
+        /// </summary>
+        [HttpPost("packets")]
+        [LifeLink.Common.Idempotent] // a double submit with the same Idempotency-Key creates nothing twice
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<List<BloodPacketResponseDto>>), StatusCodes.Status201Created)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
+        public async Task<IActionResult> CreatePackets([FromBody] CreateBloodPacketsDto request)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+
+            try
+            {
+                var result = await _inventoryService.CreatePacketsAsync(hospitalId.Value, request, _currentUserService.UserId);
+                return StatusCode(StatusCodes.Status201Created,
+                    ApiResponse<List<BloodPacketResponseDto>>.Ok(result, $"{result.Count} blood packet(s) added."));
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Edits a packet's blood group and collected date. Only the hospital that created the packet may edit it
+        /// (403 otherwise), and only while it owns the packet and the packet is Available.
+        /// </summary>
+        [HttpPut("packets/{packetId:guid}")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<BloodPacketResponseDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status403Forbidden)]
+        public async Task<IActionResult> UpdatePacket(Guid packetId, [FromBody] UpdateBloodPacketDto request)
+        {
+            var hospitalId = await CallerHospitalIdAsync();
+            if (hospitalId == null)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Your account is not linked to a hospital."));
+            }
+
+            try
+            {
+                var result = await _inventoryService.UpdatePacketAsync(packetId, hospitalId.Value, request, _currentUserService.UserId);
+                return Ok(ApiResponse<BloodPacketResponseDto>.Ok(result, "Blood packet updated."));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
+            {
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
+            }
         }
 
         /// <summary>

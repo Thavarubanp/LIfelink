@@ -3,7 +3,7 @@ import { AlertTriangle, CheckCircle2, ClipboardCheck, FileText, Loader2, Lock, U
 import { acceptanceApi, bloodRequestApi, screeningApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const RISK_VARIANT = { HIGH: 'danger', MEDIUM: 'warning', LOW: 'success' };
@@ -25,7 +25,9 @@ const ReportViewer = ({ versions, onClose }) => {
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800">
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Screening report - {selected.donorName}</h3>
-            <p className="text-[11px] text-slate-500">Request #{String(selected.bloodRequestId).substring(0, 8)} ({selected.requestBloodGroup}) - version {selected.reportVersion}, submitted {fmt(selected.createdAt)}</p>
+            <p className="text-[11px] text-slate-500">
+              Request #{String(selected.bloodRequestId).substring(0, 8)} ({selected.requestBloodGroup}){selected.requestStatus === 'Deleted' ? ' - request deleted by its creator' : ''} - version {selected.reportVersion}, submitted {fmt(selected.createdAt)}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button>
         </div>
@@ -175,6 +177,11 @@ export const ScreeningReportsPage = () => {
       reload();
     } catch (err) {
       addToast({ title: 'Action failed', message: getApiErrorMessage(err), type: 'error' });
+      // The donor withdrew or another doctor decided at the same moment: show the current state
+      if (isConflictError(err)) {
+        setDialog(null);
+        reload();
+      }
     } finally {
       setSubmitting(false);
     }
@@ -220,6 +227,8 @@ export const ScreeningReportsPage = () => {
                   {latest.isAssignedToMe && <Badge variant="primary" size="sm">Assigned to you</Badge>}
                   {latest.donorAccountStatus && latest.donorAccountStatus !== 'Active' && <Badge variant="warning" size="sm">Donor {latest.donorAccountStatus}</Badge>}
                   {versions.length > 1 && <Badge variant="default" size="sm">v{latest.reportVersion}</Badge>}
+                  {/* Screening reports are medical records: kept and shown even after the creator deleted the request */}
+                  {latest.requestStatus === 'Deleted' && <Badge variant="default" size="sm">Request deleted</Badge>}
                 </div>
                 <p className="text-[11px] text-slate-500">
                   Request #{String(latest.bloodRequestId).substring(0, 8)} ({latest.requestBloodGroup}, {latest.requestStatus}) - {latest.fulfilledUnits}/{latest.unitsRequired} donated, {latest.reservedUnits} reserved - {latest.recommendation ? `AI: ${latest.recommendation}` : ''}

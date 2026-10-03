@@ -14,8 +14,9 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
-# Environment secrets (never commit these)
+# Environment secrets (never commit these): .env and every variant (.env.local, .env.production, ...), keeping the examples
 .env
+.env.*
 !.env.example
 
 # SQLite databases
@@ -26,8 +27,22 @@ __pycache__/
 # Generated reports
 Agents/RequestManagement/reports/generated/
 
-# Supervisor knowledge-base vectors (rebuilt with `python -m knowledge.ingest`)
+# Supervisor knowledge-base vectors (rebuilt with `python -m knowledge.ingest`); any other Chroma store too
 Agents/Supervisor/.chroma/
+**/.chroma/
+
+# Test artifacts
+**/TestResults/
+coverage/
+htmlcov/
+.coverage
+*.log
+
+# Scratch and backup files
+*.tmp
+*.bak
+*.orig
+.DS_Store
 
 # Node / Frontend
 node_modules/
@@ -43,3 +58,4 @@ build/
 
 # Local development secrets
 backend/appsettings.Development.json
+docs/cleanup-test-records.sql

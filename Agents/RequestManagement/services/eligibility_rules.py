@@ -1,160 +1,171 @@
 """
-Deterministic screening rules. They raise flags for the doctor and set the AI recommendation, but they never
-approve or reject: the reviewing doctor decides.
+Deterministic screening rules for the 7-question NBTS questionnaire. They only FLAG answers for the reviewing doctor:
+they never approve or reject, and no LLM is involved.
 
-severity: "defer"  -> temporary deferral indicated (e.g. recent tattoo, feeling unwell today)
-          "review" -> needs the doctor's judgement
-          "high"   -> serious risk for the donor or the patient
+severity: "defer"  -> likely temporary deferral; the doctor confirms (age, first-time donor over 55, weight, donation
+                      interval, recent tattoo, malaria-risk or recent foreign travel, pregnancy/breastfeeding/birth,
+                      risk behaviour)
+          "review" -> needs the doctor's judgement (illness, medicines, surgery, transfusion, unwell, infection, no meal,
+                      too little sleep, alcohol, a date the donor does not remember)
+          "info"   -> for the doctor's information only (the donor does not remember the last donation date)
+Haemoglobin (above 12.5 g/dL) is checked by the doctor at the blood bank; it is not asked in the questionnaire.
 """
 import json
 from datetime import date
 from typing import Dict, List, Optional
 
-HIGH_RISK_CONDITIONS = {"Heart disease", "Heart surgery", "Stroke", "Chronic lung disease", "Kidney disease", "Liver disease",
-                        "Cancer", "Blood disorders", "Bleeding disorders", "Polycythemia", "Leprosy"}
-HIGH_RISK_DISEASES = {"Hepatitis B", "Hepatitis C"}
-DEFER_EVENTS = {"Blood transfusion", "Surgery", "Hospitalization", "Serious accident", "Rabies treatment", "Acupuncture",
-                "Tattoo", "Piercing", "Imprisonment"}
-DEFER_MEDICATION = {"Antibiotics", "Medication for an infection", "Dental procedure"}
+from models.donor_screening import DONT_REMEMBER
+
+DONATION_INTERVAL_DAYS = 120
+TATTOO_DEFERRAL_DAYS = 730          # 2 years
+MALARIA_TRAVEL_DAYS = 3 * 365       # 3 years
+OTHER_TRAVEL_DAYS = 90              # 3 months
+
+# Countries with ongoing malaria transmission.
+# Source: WHO, World Malaria Report 2023 (countries and territories with indigenous malaria cases in 2022), with the
+# common English names donors type. Countries WHO has since certified malaria-free (Sri Lanka 2016, Belize 2023,
+# Cabo Verde 2024) are not listed.
+# The NBTS deferral list should be checked against this list before production use (see "Decisions to review").
+MALARIA_RISK_COUNTRIES = {
+    # Africa
+    "angola", "benin", "botswana", "burkina faso", "burundi", "cameroon", "central african republic",
+    "chad", "comoros", "congo", "republic of the congo", "democratic republic of the congo", "dr congo", "drc", "ivory coast",
+    "cote d'ivoire", "côte d'ivoire", "djibouti", "equatorial guinea", "eritrea", "eswatini", "swaziland", "ethiopia", "gabon",
+    "gambia", "the gambia", "ghana", "guinea", "guinea-bissau", "kenya", "liberia", "madagascar", "malawi", "mali", "mauritania",
+    "mozambique", "namibia", "niger", "nigeria", "rwanda", "sao tome and principe", "senegal", "sierra leone", "somalia",
+    "south africa", "south sudan", "sudan", "tanzania", "togo", "uganda", "zambia", "zimbabwe",
+    # Eastern Mediterranean
+    "afghanistan", "iran", "pakistan", "saudi arabia", "yemen",
+    # South-East Asia and Western Pacific
+    "bangladesh", "bhutan", "india", "indonesia", "myanmar", "burma", "nepal", "thailand", "timor-leste", "east timor",
+    "cambodia", "laos", "lao pdr", "malaysia", "papua new guinea", "philippines", "solomon islands", "south korea",
+    "republic of korea", "korea", "north korea", "vanuatu", "vietnam", "viet nam",
+    # Americas
+    "bolivia", "brazil", "colombia", "costa rica", "dominican republic", "ecuador", "french guiana", "guatemala",
+    "guyana", "haiti", "honduras", "mexico", "nicaragua", "panama", "peru", "suriname", "venezuela",
+}
 
 
-def _items(value: Optional[str]) -> List[str]:
+def is_malaria_risk_country(country: str) -> bool:
+    return (country or "").strip().lower() in MALARIA_RISK_COUNTRIES
+
+
+def _list(value: Optional[str]) -> List:
     if not value:
         return []
     try:
         parsed = json.loads(value)
-        return [str(v) for v in parsed] if isinstance(parsed, list) else []
-    except json.JSONDecodeError:
+        return parsed if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
         return []
 
 
-def _age(dob: Optional[str]) -> Optional[int]:
-    if not dob:
-        return None
+def _age(dob: Optional[str], today: date) -> Optional[int]:
     try:
-        born = date.fromisoformat(dob[:10])
-    except ValueError:
+        born = date.fromisoformat(str(dob)[:10])
+    except (TypeError, ValueError):
         return None
-    today = date.today()
     return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
 
 
-def _days_since(value: Optional[str]) -> Optional[int]:
-    if not value:
+def _days_since(value: Optional[str], today: date) -> Optional[int]:
+    if not value or value == DONT_REMEMBER:
         return None
     try:
-        when = date.fromisoformat(value if len(value) == 10 else f"{value}-01")
+        return (today - date.fromisoformat(str(value)[:10])).days
     except ValueError:
         return None
-    return (date.today() - when).days
 
 
-def evaluate(answers: Dict[str, str]) -> Dict:
-    flags: List[Dict[str, str]] = []
+def evaluate(answers: Dict[str, str], today: Optional[date] = None) -> Dict:
+    today = today or date.today()
+    flags: List[Dict] = []
 
-    def flag(code: str, severity: str, section: int, message: str):
-        flags.append({"code": code, "severity": severity, "section": section, "message": message})
+    def flag(code: str, severity: str, question: int, message: str):
+        flags.append({"code": code, "severity": severity, "section": question, "message": message})
 
-    yes = lambda qid: (answers.get(qid) or "").lower() == "yes"  # noqa: E731
-    no = lambda qid: (answers.get(qid) or "").lower() == "no"  # noqa: E731
-
-    age = _age(answers.get("P_DOB"))
+    # Q1 - age 18 to 60
+    age = _age(answers.get("P_DOB"), today)
     if age is not None and not 18 <= age <= 60:
-        flag("AGE_OUT_OF_RANGE", "defer", 4, f"Age {age} is outside 18-60.")
-    if no("BE_AGE_18_60"):
-        flag("AGE_OUT_OF_RANGE_DECLARED", "defer", 4, "Donor states they are not between 18 and 60.")
-    if no("BE_WEIGHT_50"):
-        flag("UNDER_WEIGHT", "defer", 4, "Donor weighs 50 kg or less.")
+        flag("AGE_RANGE", "defer", 1, f"Age {age} is outside the donor age range of 18 to 60.")
 
-    since_last = _days_since(answers.get("DH_LAST_DATE"))
-    if since_last is not None and since_last < 120:
-        flag("DONATION_INTERVAL", "defer", 2, f"Last donation was {since_last} days ago (minimum 120).")
-    if no("DH_120_DAYS"):
-        flag("DONATION_INTERVAL_DECLARED", "defer", 2, "Donor states 120 days have not passed since the last donation.")
-    if yes("DH_ADVISED_NOT"):
-        flag("ADVISED_NOT_TO_DONATE", "review", 2, "Donor was previously advised not to donate.")
-    complications = _items(answers.get("DH_COMPLICATIONS"))
-    if complications:
-        flag("PREVIOUS_COMPLICATIONS", "review", 2, "Previous donation complications: " + ", ".join(complications) + ".")
+    # Q2 - weight above 50 kg
+    try:
+        weight = float(answers.get("P_WEIGHT_KG") or 0)
+    except ValueError:
+        weight = 0
+    if weight and weight <= 50:
+        flag("WEIGHT", "defer", 2, f"Weight {answers.get('P_WEIGHT_KG')} kg (50 kg or less).")
 
-    if no("CH_WELL"):
-        flag("UNWELL_TODAY", "defer", 3, "Donor is not feeling well today.")
-    if no("CH_ATE_4H"):
-        flag("NOT_EATEN", "review", 3, "No meal in the last 4 hours; advise eating before donation.")
-    if no("CH_SLEPT_6H"):
-        flag("INSUFFICIENT_SLEEP", "review", 3, "Less than 6 hours of sleep.")
-    symptoms = _items(answers.get("CH_SYMPTOMS"))
-    if symptoms:
-        flag("CURRENT_SYMPTOMS", "defer", 3, "Current symptoms: " + ", ".join(symptoms) + ".")
-    if yes("CH_TREATMENT"):
-        flag("UNDER_TREATMENT", "review", 3, "Currently under medical treatment.")
-    if yes("CH_ALCOHOL_24H"):
-        flag("RECENT_ALCOHOL", "defer", 3, "Alcohol in the last 24 hours.")
+    # Q3 - donation history: first-time donors over 55; 120 days since the last donation
+    if answers.get("DH_BEFORE") == "No" and age is not None and age > 55:
+        flag("FIRST_TIME_OVER_55", "defer", 3, f"First-time donor aged {age} (over 55).")
+    if answers.get("DH_BEFORE") == "Yes":
+        if answers.get("DH_LAST_DATE") == DONT_REMEMBER:
+            flag("LAST_DONATION_UNKNOWN", "info", 3, "Donor doesn't remember the last donation date; check the donation record.")
+        else:
+            days = _days_since(answers.get("DH_LAST_DATE"), today)
+            if days is not None and days < DONATION_INTERVAL_DAYS:
+                flag("DONATION_INTERVAL", "defer", 3, f"Last donation {days} day(s) ago (less than {DONATION_INTERVAL_DAYS} days, about 4 months).")
 
-    for qid, label in (("BE_PREGNANT", "Pregnant"), ("BE_BREASTFEEDING", "Breastfeeding"), ("BE_ABORTION_6M", "Abortion within 6 months"),
-                       ("FD_DELIVERED_1Y", "Gave birth within 12 months"), ("FD_MISCARRIAGE", "Miscarriage within 6 months")):
-        if yes(qid):
-            flag(f"FEMALE_{qid}", "defer", 12, f"{label}.")
+    # Q4 - today's health
+    if answers.get("CH_WELL") == "No":
+        flag("UNWELL_TODAY", "review", 4, "Donor is not feeling well today.")
+    if answers.get("CH_INFECTION_2W") == "Yes":
+        flag("RECENT_INFECTION", "review", 4, "Fever, cold, cough or infection in the last 2 weeks.")
+    if answers.get("CH_MEAL_4H") == "No":
+        flag("NO_MEAL", "review", 4, "No main meal in the last 4 hours.")
+    if answers.get("CH_SLEEP_6H") == "No":
+        flag("LITTLE_SLEEP", "review", 4, "Less than 6 hours of sleep.")
+    if answers.get("CH_ALCOHOL_24H") == "Yes":
+        flag("ALCOHOL", "review", 4, "Alcohol in the last 24 hours.")
 
-    conditions = _items(answers.get("MH_CONDITIONS"))
-    high = [c for c in conditions if c in HIGH_RISK_CONDITIONS]
-    other = [c for c in conditions if c not in HIGH_RISK_CONDITIONS]
-    if high:
-        flag("SERIOUS_MEDICAL_HISTORY", "high", 5, "Medical history: " + ", ".join(high) + ".")
-    if other:
-        flag("MEDICAL_HISTORY", "review", 5, "Medical history: " + ", ".join(other) + ".")
+    # Q5 - illness and medicines
+    conditions = _list(answers.get("MH_CONDITIONS"))
+    if conditions:
+        flag("ILLNESS", "review", 5, "Serious or long-term illness: " + ", ".join(conditions) + ".")
+    if answers.get("MH_MEDICINES") == "Yes":
+        details = (answers.get("MH_MEDICINES_DETAILS") or "").strip()
+        flag("MEDICINES", "review", 5, "Taking medicines now" + (f": {details}." if details else "."))
 
-    events = _items(answers.get("RE_EVENTS"))
-    deferring = [e for e in events if e in DEFER_EVENTS]
-    if deferring:
-        flag("RECENT_EVENTS", "defer", 6, "Within 12 months: " + ", ".join(deferring) + ".")
-    if "Vaccination" in events:
-        flag("RECENT_VACCINATION", "review", 6, "Vaccination within 12 months; check the vaccine type and date.")
+    # Q6 - tattoo, surgery, transfusion (2 years) and travel (3 years)
+    events = _list(answers.get("RE_EVENTS"))
+    if "Tattoo" in events:
+        days = _days_since(answers.get("RE_TATTOO_DATE"), today)
+        if days is None:
+            flag("TATTOO_DATE_UNKNOWN", "review", 6, "Tattoo in the last 2 years; the donor doesn't remember the date.")
+        elif days < TATTOO_DEFERRAL_DAYS:
+            flag("TATTOO", "defer", 6, f"Tattoo {days} day(s) ago (less than 2 years).")
+    if "Surgery" in events:
+        flag("SURGERY", "review", 6, f"Surgery in the last 2 years (date: {answers.get('RE_SURGERY_DATE') or 'not given'}).")
+    if "Blood transfusion" in events:
+        flag("TRANSFUSION", "review", 6, f"Blood transfusion in the last 2 years (date: {answers.get('RE_TRANSFUSION_DATE') or 'not given'}).")
+    if answers.get("TR_ABROAD") == "Yes":
+        for trip in _list(answers.get("TR_TRIPS")):
+            country = str(trip.get("country") or "")
+            days = _days_since(trip.get("return_date"), today)
+            if is_malaria_risk_country(country):
+                if days is None:
+                    flag("MALARIA_TRAVEL", "defer", 6, f"Travel to {country}, a malaria-risk country; return date not remembered.")
+                elif days < MALARIA_TRAVEL_DAYS:
+                    flag("MALARIA_TRAVEL", "defer", 6, f"Returned from {country}, a malaria-risk country, {days} day(s) ago (within 3 years).")
+            elif days is None:
+                flag("TRAVEL_DATE_UNKNOWN", "review", 6, f"Travel to {country}; return date not remembered.")
+            elif days < OTHER_TRAVEL_DAYS:
+                flag("RECENT_TRAVEL", "defer", 6, f"Returned from {country} {days} day(s) ago (within 3 months).")
 
-    diseases = _items(answers.get("RD_DISEASES"))
-    serious = [d for d in diseases if d in HIGH_RISK_DISEASES]
-    temporary = [d for d in diseases if d not in HIGH_RISK_DISEASES]
-    if serious:
-        flag("HEPATITIS_HISTORY", "high", 7, "Within 12 months: " + ", ".join(serious) + ".")
-    if temporary:
-        flag("RECENT_ILLNESS", "defer", 7, "Within 12 months: " + ", ".join(temporary) + ".")
-    if yes("RD_HEPATITIS_CONTACT"):
-        flag("HEPATITIS_CONTACT", "defer", 7, "Close contact with hepatitis or jaundice within 12 months.")
-    if yes("RD_ANTIMALARIAL_3Y"):
-        flag("ANTIMALARIAL", "review", 7, "Anti-malarial medication in the last 3 years.")
-
-    medication = _items(answers.get("DM_ITEMS"))
-    if any(m in DEFER_MEDICATION for m in medication):
-        flag("RECENT_MEDICATION_OR_DENTAL", "defer", 8, "Recent: " + ", ".join(m for m in medication if m in DEFER_MEDICATION) + ".")
-    if "Blood thinners" in medication:
-        flag("BLOOD_THINNERS", "review", 8, "Takes blood thinners.")
-    if "Steroids" in medication or "Prescription medication" in medication:
-        flag("MEDICATION_REVIEW", "review", 8, "Prescription medication or steroids; check the medication list.")
-
-    if yes("TR_MALARIA"):
-        flag("MALARIA_TRAVEL", "defer", 9, "Travel to a malaria-endemic country.")
-    elif yes("TR_ABROAD"):
-        flag("TRAVEL", "review", 9, "Travel outside Sri Lanka in the past 3 years.")
-
-    if _items(answers.get("IR_ITEMS")):
-        # Confidential: the flag names the section, not the answers
-        flag("INFECTION_RISK_DISCLOSED", "high", 10, "Infectious disease risk disclosed in the confidential section.")
-
-    recent_symptoms = _items(answers.get("RS_SYMPTOMS"))
-    if recent_symptoms:
-        flag("RECENT_SYMPTOMS", "high" if len(recent_symptoms) >= 2 else "review", 11,
-             "Past 6 months: " + ", ".join(recent_symptoms) + ".")
-
-    if no("CONSENT"):
-        flag("NO_CONSENT", "review", 12, "Donor did not confirm the declaration.")
+    # Q7 - pregnancy (female donors) and the confidential risk-behaviour answer
+    female = _list(answers.get("FD_STATUS"))
+    if female:
+        flag("PREGNANCY", "defer", 7, "Pregnant, breastfeeding or gave birth in the last year: " + ", ".join(female) + ".")
+    if answers.get("IR_RISK") == "Yes":
+        flag("RISK_BEHAVIOUR", "defer", 7, "Answered yes to the confidential risk-behaviour question.")
 
     severities = {f["severity"] for f in flags}
-    if "high" in severities:
+    if "defer" in severities:
         risk, recommendation = "HIGH", "Requires Doctor Review"
-    elif "defer" in severities:
-        risk, recommendation = "MEDIUM", "Temporarily Deferred"
     elif "review" in severities:
         risk, recommendation = "MEDIUM", "Requires Doctor Review"
     else:
-        risk, recommendation = "LOW", "Eligible"
+        risk, recommendation = "LOW", "No flags raised"
     return {"risk_level": risk, "recommendation": recommendation, "flags": flags, "age": age}

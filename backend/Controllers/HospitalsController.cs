@@ -112,7 +112,7 @@ namespace LifeLink.Controllers
             {
                 return Conflict(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }

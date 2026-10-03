@@ -41,4 +41,11 @@ export const RequestStatusBadge = ({ status, size = 'sm' }) => (
   </Badge>
 );
 
+/** Shown on a blood request or transfer while the admin has it suspended (nobody can act on it until lifted). */
+export const SuspendedBadge = ({ reason, size = 'sm' }) => (
+  <span title={reason ? `Suspended by the administrator: ${reason}` : 'Suspended by the administrator'}>
+    <Badge variant="danger" size={size}>Suspended by admin</Badge>
+  </span>
+);
+
 export default Badge;

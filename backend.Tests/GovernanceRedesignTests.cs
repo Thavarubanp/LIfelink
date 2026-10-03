@@ -46,14 +46,14 @@ namespace LifeLink.Tests
             var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
             db.Database.EnsureCreated();
             var s = new Seed { Db = db, Admin = Guid.NewGuid(), Donor = Guid.NewGuid(), Other = Guid.NewGuid(), Staff = Guid.NewGuid(), DoctorUser = Guid.NewGuid(), HospitalId = Guid.NewGuid() };
-            await db.Hospitals.AddAsync(new Hospital { HospitalId = s.HospitalId, Name = "Venus", Email = "venus@h.org", IsVerified = true });
+            await db.Hospitals.AddAsync(new Hospital { HospitalId = s.HospitalId, Name = "Venus", Email = "venus@h.org", IsVerified = true, ApprovalStatus = ApprovalStatus.Approved });
             foreach (var (id, email, role) in new[] { (s.Admin, "admin@t.org", AdminRole), (s.Donor, "donor@t.org", UserRole), (s.Other, "other@t.org", UserRole), (s.Staff, "venus@h.org", StaffRole), (s.DoctorUser, "doc@t.org", DoctorRole) })
             {
                 await db.Users.AddAsync(new User { UserId = id, FirstName = "F", LastName = "L", Email = email, PhoneNumber = "0711111111", Address = "Addr", Gender = "Male",
                     PasswordHash = new PasswordHasherService().HashPassword(new User(), "Passw0rd!") });
                 await db.UserRoles.AddAsync(new UserRole { UserId = id, RoleId = role });
             }
-            await db.Doctors.AddAsync(new Doctor { DoctorId = Guid.NewGuid(), UserId = s.DoctorUser, HospitalId = s.HospitalId, FirstName = "D", LastName = "R", Email = "doc@t.org", LicenseNumber = "SLMC/1", IsActive = true });
+            await db.Doctors.AddAsync(new Doctor { DoctorId = Guid.NewGuid(), UserId = s.DoctorUser, HospitalId = s.HospitalId, FirstName = "D", LastName = "R", Email = "doc@t.org", LicenseNumber = "SLMC/1", IsActive = true, MustChangePassword = false });
             await db.SaveChangesAsync();
             s.Notify = new AdminNotificationService(db, new Mock<IEmailService>().Object, NullLogger<AdminNotificationService>.Instance);
             return s;
@@ -92,15 +92,23 @@ namespace LifeLink.Tests
 
             var afterAdmin = await svc.AdminReplyAsync(appeal.AppealId, s.Admin, Msg("Send the certificate.", file: true));
             Assert.True(afterAdmin.CanAppellantReply);
-            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.AdminReplyAsync(appeal.AppealId, s.Admin, Msg("Again")));
+            // The admin may send several messages in a row; the appellant still answers after an admin message
+            var twice = await svc.AdminReplyAsync(appeal.AppealId, s.Admin, Msg("Also send the receipt."));
+            Assert.Equal(3, twice.Messages.Count);
+            Assert.True(twice.CanAppellantReply);
 
             await svc.AppellantReplyAsync(appeal.AppealId, s.Donor, Msg("Here it is.", file: true));
             var rejected = await svc.RejectAppealAsync(appeal.AppealId, s.Admin, Decision("Not sufficient."));
             Assert.Equal("REJECTED", rejected.Status);
             Assert.False(rejected.IsClosed);
 
+            Assert.False(rejected.CanReject);
+
             var reopened = await svc.AppellantReplyAsync(appeal.AppealId, s.Donor, Msg("Please reconsider."));
             Assert.Equal("PENDING", reopened.Status); // user keeps replying after a rejection
+            // ...but an appeal can be rejected only once, also after the appellant replied again
+            Assert.False(reopened.CanReject);
+            await Assert.ThrowsAsync<LifeLink.Common.ConflictException>(() => svc.RejectAppealAsync(appeal.AppealId, s.Admin, Decision("Again.")));
 
             var closed = await svc.CloseAppealAsync(appeal.AppealId, s.Admin, Decision("Thread closed."));
             Assert.True(closed.IsClosed);

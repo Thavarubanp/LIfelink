@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.Entities;
+using LifeLink.Services.Inventory;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Acceptances
@@ -11,6 +12,7 @@ namespace LifeLink.Services.Acceptances
     /// <summary>
     /// Ends donor acceptances without deleting anything: a reserved slot (Verified) is released, a screening report
     /// still awaiting the doctor is marked Closed, and the acceptance keeps its history with the reason.
+    /// A hospital donation offer's held packets return to the hospital's inventory.
     /// Used by withdraw, release, request deletion, expiry and fulfilment.
     /// </summary>
     public static class AcceptanceClosure
@@ -53,6 +55,12 @@ namespace LifeLink.Services.Acceptances
                 report.UpdatedAt = now;
             }
 
+            if (acceptance.DonorHospitalId != null)
+            {
+                await InventoryLedger.ReleaseHeldPacketsAsync(context, acceptance.AcceptanceId,
+                    $"Hospital donation offer closed ({finalStatus}): {reason ?? reportNote}", null);
+            }
+
             acceptance.Status = finalStatus;
             acceptance.RejectionReason = reason;
             if (finalStatus == AcceptanceStatus.Cancelled)
@@ -65,9 +73,12 @@ namespace LifeLink.Services.Acceptances
         public static async Task<List<Acceptance>> CloseAllAsync(AppDbContext context, BloodRequest request,
             IReadOnlyCollection<AcceptanceStatus> statuses, AcceptanceStatus finalStatus, string reason, string reportNote)
         {
-            var acceptances = await context.Acceptances
+            // Re-check in memory: an acceptance already changed in this unit of work (for example just approved) is skipped
+            var acceptances = (await context.Acceptances
                 .Where(a => a.BloodRequestId == request.BloodRequestId && statuses.Contains(a.Status))
-                .ToListAsync();
+                .ToListAsync())
+                .Where(a => statuses.Contains(a.Status))
+                .ToList();
             foreach (var acceptance in acceptances)
             {
                 await CloseAsync(context, acceptance, request, finalStatus, reason, reportNote);

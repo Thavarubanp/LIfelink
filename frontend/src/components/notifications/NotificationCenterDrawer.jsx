@@ -37,7 +37,7 @@ export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
     }
   };
 
-  // Dismiss permanently deletes this notification; the others stay
+  // Dismiss hides this notification from the list (it is kept on the server); the others stay
   const handleDismiss = async (e, notificationId) => {
     e.stopPropagation();
     try {

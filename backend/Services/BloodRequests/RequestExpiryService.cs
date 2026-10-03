@@ -23,29 +23,46 @@ namespace LifeLink.Services.BloodRequests
         {
             var now = DateTime.UtcNow;
 
-            var expiredRequests = await _context.BloodRequests
+            var expiredIds = await _context.BloodRequests
                 .Where(r => r.ExpiryDate <= now &&
+                            r.AdminSuspendedAt == null && // suspended requests are skipped (Q7)
                             r.Status != BloodRequestStatus.Completed &&
                             r.Status != BloodRequestStatus.Cancelled &&
                             r.Status != BloodRequestStatus.Rejected &&
                             r.Status != BloodRequestStatus.Deleted)
+                .Select(r => r.BloodRequestId)
                 .ToListAsync();
 
-            if (!expiredRequests.Any())
+            if (!expiredIds.Any())
             {
                 return 0;
             }
 
-            foreach (var req in expiredRequests)
+            // Each request is expired in its own save: someone acting on one request at the same moment (409) only
+            // postpones that request to the next run instead of failing the whole batch
+            var expired = 0;
+            foreach (var id in expiredIds)
             {
-                // Also releases donors still in progress (reserved slots and their one-active-donation lock)
-                await BloodRequestService.ExpireAsync(_context, req, now);
+                try
+                {
+                    var req = await _context.BloodRequests.FindAsync(id);
+                    if (req == null || !BloodRequestService.IsExpiredAndOpen(req, now)) continue;
+
+                    // Also releases donors still in progress (reserved slots and their one-active-donation lock)
+                    await BloodRequestService.ExpireAsync(_context, req, now);
+                    await _context.SaveChangesAsync();
+                    expired++;
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    _context.ChangeTracker.Clear();
+                    _logger.LogInformation("Blood request {RequestId} changed while expiring; it will be retried.", id);
+                }
             }
 
-            await _context.SaveChangesAsync();
-            _logger.LogInformation("Processed and expired {Count} blood requests.", expiredRequests.Count);
+            _logger.LogInformation("Processed and expired {Count} blood requests.", expired);
 
-            return expiredRequests.Count;
+            return expired;
         }
     }
 }

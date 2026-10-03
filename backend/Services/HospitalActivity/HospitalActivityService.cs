@@ -27,7 +27,7 @@ namespace LifeLink.Services.HospitalActivity
             }
 
             var complaint = await _context.Complaints.FindAsync(dto.ComplaintId);
-            if (complaint == null)
+            if (complaint == null || complaint.DeletedAt != null)
             {
                 throw new KeyNotFoundException($"Complaint with ID {dto.ComplaintId} was not found.");
             }

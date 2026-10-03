@@ -24,9 +24,9 @@ namespace LifeLink.Services.Common
                 .AnyAsync(h => h.Email != null && h.Email.ToLower() == normalizedEmail);
             if (existsInHospitals) return true;
 
-            // 3. Check in Doctors table
+            // 3. Check in Doctors table (a removed doctor's email can be used again)
             var existsInDoctors = await context.Doctors
-                .AnyAsync(d => d.Email != null && d.Email.ToLower() == normalizedEmail);
+                .AnyAsync(d => d.DeletedAt == null && d.Email != null && d.Email.ToLower() == normalizedEmail);
             if (existsInDoctors) return true;
 
             return false;

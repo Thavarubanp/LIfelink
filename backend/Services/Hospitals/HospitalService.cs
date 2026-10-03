@@ -118,6 +118,8 @@ namespace LifeLink.Services.Hospitals
                 }
             }
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospital.HospitalId, "Hospital.Registered", ActivityLogger.Types.Hospital,
+                hospital.HospitalId, $"Registered the hospital \"{hospital.Name}\" (waiting for admin approval).");
             await SaveWithRegistrationNumberGuardAsync();
 
             return MapToResponseDto(hospital, includeAdminIdentity: false);
@@ -287,6 +289,8 @@ namespace LifeLink.Services.Hospitals
             hospital.ApprovalStatus = ApprovalStatus.AwaitingAdminReview; // the admin's turn
             hospital.UpdatedAt = now;
 
+            await ActivityLogger.AddForHospitalAsync(_context, hospital.HospitalId, "Hospital.RegistrationReply", ActivityLogger.Types.Hospital,
+                hospital.HospitalId, "Replied in the registration conversation" + (changes.Count > 0 ? $" and corrected {changes.Count} detail(s)." : "."));
             await SaveWithRegistrationNumberGuardAsync();
 
             if (_notificationService != null)

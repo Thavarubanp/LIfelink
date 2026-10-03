@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { bloodRequestApi, hospitalApi } from '../../api';
+import { bloodRequestApi, doctorApi, hospitalApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { getUserRoles } from '../../utils/roleUtils';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { MyRequestsList } from './MyRequestsPage';
-import { AlertCircle, Loader2, Building2, X, Lock } from 'lucide-react';
+import { AlertCircle, Loader2, Building2, X, Lock, Stethoscope } from 'lucide-react';
 
 const INITIAL_FORM = {
   hospitalId: '',
+  doctorId: '',
   bloodGroup: 'O+',
   unitsRequired: 2,
   reason: '',
@@ -18,7 +19,8 @@ const INITIAL_FORM = {
 
 /**
  * Shared Create Blood Request page for Users (Donor/Patient), Admins and Hospital Staff.
- * Users/Admins must select a hospital; Hospital Staff are locked to their own hospital.
+ * Users/Admins must select a hospital; Hospital Staff are locked to their own hospital and must choose one of their
+ * own doctors, who approves the request (and any hospital donation to it).
  * The creator's requests are listed below the form.
  */
 export const CreatePatientRequestPage = () => {
@@ -44,6 +46,18 @@ export const CreatePatientRequestPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { addToast } = useNotification();
+
+  // Hospital staff: their own doctors with an active login who have completed their first login (the backend enforces the same rule)
+  const [doctors, setDoctors] = useState([]);
+  useEffect(() => {
+    if (!isHospitalStaff) return;
+    doctorApi.getDoctors()
+      .then((res) => {
+        const list = res?.data || (Array.isArray(res) ? res : []);
+        setDoctors(list.filter((d) => d.isActive && d.userId && !d.mustChangePassword));
+      })
+      .catch(() => setDoctors([]));
+  }, [isHospitalStaff]);
 
   // Fetch active/approved hospitals from database
   useEffect(() => {
@@ -123,13 +137,21 @@ export const CreatePatientRequestPage = () => {
       return;
     }
 
+    if (isHospitalStaff && !formData.doctorId) {
+      setError('Select the doctor who will approve this request.');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      await bloodRequestApi.createRequest(formData);
+      await bloodRequestApi.createRequest({ ...formData, doctorId: isHospitalStaff ? formData.doctorId : null });
+      const doctor = doctors.find((d) => d.doctorId === formData.doctorId);
       addToast({
         title: 'Blood Request Created!',
-        message: `Your request for ${selectedHospital?.name || 'the hospital'} has been submitted for verification.`,
+        message: isHospitalStaff
+          ? `Sent to Dr. ${doctor?.firstName || ''} ${doctor?.lastName || ''} for approval.`.replace(/\s+/g, ' ')
+          : `Your request for ${selectedHospital?.name || 'the hospital'} has been submitted for verification.`,
         type: 'success'
       });
       // Stay on the page: reset the form (hospital staff keep their locked hospital) and reload My Requests
@@ -138,6 +160,8 @@ export const CreatePatientRequestPage = () => {
       setRefreshKey((k) => k + 1);
     } catch (err) {
       setError(getApiErrorMessage(err));
+      // The same request was just created (double submit or another tab): show it in My Requests
+      if (isConflictError(err)) setRefreshKey((k) => k + 1);
     } finally {
       setLoading(false);
     }
@@ -277,6 +301,34 @@ export const CreatePatientRequestPage = () => {
               </div>
             )}
           </div>
+          )}
+
+          {isHospitalStaff && (
+            <div>
+              <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1 uppercase tracking-wider text-[11px]">
+                APPROVING DOCTOR * <span className="text-red-500 font-bold">(Mandatory)</span>
+              </label>
+              <div className="relative">
+                <Stethoscope className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none" />
+                <select
+                  value={formData.doctorId}
+                  onChange={(e) => { setFormData({ ...formData, doctorId: e.target.value }); if (error) setError(''); }}
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:border-red-500"
+                >
+                  <option value="">Select one of your doctors</option>
+                  {doctors.map((d) => (
+                    <option key={d.doctorId} value={d.doctorId}>
+                      Dr. {d.firstName} {d.lastName}{d.specialization ? ` - ${d.specialization}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                {doctors.length === 0
+                  ? 'No doctor can be assigned yet: add a doctor under Doctor Management, and the doctor must sign in and change the temporary password first.'
+                  : 'This doctor approves the request and any hospital donation to it.'}
+              </p>
+            </div>
           )}
 
           <div className="grid grid-cols-2 gap-4">

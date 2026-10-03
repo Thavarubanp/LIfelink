@@ -8,6 +8,7 @@ namespace LifeLink.Services.BloodRequests
     public interface IBloodRequestService
     {
         Task<BloodRequestResponseDto> CreateRequestAsync(Guid patientUserId, CreateBloodRequestDto dto);
+        Task<BloodRequestResponseDto> UpdatePendingRequestAsync(Guid requestId, Guid patientUserId, UpdateBloodRequestDto dto);
         Task<IEnumerable<BloodRequestResponseDto>> GetMyRequestsAsync(Guid patientUserId);
         Task<IEnumerable<BloodRequestResponseDto>> GetHospitalRequestsAsync(Guid hospitalId);
         Task<IEnumerable<BloodRequestResponseDto>> GetAssignedRequestsAsync(Guid doctorUserId);
@@ -15,6 +16,7 @@ namespace LifeLink.Services.BloodRequests
         Task<BloodRequestResponseDto?> GetRequestByIdAsync(Guid requestId);
         Task<IEnumerable<BloodRequestResponseDto>> GetPublicRequestsAsync(string? bloodGroup = null, int? expiringWithinHours = null);
         Task<IEnumerable<BloodRequestResponseDto>> GetPendingRequestsAsync(Guid? hospitalId = null);
+        Task<IEnumerable<BloodRequestResponseDto>> GetAllRequestsForAdminAsync();
         Task<BloodRequestResponseDto> CancelRequestAsync(Guid requestId, Guid patientUserId);
         Task<BloodRequestAnalyticsDto> GetRequestAnalyticsAsync(Guid requestId);
         Task<IEnumerable<RequestFulfillmentHistoryResponseDto>> GetRequestFulfillmentHistoryAsync(Guid requestId);

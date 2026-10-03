@@ -41,9 +41,11 @@ namespace LifeLink.Middleware
 
             switch (exception)
             {
-                case Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException:
+                // Two actions at the same moment: a moved concurrency token, or a unique index / foreign key that the
+                // other action satisfied first. The loser gets 409 and nothing of its save is kept.
+                case Microsoft.EntityFrameworkCore.DbUpdateException dbe when LifeLink.Common.DatabaseConflicts.ConflictMessage(dbe) is string conflictMessage:
                     statusCode = (int)HttpStatusCode.Conflict;
-                    message = "This record was changed by someone else at the same time. Please refresh and try again.";
+                    message = conflictMessage;
                     break;
                 case UnauthorizedAccessException uae:
                     statusCode = (int)HttpStatusCode.Unauthorized;

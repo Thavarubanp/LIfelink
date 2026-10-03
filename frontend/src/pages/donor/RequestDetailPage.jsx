@@ -6,7 +6,7 @@ import { Badge, RequestStatusBadge } from '../../components/common/Badge';
 import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingProgress';
 import { useNotification } from '../../context/NotificationContext';
 import { getUserRoles } from '../../utils/roleUtils';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { MapPin, Heart, Loader2, Lock } from 'lucide-react';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -20,6 +20,8 @@ export const RequestDetailPage = () => {
   const [bloodGroup, setBloodGroup] = useState('');
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [notFoundMessage, setNotFoundMessage] = useState('');
   const { addToast } = useNotification();
   const navigate = useNavigate();
 
@@ -35,12 +37,14 @@ export const RequestDetailPage = () => {
         if (me?.bloodGroup) setBloodGroup(me.bloodGroup);
       } catch (err) {
         console.error('Failed to fetch request detail:', err);
+        // e.g. "This blood request was deleted by its creator." (only the Admin can still open a deleted request)
+        if (err.response?.status === 404) setNotFoundMessage(getApiErrorMessage(err));
       } finally {
         setLoading(false);
       }
     };
     fetchDetail();
-  }, [id, isDonorAccount, user?.userId]);
+  }, [id, isDonorAccount, user?.userId, reloadKey]);
 
   const handleAccept = async () => {
     if (!bloodGroup) {
@@ -54,6 +58,8 @@ export const RequestDetailPage = () => {
       navigate(`/donor/acceptances/${acceptance.acceptanceId}/screening`);
     } catch (err) {
       addToast({ title: 'Could not accept request', message: getApiErrorMessage(err), type: 'error' });
+      // The request changed at the same moment (cancelled, expired, filled): show its current state
+      if (isConflictError(err)) setReloadKey((k) => k + 1);
     } finally {
       setAccepting(false);
     }
@@ -70,7 +76,7 @@ export const RequestDetailPage = () => {
   if (!request) {
     return (
       <div className="p-8 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500">
-        Blood request record not found.
+        {notFoundMessage || 'Blood request record not found.'}
       </div>
     );
   }

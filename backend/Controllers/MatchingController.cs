@@ -31,7 +31,7 @@ namespace LifeLink.Controllers
                 var result = await _matchingService.CreateMatchAsync(dto);
                 return Ok(result);
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }

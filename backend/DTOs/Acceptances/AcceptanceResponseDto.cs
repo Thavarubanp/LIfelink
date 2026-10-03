@@ -13,6 +13,11 @@ namespace LifeLink.DTOs.Acceptances
         public DateTime? CancelledAt { get; set; }
         public string? RejectionReason { get; set; }
 
+        // Hospital donation (instead of a donor): the donating hospital and the packets it offered
+        public Guid? DonorHospitalId { get; set; }
+        public string? DonorHospitalName { get; set; }
+        public List<DonatedPacketDto> Packets { get; set; } = new();
+
         // Request context (filled for the donor's own list)
         public Guid? HospitalId { get; set; }
         public string? HospitalName { get; set; }
@@ -22,6 +27,10 @@ namespace LifeLink.DTOs.Acceptances
         public int UnitsRequired { get; set; }
         public int FulfilledUnits { get; set; }
         public int ReservedUnits { get; set; }
+        // True when the creator deleted the request: the acceptance is shown closed, without the request's details
+        public bool RequestDeleted { get; set; }
+        // True while the admin has suspended the request: only withdrawing is possible (the screening agent pauses too)
+        public bool RequestSuspended { get; set; }
 
         // Every screening report version with its doctor decision (report content is not repeated here)
         public List<ScreeningDecisionDto> ScreeningHistory { get; set; } = new();

@@ -7,22 +7,24 @@ using Npgsql;
 namespace LifeLink.Services.Common
 {
     /// <summary>
-    /// Doctor SLMC numbers (Doctor.LicenseNumber) are unique system-wide. They are stored trimmed and
-    /// upper-cased, so the unique index on Doctors.LicenseNumber also rejects case/whitespace variants.
+    /// Doctor SLMC numbers (Doctor.LicenseNumber) are unique within one hospital among doctors who were not removed;
+    /// the same doctor may hold a separate account (with another email) at another hospital. They are stored trimmed
+    /// and upper-cased, so the filtered unique index on (HospitalId, LicenseNumber) also rejects case/whitespace variants.
     /// </summary>
     public static class SlmcUniquenessHelper
     {
-        public const string DuplicateMessage = "A doctor with this SLMC number already exists.";
+        public const string DuplicateMessage = "A doctor with this SLMC number already exists at this hospital.";
 
         public static string Normalize(string? rawSlmc) => (rawSlmc ?? string.Empty).Trim().ToUpperInvariant();
 
-        public static async Task<bool> IsSlmcTakenAsync(AppDbContext context, string rawSlmc, Guid? excludeDoctorId = null)
+        public static async Task<bool> IsSlmcTakenAsync(AppDbContext context, string rawSlmc, Guid hospitalId, Guid? excludeDoctorId = null)
         {
             var normalized = Normalize(rawSlmc);
             if (normalized.Length == 0)
                 return false;
 
             return await context.Doctors.AnyAsync(d =>
+                d.HospitalId == hospitalId && d.DeletedAt == null &&
                 d.LicenseNumber.Trim().ToUpper() == normalized &&
                 (excludeDoctorId == null || d.DoctorId != excludeDoctorId));
         }

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CheckCircle2, Loader2, Send, Trash2, X, XCircle } from 'lucide-react';
 import { hospitalApi, inventoryApi, profileApi, transferApi } from '../../api';
-import { Badge } from '../../components/common/Badge';
+import { Badge, SuspendedBadge } from '../../components/common/Badge';
+import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
-import { getApiErrorMessage } from '../../utils/errorUtils';
+import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { newIdempotencyKey } from '../../session/sessionActivity';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const STATUS_VARIANT = { Pending: 'warning', Completed: 'success', Rejected: 'primary', Cancelled: 'default' };
@@ -12,8 +14,9 @@ const fmt = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 
 
 /**
  * Inter-Hospital Blood Transfer between approved hospitals: request blood from, or offer blood to, another
- * hospital. The other hospital accepts or rejects; no doctor or AI approval is involved. Accepting moves the
- * earliest-expiring packets immediately (same packet IDs, new owner) and both histories are kept.
+ * hospital. The other hospital accepts or rejects; no doctor or AI approval is involved. The sending hospital always
+ * chooses the packets: when offering, or when accepting a request. Accepted transfers move those packets immediately
+ * (same tracking numbers, new owner) and both histories are kept.
  */
 export const TransfersPage = () => {
   const { addToast } = useNotification();
@@ -23,9 +26,13 @@ export const TransfersPage = () => {
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('incoming');
-  const [form, setForm] = useState({ transferType: 'Request', counterpartHospitalId: '', bloodGroup: 'O+', unitsRequested: 1, notes: '' });
+  const [form, setForm] = useState({ transferType: 'Request', counterpartHospitalId: '', bloodGroup: 'O+', unitsRequested: 1, notes: '', packetIds: [] });
   const [creating, setCreating] = useState(false);
+  // One key per transfer form: a double submit or retry never creates the same transfer twice
+  const [createKey, setCreateKey] = useState(newIdempotencyKey);
+  const [acting, setActing] = useState(false);
   const [rejecting, setRejecting] = useState(null);
+  const [sending, setSending] = useState(null); // incoming request this hospital is accepting: { transfer, packetIds }
   const [reason, setReason] = useState('');
   const [detail, setDetail] = useState(null);
 
@@ -63,29 +70,51 @@ export const TransfersPage = () => {
   const availableAt = (hospitalId, group) => stock.find((s) => s.hospitalId === hospitalId && s.bloodGroup === group)?.unitsAvailable ?? 0;
   const myAvailable = availableAt(myHospitalId, form.bloodGroup);
 
+  const isOffer = form.transferType === 'Offer';
+
   const create = async (e) => {
     e.preventDefault();
+    if (isOffer && form.packetIds.length === 0) {
+      addToast({ title: 'Select packets', message: 'Choose the packets you are offering.', type: 'warning' });
+      return;
+    }
     setCreating(true);
     try {
-      await transferApi.createTransferRequest({ ...form, unitsRequested: Number(form.unitsRequested) });
-      addToast({ title: form.transferType === 'Offer' ? 'Offer sent' : 'Request sent', message: 'The other hospital has been notified.', type: 'success' });
-      setForm({ ...form, notes: '', unitsRequested: 1 });
+      await transferApi.createTransferRequest({
+        ...form,
+        unitsRequested: isOffer ? form.packetIds.length : Number(form.unitsRequested),
+        packetIds: isOffer ? form.packetIds : null
+      }, { idempotencyKey: createKey });
+      setCreateKey(newIdempotencyKey());
+      addToast({ title: isOffer ? 'Offer sent' : 'Request sent', message: isOffer ? 'The packets are held until the other hospital answers.' : 'The other hospital has been notified.', type: 'success' });
+      setForm({ ...form, notes: '', unitsRequested: 1, packetIds: [] });
       setTab('outgoing');
       reload();
     } catch (err) {
       addToast({ title: 'Could not create transfer', message: getApiErrorMessage(err), type: 'error' });
+      // Already submitted, or the selected packets were just used elsewhere: show the current state
+      if (isConflictError(err)) {
+        setCreateKey(newIdempotencyKey());
+        reload();
+      }
     } finally {
       setCreating(false);
     }
   };
 
   const act = async (fn, success) => {
+    if (acting) return;
+    setActing(true);
     try {
       await fn();
       addToast(success);
       reload();
     } catch (err) {
       addToast({ title: 'Action failed', message: getApiErrorMessage(err), type: 'error' });
+      // Accepted, rejected or withdrawn by the other side at the same moment: show the current state
+      if (isConflictError(err)) reload();
+    } finally {
+      setActing(false);
     }
   };
 
@@ -114,7 +143,7 @@ export const TransfersPage = () => {
       <form onSubmit={create} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm grid grid-cols-1 md:grid-cols-6 gap-3 text-xs items-end">
         <div>
           <label className="block font-semibold mb-1">Type</label>
-          <select value={form.transferType} onChange={(e) => setForm({ ...form, transferType: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
+          <select value={form.transferType} onChange={(e) => setForm({ ...form, transferType: e.target.value, packetIds: [] })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
             <option value="Request">Request blood</option>
             <option value="Offer">Offer blood</option>
           </select>
@@ -132,17 +161,28 @@ export const TransfersPage = () => {
         </div>
         <div>
           <label className="block font-semibold mb-1">Blood group</label>
-          <select value={form.bloodGroup} onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
+          <select value={form.bloodGroup} onChange={(e) => setForm({ ...form, bloodGroup: e.target.value, packetIds: [] })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
             {BLOOD_GROUPS.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
         </div>
         <div>
-          <label className="block font-semibold mb-1">Units {form.transferType === 'Offer' && <span className="text-slate-400">({myAvailable} held)</span>}</label>
-          <input type="number" min="1" required value={form.unitsRequested} onChange={(e) => setForm({ ...form, unitsRequested: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+          <label className="block font-semibold mb-1">Units {isOffer && <span className="text-slate-400">({myAvailable} available)</span>}</label>
+          {isOffer ? (
+            <div className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/60 border rounded-xl font-semibold">{form.packetIds.length} selected</div>
+          ) : (
+            <input type="number" min="1" required value={form.unitsRequested} onChange={(e) => setForm({ ...form, unitsRequested: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
+          )}
         </div>
-        <button type="submit" disabled={creating} className="py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50">
+        {/* When offering on mobile, Send comes after the packet list (desktop keeps it in the first row) */}
+        <button type="submit" disabled={creating} className={`py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 ${isOffer ? 'order-last md:order-none' : ''}`}>
           {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Send
         </button>
+        {isOffer && (
+          <div className="md:col-span-6 space-y-1">
+            <label className="block font-semibold">Packets to offer</label>
+            <PacketPicker bloodGroup={form.bloodGroup} selected={form.packetIds} onChange={(ids) => setForm({ ...form, packetIds: ids })} />
+          </div>
+        )}
         <div className="md:col-span-6">
           <input placeholder="Notes (optional)" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} maxLength={500} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
         </div>
@@ -178,15 +218,20 @@ export const TransfersPage = () => {
                     <span className="text-slate-500">{sendsBlood ? 'to' : 'from'} {other}</span>
                     <Badge variant="default" size="sm">{t.transferType}</Badge>
                     <Badge variant={STATUS_VARIANT[t.status] || 'default'} size="sm">{t.status}</Badge>
+                    {t.isSuspended && <SuspendedBadge reason={t.suspensionReason} />}
                   </div>
+                  {t.isSuspended && <p className="text-[11px] text-rose-600 dark:text-rose-400">Suspended by the administrator: it cannot be accepted, rejected or deleted until the suspension is lifted.</p>}
                   <p className="text-[11px] text-slate-500">Created {fmt(t.requestedAt)}{t.notes ? ` - ${t.notes}` : ''}</p>
                   {t.rejectionReason && <p className="text-[11px] text-rose-600"><span className="font-semibold">Rejection reason:</span> {t.rejectionReason}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2 shrink-0">
-                  {t.status === 'Pending' && incomingToMe && (
+                  {!t.isSuspended && t.status === 'Pending' && incomingToMe && (
                     <>
-                      <button type="button" onClick={() => act(() => transferApi.approveTransferRequest(t.transferRequestId), { title: 'Transfer accepted', message: 'Packets moved and both inventories updated.', type: 'success' })}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold bg-emerald-600 text-white hover:bg-emerald-700">
+                      <button type="button" onClick={() => (sendsBlood
+                        ? setSending({ transfer: t, packetIds: [] })
+                        : act(() => transferApi.approveTransferRequest(t.transferRequestId), { title: 'Transfer accepted', message: 'Packets moved and both inventories updated.', type: 'success' }))}
+                        disabled={acting}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Accept
                       </button>
                       <button type="button" onClick={() => { setRejecting(t); setReason(''); }}
@@ -195,16 +240,17 @@ export const TransfersPage = () => {
                       </button>
                     </>
                   )}
-                  {t.status === 'Pending' && t.createdByHospitalId === myHospitalId && (
+                  {!t.isSuspended && t.status === 'Pending' && t.createdByHospitalId === myHospitalId && (
                     <button type="button" onClick={() => window.confirm('Delete this pending transfer? It stays in the history as Cancelled.') &&
                       act(() => transferApi.deleteTransferRequest(t.transferRequestId), { title: 'Transfer deleted', message: 'The other hospital has been notified.', type: 'info' })}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+                      disabled={acting}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50">
                       <Trash2 className="w-3.5 h-3.5" /> Delete
                     </button>
                   )}
-                  {t.status === 'Completed' && (
+                  {(t.status === 'Completed' || (t.status === 'Pending' && t.transferType === 'Offer')) && (
                     <button type="button" onClick={() => openDetail(t)} className="px-3 py-1.5 rounded-lg font-semibold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
-                      Packets moved
+                      {t.status === 'Completed' ? 'Packets moved' : 'Packets offered'}
                     </button>
                   )}
                 </div>
@@ -223,7 +269,33 @@ export const TransfersPage = () => {
               className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl" />
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setRejecting(null)} className="px-4 py-2 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
-              <button type="submit" className="px-4 py-2 rounded-xl font-semibold bg-rose-600 text-white hover:bg-rose-700">Reject</button>
+              <button type="submit" disabled={acting} className="px-4 py-2 rounded-xl font-semibold bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50">Reject</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {sending && (
+        <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            const t = sending.transfer;
+            act(() => transferApi.approveTransferRequest(t.transferRequestId, sending.packetIds),
+              { title: 'Transfer accepted', message: `${sending.packetIds.length} packet(s) sent to ${t.receiverHospitalName}.`, type: 'success' })
+              .then(() => setSending(null));
+          }}
+            className="max-w-lg w-full max-h-[90vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl space-y-3 text-xs">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Send {sending.transfer.unitsRequested} x {sending.transfer.bloodGroup} to {sending.transfer.receiverHospitalName}</h3>
+              <button type="button" onClick={() => setSending(null)} className="text-slate-400"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-slate-500">Select exactly {sending.transfer.unitsRequested} packet(s). They move to the other hospital with the same tracking numbers.</p>
+            <PacketPicker bloodGroup={sending.transfer.bloodGroup} exact={sending.transfer.unitsRequested}
+              selected={sending.packetIds} onChange={(ids) => setSending({ ...sending, packetIds: ids })} />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setSending(null)} className="px-4 py-2 rounded-xl font-semibold hover:bg-slate-100 dark:hover:bg-slate-800">Cancel</button>
+              <button type="submit" disabled={acting || sending.packetIds.length !== sending.transfer.unitsRequested}
+                className="px-4 py-2 rounded-xl font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">Accept and send</button>
             </div>
           </form>
         </div>
@@ -233,12 +305,15 @@ export const TransfersPage = () => {
         <div className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl space-y-3 text-xs">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Packets moved ({detail.packetIds?.length || 0})</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{detail.status === 'Completed' ? 'Packets moved' : 'Packets offered'} ({detail.packetTrackingNumbers?.length || 0})</h3>
               <button type="button" onClick={() => setDetail(null)} className="text-slate-400"><X className="w-4 h-4" /></button>
             </div>
-            <p className="text-slate-500">From {detail.senderHospitalName} to {detail.receiverHospitalName}, accepted {fmt(detail.approvedAt)}. Packet IDs did not change.</p>
+            <p className="text-slate-500">
+              From {detail.senderHospitalName} to {detail.receiverHospitalName}
+              {detail.status === 'Completed' ? `, accepted ${fmt(detail.approvedAt)}. Tracking numbers did not change.` : '. Held until the other hospital answers.'}
+            </p>
             <ul className="font-mono grid grid-cols-2 gap-1">
-              {(detail.packetIds || []).map((id) => <li key={id}>PKT-{String(id).substring(0, 8).toUpperCase()}</li>)}
+              {(detail.packetTrackingNumbers || []).map((n) => <li key={n}>{n}</li>)}
             </ul>
           </div>
         </div>

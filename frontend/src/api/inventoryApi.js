@@ -16,6 +16,18 @@ export const inventoryApi = {
     return response.data;
   },
 
+  /** Hospital staff: run the inventory analysis now (409 while running or during the 2-minute cooldown) */
+  runAnalysis: async () => {
+    const response = await client.post('/Inventory/analysis/run');
+    return response.data;
+  },
+
+  /** Hospital staff: lock state, last run and next scheduled run (polled in the background: never extends the session) */
+  getAnalysisStatus: async ({ background = false } = {}) => {
+    const response = await client.get('/Inventory/analysis/status', { background });
+    return response.data;
+  },
+
   getSurplusInventory: async () => {
     const response = await client.get('/Inventory/surplus');
     return response.data;
@@ -38,6 +50,19 @@ export const inventoryApi = {
 
   deleteInventory: async (id) => {
     const response = await client.delete(`/Inventory/${id}`);
+    return response.data;
+  },
+
+  // Hospital staff enter collected blood: { bloodGroup, collectionDate: 'yyyy-MM-dd', quantity }
+  // idempotencyKey: one per "Add packets" form, so a double submit never adds the packets twice
+  createPackets: async (dto, { idempotencyKey } = {}) => {
+    const response = await client.post('/Inventory/packets', dto, { idempotencyKey });
+    return response.data;
+  },
+
+  // Only the hospital that created the packet (while it owns it and it is Available): { bloodGroup, collectionDate }
+  updatePacket: async (packetId, dto) => {
+    const response = await client.put(`/Inventory/packets/${packetId}`, dto);
     return response.data;
   },
 

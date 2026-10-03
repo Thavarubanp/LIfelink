@@ -24,6 +24,8 @@ namespace LifeLink.Entities
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        /// <summary>Set when the hospital removes the doctor (IsActive becomes false). Past history shows "Removed doctor".</summary>
+        public DateTime? DeletedAt { get; set; }
 
         // Navigation properties
         public Hospital Hospital { get; set; } = null!;

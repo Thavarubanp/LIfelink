@@ -103,6 +103,8 @@ namespace LifeLink.Services.Appeals
             };
             await _context.Appeals.AddAsync(appeal);
             await _context.AppealMessages.AddAsync(NewMessage(appeal.AppealId, null, dto.Reason, dto.AttachmentUrl, dto.AttachmentName));
+            await ActivityLogger.AddAsync(_context, currentUserId, "Appeal.Submitted", ActivityLogger.Types.Appeal, appeal.AppealId,
+                hospitalId.HasValue ? "Submitted an appeal against the hospital's suspension." : "Submitted an appeal against their suspension.", hospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyAdminAsync("New Appeal Submitted", "A suspended account submitted an appeal.");
@@ -165,6 +167,7 @@ namespace LifeLink.Services.Appeals
 
             await _context.AppealMessages.AddAsync(NewMessage(appeal.AppealId, null, dto.Notes, dto.AttachmentUrl, dto.AttachmentName));
             appeal.Status = AppealStatus.PENDING; // back in the admin's queue (also after a rejection)
+            await ActivityLogger.AddAsync(_context, userId, "Appeal.Replied", ActivityLogger.Types.Appeal, appeal.AppealId, "Replied in their appeal thread.", appeal.HospitalId);
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyAdminAsync("Appeal Reply Received", "An appellant replied to their appeal.");
@@ -176,13 +179,11 @@ namespace LifeLink.Services.Appeals
             var appeal = await LoadAsync(appealId);
             EnsureNotSelf(appeal, adminId);
             EnsureOpen(appeal);
-            if (IsAppellantTurn(appeal))
-            {
-                throw new InvalidOperationException("Waiting for the appellant to respond before the next admin reply.");
-            }
+            // The admin may send several messages in a row; the appellant still waits for an admin message
 
             await _context.AppealMessages.AddAsync(NewMessage(appeal.AppealId, adminId, dto.Notes, dto.AttachmentUrl, dto.AttachmentName));
             appeal.ReviewedByAdminId = adminId;
+            await LogAdminAsync(appeal, adminId, "Appeal.AdminReplied", "Replied in the appeal thread.");
             await _context.SaveChangesAsync();
 
             await NotifyAppellantAsync(appeal, "Admin Replied to Your Appeal", "An administrator replied to your appeal.");
@@ -222,19 +223,29 @@ namespace LifeLink.Services.Appeals
                 }
             }
 
+            await LogAdminAsync(appeal, adminId, "Appeal.Approved", "Approved the appeal and lifted the suspension.");
             await _context.SaveChangesAsync();
             await _notificationService.NotifyAppealApprovedAsync(appeal);
             return await GetAppealByIdAsync(appealId) ?? MapToDto(appeal);
         }
 
-        /// <summary>Rejects the appeal; the suspension stays but the thread remains open for further replies.</summary>
+        /// <summary>
+        /// Rejects the appeal; the suspension stays but the thread remains open for further replies. An appeal can be
+        /// rejected only once (also after the appellant replies again); a second reject gets 409.
+        /// </summary>
         public async Task<AppealResponseDto> RejectAppealAsync(Guid appealId, Guid adminId, ReviewAppealDto dto)
         {
             var appeal = await LoadAsync(appealId);
             EnsureNotSelf(appeal, adminId);
             EnsureOpen(appeal);
+            if (appeal.RejectedAt != null)
+            {
+                throw new ConflictException("This appeal has already been rejected. You can still reply, approve, close it or block the account.");
+            }
 
             RecordDecision(appeal, AppealStatus.REJECTED, adminId, dto.AdminResponse);
+            appeal.RejectedAt = DateTime.UtcNow;
+            await LogAdminAsync(appeal, adminId, "Appeal.Rejected", "Rejected the appeal; the suspension stays.");
             await _context.SaveChangesAsync();
 
             await _notificationService.NotifyAppealRejectedAsync(appeal);
@@ -249,6 +260,7 @@ namespace LifeLink.Services.Appeals
             EnsureOpen(appeal);
 
             RecordDecision(appeal, AppealStatus.CLOSED, adminId, dto.AdminResponse);
+            await LogAdminAsync(appeal, adminId, "Appeal.Closed", "Closed the appeal thread; the suspension stays.");
             await _context.SaveChangesAsync();
 
             await NotifyAppellantAsync(appeal, "Appeal Closed", "An administrator closed your appeal thread.");
@@ -270,6 +282,7 @@ namespace LifeLink.Services.Appeals
 
             RecordDecision(appeal, AppealStatus.CLOSED, adminId, dto.AdminResponse);
             await AccountLifecycleHelper.PermanentlyBlockAsync(_context, user);
+            await LogAdminAsync(appeal, adminId, "Appeal.AccountBlocked", "Permanently blocked the account from the appeal.");
             await _context.SaveChangesAsync();
 
             return await GetAppealByIdAsync(appealId) ?? MapToDto(appeal);
@@ -286,6 +299,11 @@ namespace LifeLink.Services.Appeals
             ?? throw new KeyNotFoundException($"Appeal with ID {appealId} was not found.");
 
         private static bool IsClosed(Appeal appeal) => appeal.Status is AppealStatus.APPROVED or AppealStatus.CLOSED;
+
+        // An admin action on an appeal goes to the appellant's log (the user, or the hospital for a hospital appeal)
+        private Task LogAdminAsync(Appeal appeal, Guid adminId, string action, string summary) =>
+            ActivityLogger.AddAsync(_context, adminId, action, ActivityLogger.Types.Appeal, appeal.AppealId, summary,
+                appeal.HospitalId, appeal.HospitalId.HasValue ? null : appeal.UserId);
 
         private static void EnsureOpen(Appeal appeal)
         {
@@ -309,11 +327,11 @@ namespace LifeLink.Services.Appeals
 
         private void RecordDecision(Appeal appeal, AppealStatus status, Guid adminId, string response)
         {
-            appeal.Status = status;
-            appeal.ReviewedByAdminId = adminId;
-            appeal.ReviewedAt = DateTime.UtcNow;
-            appeal.AdminResponse = response.Trim();
-            _context.AppealMessages.Add(NewMessage(appeal.AppealId, adminId, $"[{status}] {response}", null, null));
+            if (string.IsNullOrWhiteSpace(response))
+            {
+                throw new InvalidOperationException("A message is required.");
+            }
+            AppealDecisions.Record(_context, appeal, status, adminId, response);
         }
 
         private static AppealMessage NewMessage(Guid appealId, Guid? adminId, string? text, string? attachmentUrl, string? attachmentName)
@@ -359,6 +377,8 @@ namespace LifeLink.Services.Appeals
                 IsClosed = closed,
                 AwaitingAdminReply = !closed && !appellantTurn,
                 CanAppellantReply = !closed && appellantTurn,
+                CanReject = !closed && appeal.RejectedAt == null,
+                RejectedAt = appeal.RejectedAt,
                 Messages = appeal.Messages.OrderBy(m => m.CreatedAt).Select(m => new AppealMessageDto
                 {
                     MessageId = m.MessageId,

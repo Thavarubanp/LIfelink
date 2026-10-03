@@ -17,10 +17,16 @@ namespace LifeLink.DTOs.Transfer
         public Guid CreatedByHospitalId { get; set; }
         public string? RejectionReason { get; set; }
         public List<Guid> PacketIds { get; set; } = new(); // packets moved when the transfer completed
+        public List<string> PacketTrackingNumbers { get; set; } = new(); // tracking numbers sent (or held by a pending offer)
         public DateTime RequestedAt { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public DateTime? RejectedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+
+        // Admin suspension (Phase 3B): while suspended nobody can act on it (see SuspensionGuard)
+        public bool IsSuspended { get; set; }
+        public DateTime? SuspendedAt { get; set; }
+        public string? SuspensionReason { get; set; }
     }
 }

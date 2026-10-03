@@ -15,6 +15,8 @@ namespace LifeLink.Entities
         public int ConcurrencyToken { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        /// <summary>Set when the hospital deletes an unused blood group; adding the group again restores this row.</summary>
+        public DateTime? DeletedAt { get; set; }
 
         // Navigation Properties
         public Hospital Hospital { get; set; } = null!;

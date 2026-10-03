@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Acceptances;
 using LifeLink.DTOs.BloodRequests;
@@ -75,7 +76,47 @@ namespace LifeLink.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// The patient who created a request edits its blood group and units while it is still Pending. Only donor/patient
+        /// accounts can use this; hospitals, doctors and admins cannot.
+        /// </summary>
+        [HttpPut("{id:guid}")]
+        [Authorize(Roles = "User")]
+        [ProducesResponseType(typeof(BloodRequestResponseDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> UpdateRequest(Guid id, [FromBody] UpdateBloodRequestDto dto)
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue || userId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            try
+            {
+                return Ok(await _bloodRequestService.UpdatePendingRequestAsync(id, userId.Value, dto));
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -146,8 +187,9 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Creator deletes their own request (any status except Completed). It leaves every active list but all history
-        /// (acceptances, screening reports, doctor decisions, donations) is kept. Affected parties are notified.
+        /// The creator deletes their own request in any status, even with active donors (soft delete: active acceptances
+        /// are closed, held packets released, screening reports kept, participants notified; only the Admin still sees
+        /// it). Others get 403; a concurrent acceptance gives 409.
         /// </summary>
         [HttpDelete("{id:guid}")]
         [Authorize]
@@ -176,7 +218,11 @@ namespace LifeLink.Controllers
             {
                 return StatusCode(StatusCodes.Status403Forbidden, new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -229,6 +275,11 @@ namespace LifeLink.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetRequestById(Guid id)
         {
+            if (await IsDeletedForCallerAsync(id))
+            {
+                return NotFound(new { message = BloodRequestService.DeletedRequestMessage });
+            }
+
             var request = await _bloodRequestService.GetRequestByIdAsync(id);
             if (request == null)
             {
@@ -263,7 +314,7 @@ namespace LifeLink.Controllers
             {
                 return NotFound(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -279,6 +330,11 @@ namespace LifeLink.Controllers
         [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> GetRequestAcceptances(Guid id)
         {
+            if (await IsDeletedForCallerAsync(id))
+            {
+                return NotFound(new { message = BloodRequestService.DeletedRequestMessage });
+            }
+
             if (!_currentUserService.Roles.Contains("Admin"))
             {
                 var callerHospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
@@ -327,7 +383,7 @@ namespace LifeLink.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
-            catch (InvalidOperationException ex)
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(new { message = ex.Message });
             }
@@ -342,6 +398,11 @@ namespace LifeLink.Controllers
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetRequestAnalytics(Guid id)
         {
+            if (await IsDeletedForCallerAsync(id))
+            {
+                return NotFound(new { message = BloodRequestService.DeletedRequestMessage });
+            }
+
             try
             {
                 var analytics = await _bloodRequestService.GetRequestAnalyticsAsync(id);
@@ -361,8 +422,18 @@ namespace LifeLink.Controllers
         [ProducesResponseType(typeof(IEnumerable<RequestFulfillmentHistoryResponseDto>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetRequestFulfillmentHistory(Guid id)
         {
+            if (await IsDeletedForCallerAsync(id))
+            {
+                return NotFound(new { message = BloodRequestService.DeletedRequestMessage });
+            }
+
             var history = await _bloodRequestService.GetRequestFulfillmentHistoryAsync(id);
             return Ok(history);
         }
+
+        // A deleted request stays in the database, but only the Admin (and the internal agents) can still open it
+        private async Task<bool> IsDeletedForCallerAsync(Guid requestId) =>
+            !_currentUserService.Roles.Contains("Admin") && !_currentUserService.Roles.Contains("InternalAgent") &&
+            await _context.BloodRequests.AnyAsync(r => r.BloodRequestId == requestId && r.Status == Entities.BloodRequestStatus.Deleted);
     }
 }

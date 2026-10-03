@@ -103,6 +103,7 @@ async def process_blood_request(input_data: ProcessBloodRequestInput):
 ALERT_TYPES = {
     "EmergencyStock": "EmergencyStockAlert",
     "InventoryShortage": "InventoryShortage",
+    "InventoryShortageHelp": "InventoryShortageHelp",
     "PacketsExpiringSoon": "PacketsExpiringSoon",
     "TransferSuggestion": "TransferSuggestion",
 }
@@ -115,10 +116,15 @@ def _template_alert(alert, context: Dict) -> Dict[str, str]:
         requester = context.get("hospitalName") or "A partner hospital"
         return {"title": f"[{str(context.get('priority') or 'High').upper()}] Emergency Blood Support Needed ({group})",
                 "message": alert.message or f"{requester} urgently needs {context.get('unitsRequired') or ''} unit(s) of {group}. "
-                                            f"You hold {alert.units or 0} compatible unit(s); consider sending a transfer offer."}
+                                            f"You hold {alert.units or 0} unit(s) of {group}; consider sending a transfer offer."}
+    # Inventory wording shows unit counts only, never threshold figures (owner's Phase 4 rule)
     if alert.kind == "InventoryShortage":
-        return {"title": f"{group} stock below threshold",
-                "message": alert.message or f"Your {group} stock is below its threshold." + (f" Hospitals with spare stock: {related}. Consider a transfer request." if related else "")}
+        return {"title": f"Low {group} stock",
+                "message": alert.message or f"You have only {alert.units or 0} unit(s) of {group} left." + (f" Hospitals holding {group}: {related}. Consider a transfer request." if related else "")}
+    if alert.kind == "InventoryShortageHelp":
+        low = related or "Another hospital"
+        return {"title": f"{low} needs {group}",
+                "message": alert.message or f"{low} is low on {group}. You hold {alert.units or 0} unit(s) of {group}. Consider offering a transfer."}
     if alert.kind == "PacketsExpiringSoon":
         return {"title": f"{group} packets expiring soon",
                 "message": alert.message or f"{alert.units or 0} {group} packet(s) expire soon." + (f" {related} could use them; consider offering them before expiry." if related else " Use them first to prevent wastage.")}
@@ -147,7 +153,7 @@ async def hospital_alerts(input_data: HospitalAlertsInput):
                     copy = {"title": str(data["title"])[:120], "message": str(data["message"])[:600]}
             except Exception as ex:
                 logger.warning("Hospital alert copy fell back to template (%s)", type(ex).__name__)
-        notifications.append(HospitalNotification(recipient_id=alert.hospital_id,
+        notifications.append(HospitalNotification(recipient_id=alert.hospital_id, dedupe_key=alert.dedupe_key,
                                                   notification_type=ALERT_TYPES.get(alert.kind, "InventoryAlert"), **copy))
     return HospitalAlertsResponse(notifications=notifications)
 

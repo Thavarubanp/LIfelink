@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   User,
@@ -20,6 +20,10 @@ import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
 import authApi from '../../api/authApi';
 import EditProfileModal from '../../components/common/EditProfileModal';
+import ActivityLogList from '../../components/activity/ActivityLogList';
+import AdminMessageButton from '../../components/admin/AdminMessageButton';
+import { getUserRoles } from '../../utils/roleUtils';
+import { activityApi } from '../../api';
 
 const USER_EDIT_FIELDS = [
   { name: 'firstName', label: 'First Name' },
@@ -40,6 +44,9 @@ export const UserProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  // Admin only: the user's full activity log (what they did and what was done to their account)
+  const isAdminViewer = getUserRoles(currentUser).includes('Admin');
+  const loadActivity = useCallback((params) => activityApi.getUserActivity(id, params), [id]);
 
   const handleSave = async (values) => {
     const updated = await profileApi.updateUserProfile(profile.userId, {
@@ -218,6 +225,15 @@ export const UserProfilePage = () => {
                 <div className="font-bold text-slate-900 dark:text-slate-100">
                   {profile.bloodGroup || 'Not set'}{profile.bloodGroupConfirmed ? ' (confirmed at donation)' : ''}
                 </div>
+                {!profile.bloodGroup && profile.canEdit && !currentUser?.isSuspended && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="mt-0.5 text-[11px] font-semibold text-red-600 dark:text-red-400 hover:underline"
+                  >
+                    Add your blood group
+                  </button>
+                )}
                 <div className="text-[11px] text-slate-500">
                   {profile.nextEligibleDonationDate && new Date(profile.nextEligibleDonationDate) > new Date()
                     ? `Can donate again from ${new Date(profile.nextEligibleDonationDate).toLocaleDateString()}`
@@ -238,6 +254,19 @@ export const UserProfilePage = () => {
           </div>
         </div>
       </div>
+
+      {/* One-way admin message: donors and patients only (doctors are reached through their hospital) */}
+      {isAdminViewer && !isCurrentUser && profile.roles?.includes('User') && !profile.roles?.some((r) => ['Admin', 'Doctor', 'HospitalStaff'].includes(r)) && (
+        <AdminMessageButton userId={profile.userId} recipientName={`${profile.firstName || ''} ${profile.lastName || ''}`.trim()} />
+      )}
+
+      {isAdminViewer && !isCurrentUser && (
+        <ActivityLogList
+          load={loadActivity}
+          title="User activity log"
+          description="What this user did, and actions taken on their account. Visible to the Admin only."
+        />
+      )}
 
       {editing && (
         <EditProfileModal

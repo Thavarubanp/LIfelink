@@ -10,6 +10,7 @@ import Toast from './components/common/Toast';
 import NotificationCenterDrawer from './components/notifications/NotificationCenterDrawer';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import AssistantWidget from './components/assistant/AssistantWidget';
+import IdleSessionManager from './components/session/IdleSessionManager';
 
 // Auth Pages
 import LoginPage from './pages/auth/LoginPage';
@@ -40,12 +41,14 @@ import EmergencyHubPage from './pages/hospital/EmergencyHubPage';
 import DoctorManagementPage from './pages/hospital/DoctorManagementPage';
 import VerifyBloodRequestsPage from './pages/hospital/VerifyBloodRequestsPage';
 import TransfersPage from './pages/hospital/TransfersPage';
+import DonateBloodPage from './pages/hospital/DonateBloodPage';
 
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
 import HospitalManagementPage from './pages/admin/HospitalManagementPage';
 import AdminComplaintsPage from './pages/admin/AdminComplaintsPage';
 import AdminAppealsPage from './pages/admin/AdminAppealsPage';
+import AdminActivityPage from './pages/admin/AdminActivityPage';
 
 // Governance Page
 import SuspendedGovernancePage from './pages/governance/SuspendedGovernancePage';
@@ -93,6 +96,8 @@ export function App() {
     <AuthProvider>
       <NotificationProvider>
         <BrowserRouter>
+          {/* Idle timeout for every signed-in role (warning dialog, sign-out in all tabs) */}
+          <IdleSessionManager />
           <Routes>
             {/* Public Auth Routes */}
             <Route path="/login" element={<LoginPage />} />
@@ -244,6 +249,14 @@ export function App() {
                 }
               />
               <Route
+                path="/hospital/donate"
+                element={
+                  <ProtectedRoute allowedRoles={['HospitalStaff']}>
+                    <DonateBloodPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
                 path="/hospital/doctors"
                 element={
                   <ProtectedRoute allowedRoles={['HospitalStaff']}>
@@ -282,6 +295,14 @@ export function App() {
                 element={
                   <ProtectedRoute allowedRoles={['Admin']}>
                     <AdminAppealsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/activity"
+                element={
+                  <ProtectedRoute allowedRoles={['Admin']}>
+                    <AdminActivityPage />
                   </ProtectedRoute>
                 }
               />

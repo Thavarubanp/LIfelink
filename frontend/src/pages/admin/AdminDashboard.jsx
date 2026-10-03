@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { adminApi, doctorApi, hospitalApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
+import { isConflictError } from '../../utils/errorUtils';
 import { Badge } from '../../components/common/Badge';
 import {
   ShieldAlert,
@@ -20,6 +21,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAdminAttention, badgeText } from '../../context/useAdminAttention';
 
 // Robust helper to extract an array from any API response structure
 const extractArray = (res) => {
@@ -29,10 +31,19 @@ const extractArray = (res) => {
   return [];
 };
 
+// Pending count on a dashboard shortcut card (hidden at 0)
+const HubCount = ({ value }) =>
+  badgeText(value) ? (
+    <span className="inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white" title={`${value} pending`}>
+      {badgeText(value)}
+    </span>
+  ) : null;
+
 export const AdminDashboard = () => {
   const { addToast } = useNotification();
   const { user: currentUser, logout } = useAuth();
   const [stats, setStats] = useState(null);
+  const attention = useAdminAttention(true);
   const [loadingStats, setLoadingStats] = useState(true);
 
   // Active directory category: null (default dashboard) | 'users' | 'hospitals' | 'doctors'
@@ -195,6 +206,11 @@ export const AdminDashboard = () => {
         message: err.response?.data?.message || err.message || 'Suspension could not be executed.',
         type: 'error'
       });
+      // Changed at the same moment (for example reinstated from another tab): show the current list
+      if (isConflictError(err)) {
+        setSuspendModal({ isOpen: false, type: '', id: null, name: '', email: '' });
+        fetchCategoryData(selectedCategory);
+      }
     } finally {
       setSubmittingAction(false);
     }
@@ -213,6 +229,7 @@ export const AdminDashboard = () => {
       fetchStats();
     } catch (err) {
       addToast({ title: 'Action Failed', message: err.response?.data?.message || err.message, type: 'error' });
+      if (isConflictError(err)) fetchCategoryData(selectedCategory);
     }
   };
 
@@ -273,6 +290,7 @@ export const AdminDashboard = () => {
         message: err.response?.data?.message || err.message || 'Unable to reinstate account.',
         type: 'error'
       });
+      if (isConflictError(err)) fetchCategoryData(selectedCategory);
     }
   };
 
@@ -664,13 +682,16 @@ export const AdminDashboard = () => {
                               >
                                 <ShieldCheck className="w-3.5 h-3.5" /> Reinstate Hospital
                               </button>
-                            ) : (
+                            ) : h.isVerified ? ( // verified = registration approved (kept in sync by the backend)
                               <button
                                 onClick={() => openSuspendModal('hospital', h)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-300 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-900 transition-colors"
                               >
                                 <ShieldAlert className="w-3.5 h-3.5" /> Suspend Hospital
                               </button>
+                            ) : (
+                              // Registrations still waiting for (or refused) approval cannot be suspended (enforced by the backend)
+                              <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 italic">Awaiting registration approval</span>
                             )}
                           </td>
                         </tr>
@@ -727,7 +748,12 @@ export const AdminDashboard = () => {
                             {d.hospitalName || 'Affiliated Facility'}
                           </td>
                           <td className="p-3">
-                            {d.isActive ? (
+                            {d.deletedAt ? (
+                              // Removed by its hospital: kept for the Admin only
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                                <AlertTriangle className="w-3 h-3" /> Removed
+                              </span>
+                            ) : d.isActive ? (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900">
                                 <ShieldCheck className="w-3 h-3" /> Active
                               </span>
@@ -770,7 +796,7 @@ export const AdminDashboard = () => {
         </div>
       )}
 
-      {/* Default Dashboard Governance Operations Shortcuts (always available or highlighted) */}
+      {/* Default Dashboard Governance Operations Shortcuts (pending counts shown as badges) */}
       <div>
         <div className="mb-3">
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Governance Operations Hub</h2>
@@ -783,7 +809,10 @@ export const AdminDashboard = () => {
           >
             <div>
               <Badge variant="warning">Action Required</Badge>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-2">Hospital Registration Requests</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-2 flex items-center gap-2">
+                Hospital Registration Requests
+                <HubCount value={attention?.pendingRegistrations} />
+              </h3>
               <p className="text-xs text-slate-500 mt-1">Review newly registered hospitals seeking platform verification status.</p>
             </div>
             <span className="text-xs font-semibold text-red-600 mt-4 flex items-center gap-1">Review Requests <ArrowRight className="w-3.5 h-3.5" /></span>
@@ -795,7 +824,10 @@ export const AdminDashboard = () => {
           >
             <div>
               <Badge variant="danger">Investigation Queue</Badge>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-2">Complaints Hub</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-2 flex items-center gap-2">
+                Complaints Hub
+                <HubCount value={attention?.pendingComplaints} />
+              </h3>
               <p className="text-xs text-slate-500 mt-1">Inspect user reports, request hospital evidence, and resolve complaints.</p>
             </div>
             <span className="text-xs font-semibold text-red-600 mt-4 flex items-center gap-1">Manage Complaints <ArrowRight className="w-3.5 h-3.5" /></span>
@@ -807,7 +839,10 @@ export const AdminDashboard = () => {
           >
             <div>
               <Badge variant="info">Reinstatement Queue</Badge>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-2">Suspension Appeals</h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mt-2 flex items-center gap-2">
+                Suspension Appeals
+                <HubCount value={attention?.pendingAppeals} />
+              </h3>
               <p className="text-xs text-slate-500 mt-1">Evaluate appeals from suspended accounts and restore platform access.</p>
             </div>
             <span className="text-xs font-semibold text-red-600 mt-4 flex items-center gap-1">Review Appeals <ArrowRight className="w-3.5 h-3.5" /></span>

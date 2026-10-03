@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
 using LifeLink.DTOs.Auth;
 using LifeLink.Entities;
@@ -18,6 +19,7 @@ namespace LifeLink.Services.Auth
         private readonly IPasswordResetService _passwordResetService;
         private readonly IEmailService _emailService;
         private readonly Microsoft.Extensions.Logging.ILogger<AuthService> _logger;
+        private readonly ISessionService _sessions;
 
         public AuthService(
             AppDbContext context,
@@ -25,7 +27,8 @@ namespace LifeLink.Services.Auth
             IJwtService jwtService,
             IPasswordResetService passwordResetService,
             IEmailService emailService,
-            Microsoft.Extensions.Logging.ILogger<AuthService>? logger = null)
+            Microsoft.Extensions.Logging.ILogger<AuthService>? logger = null,
+            ISessionService? sessions = null)
         {
             _context = context;
             _passwordHasher = passwordHasher;
@@ -33,6 +36,7 @@ namespace LifeLink.Services.Auth
             _passwordResetService = passwordResetService;
             _emailService = emailService;
             _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<AuthService>.Instance;
+            _sessions = sessions ?? new SessionService(context, SessionSettings.Default);
         }
 
         public async Task<RegisterResponseDto> RegisterAsync(RegisterRequestDto request)
@@ -43,6 +47,16 @@ namespace LifeLink.Services.Auth
             if (await EmailUniquenessHelper.IsEmailTakenAsync(_context, normalizedEmail))
             {
                 throw new InvalidOperationException("An account with this email address already exists.");
+            }
+
+            string? bloodGroup = null;
+            if (!string.IsNullOrWhiteSpace(request.BloodGroup))
+            {
+                if (!BloodValidationHelper.IsValidBloodGroup(request.BloodGroup))
+                {
+                    throw new InvalidOperationException("Invalid blood group.");
+                }
+                bloodGroup = BloodValidationHelper.NormalizeBloodGroup(request.BloodGroup);
             }
 
             // Default role is 'User' (RoleId = 1)
@@ -65,6 +79,7 @@ namespace LifeLink.Services.Auth
                 DateOfBirth = request.DateOfBirth,
                 Gender = request.Gender?.Trim() ?? string.Empty,
                 Address = request.Address?.Trim() ?? string.Empty,
+                BloodGroup = bloodGroup,
                 AccountStatus = AccountStatus.Active,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -80,6 +95,8 @@ namespace LifeLink.Services.Auth
                 RoleId = defaultRole.RoleId
             });
 
+            await ActivityLogger.AddAsync(_context, newUser.UserId, "Account.Registered", ActivityLogger.Types.Account, newUser.UserId,
+                "Registered a donor/patient account" + (bloodGroup != null ? $" (blood group {bloodGroup})." : "."));
             await _context.SaveChangesAsync();
 
             return new RegisterResponseDto
@@ -133,7 +150,9 @@ namespace LifeLink.Services.Auth
                 roles.Add("User");
             }
 
-            var (token, expiresAt) = _jwtService.GenerateToken(user, roles);
+            // Each sign-in is a server-side session: the idle timeout and sign-out end it (checked on every request)
+            var session = await _sessions.StartAsync(user.UserId);
+            var (token, expiresAt) = _jwtService.GenerateToken(user, roles, session.SessionId);
             var isSuspended = await GovernanceAccessHelper.IsSuspendedForAccessAsync(_context, user, roles);
 
             // Determine MustChangePassword for Doctor accounts
@@ -159,7 +178,9 @@ namespace LifeLink.Services.Auth
                     AccountStatus = user.AccountStatus.ToString(),
                     IsSuspended = isSuspended,
                     MustChangePassword = mustChangePassword,
-                    HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles)
+                    HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles),
+                    SessionIdleTimeoutMinutes = _sessions.Settings.IdleTimeout.TotalMinutes,
+                    SessionWarningMinutes = _sessions.Settings.WarningPeriod.TotalMinutes
                 }
             };
         }
@@ -216,7 +237,9 @@ namespace LifeLink.Services.Auth
                 AccountStatus = user.AccountStatus.ToString(),
                 IsSuspended = isSuspended,
                 MustChangePassword = mustChangePassword,
-                HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles)
+                HospitalApprovalStatus = await HospitalApprovalStatusAsync(user, roles),
+                SessionIdleTimeoutMinutes = _sessions.Settings.IdleTimeout.TotalMinutes,
+                SessionWarningMinutes = _sessions.Settings.WarningPeriod.TotalMinutes
             };
         }
 
@@ -321,6 +344,8 @@ namespace LifeLink.Services.Auth
             // Admin, HospitalStaff and Doctor accounts cannot self-delete
             await AccountLifecycleHelper.EnsureDonorPatientAccountAsync(_context, userId, "deleted by their owner");
 
+            // Recorded before the personal data is removed (the log keeps the name at the time of the action)
+            await ActivityLogger.AddAsync(_context, userId, "Account.Deleted", ActivityLogger.Types.Account, userId, "Deleted their own account.");
             await AccountLifecycleHelper.DeleteAccountAsync(_context, user);
             await _context.SaveChangesAsync();
         }
@@ -454,6 +479,7 @@ namespace LifeLink.Services.Auth
 
             // If this user is a Doctor with a pending first-login password change,
             // automatically clear the flag so they can access the dashboard normally.
+            var firstDoctorPasswordChange = false;
             var isDoctor = user.UserRoles.Any(ur => ur.Role.Name == "Doctor");
             if (isDoctor)
             {
@@ -464,9 +490,13 @@ namespace LifeLink.Services.Auth
                     doctorRecord.MustChangePassword = false;
                     doctorRecord.UpdatedAt = DateTime.UtcNow;
                     _context.Doctors.Update(doctorRecord);
+                    firstDoctorPasswordChange = true;
                 }
             }
 
+            await ActivityLogger.AddAsync(_context, userId, firstDoctorPasswordChange ? "Account.FirstPasswordChange" : "Account.PasswordChanged",
+                ActivityLogger.Types.Account, userId,
+                firstDoctorPasswordChange ? "Changed the temporary password at first sign-in." : "Changed their password.");
             await _context.SaveChangesAsync();
         }
 

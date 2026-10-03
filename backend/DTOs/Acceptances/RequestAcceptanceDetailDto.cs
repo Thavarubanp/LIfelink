@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace LifeLink.DTOs.Acceptances
 {
@@ -13,5 +14,9 @@ namespace LifeLink.DTOs.Acceptances
         public string Status { get; set; } = string.Empty;
         public DateTime AcceptedAt { get; set; }
         public string? RejectionReason { get; set; }
+
+        // Hospital donation: DonorName/Email/Phone are the hospital's; Packets are the offered packets
+        public Guid? DonorHospitalId { get; set; }
+        public List<DonatedPacketDto> Packets { get; set; } = new();
     }
 }

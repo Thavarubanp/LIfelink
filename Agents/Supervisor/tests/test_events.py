@@ -75,3 +75,18 @@ def test_inventory_check_keeps_the_most_important_alerts_per_hospital(client):
 def test_unknown_event_fails(client):
     body = client.post("/plan", headers=KEY, json={"eventType": "Nope"}).json()
     assert body["success"] is False
+
+
+def test_inventory_alerts_keep_own_shortage_first_and_one_help_alert_per_low_hospital():
+    from services.planner import prioritise_alerts
+    recs = [
+        {"hospital_id": "h-2", "kind": "PacketsExpiringSoon", "blood_group": "O+", "urgency": 9, "dedupe_key": "PacketsExpiringSoon:O+"},
+        {"hospital_id": "h-2", "kind": "InventoryShortageHelp", "blood_group": "O+", "urgency": 0.5, "dedupe_key": "InventoryShortageHelp:O+:h-1"},
+        {"hospital_id": "h-2", "kind": "InventoryShortageHelp", "blood_group": "O+", "urgency": 0.4, "dedupe_key": "InventoryShortageHelp:O+:h-3"},
+        {"hospital_id": "h-2", "kind": "InventoryShortageHelp", "blood_group": "O+", "urgency": 0.4, "dedupe_key": "InventoryShortageHelp:O+:h-3"},
+        {"hospital_id": "h-2", "kind": "InventoryShortage", "blood_group": "A-", "urgency": 0.2, "dedupe_key": "InventoryShortage:A-"},
+    ]
+    kept = prioritise_alerts(recs)
+    # At most 3 per hospital: its own shortage, then both help requests (two different low hospitals), duplicates dropped
+    assert [r["kind"] for r in kept] == ["InventoryShortage", "InventoryShortageHelp", "InventoryShortageHelp"]
+    assert {r["dedupe_key"] for r in kept if r["kind"] == "InventoryShortageHelp"} == {"InventoryShortageHelp:O+:h-1", "InventoryShortageHelp:O+:h-3"}

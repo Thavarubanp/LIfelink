@@ -23,6 +23,12 @@ export const bloodRequestApi = {
     return response.data;
   },
 
+  // Patient (creator): change blood group and units while the request is still Pending
+  updateRequest: async (id, dto) => {
+    const response = await client.put(`/BloodRequests/${id}`, dto);
+    return response.data;
+  },
+
   // Creator: delete own request (removed from active lists, history kept)
   deleteRequest: async (id) => {
     const response = await client.delete(`/BloodRequests/${id}`);

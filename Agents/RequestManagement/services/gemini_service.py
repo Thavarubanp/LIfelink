@@ -2,7 +2,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from config.prompts import SCREENING_SUMMARY_PROMPT
+from config.prompts import ANSWER_EXTRACTION_PROMPT, SCREENING_SUMMARY_PROMPT
 from config.settings import settings
 
 logger = logging.getLogger("GeminiService")
@@ -10,8 +10,8 @@ logger = logging.getLogger("GeminiService")
 
 class GeminiService:
     """
-    Writes the doctor-facing summary of a screening report. Gemini only ever sees de-identified answers
-    (no Section 1 personal details, no confidential Section 10 answers) plus the rule flags. Without a key,
+    Writes the doctor-facing summary of a screening report, and reads free-text replies into answer fields. Gemini only
+    ever sees de-identified answers (no personal details, never the confidential question 7) plus the rule flags. Without a key,
     or on any failure, a template summary built from the flags is used. The AI never approves or rejects.
     """
 
@@ -47,14 +47,34 @@ class GeminiService:
             return None
         return {"summary": summary, "doctor_notes": str(data.get("doctor_notes") or "").strip()}
 
+    async def extract_answers(self, question_text: str, parts: List[Dict[str, Any]], message: str) -> Dict[str, Any]:
+        """Field values read from a free-text reply (empty without a key or on any failure). Never used for question 7."""
+        if not self.api_key:
+            return {}
+        try:
+            from google import genai
+            client = genai.Client(api_key=self.api_key)
+            fields = [{"id": p["id"], "label": p["label"], "type": p["type"], "options": p.get("options"),
+                       "allow_unknown": p.get("allow_unknown", False)} for p in parts]
+            prompt = ANSWER_EXTRACTION_PROMPT.format(question=question_text, fields_json=json.dumps(fields), message=message.replace('"', "'")[:600])
+            response = await client.aio.models.generate_content(model=self.model_name, contents=prompt)
+            text = (response.text or "").strip().strip("`")
+            if text.lower().startswith("json"):
+                text = text[4:]
+            data = json.loads(text)
+            return data if isinstance(data, dict) else {}
+        except Exception as ex:
+            logger.warning("Gemini answer extraction failed (%s); asking one part at a time.", type(ex).__name__)
+            return {}
+
     @staticmethod
     def template_summary(evaluation: Dict[str, Any]) -> Dict[str, str]:
         flags = evaluation["flags"]
         if not flags:
-            summary = "The donor reported no disqualifying answers or risk factors in the screening questionnaire."
+            summary = "The screening questionnaire raised no flags."
         else:
             summary = f"The screening raised {len(flags)} point(s) for the doctor: " + " ".join(f["message"] for f in flags[:6])
-        return {"summary": summary, "doctor_notes": "Confirm identity, check haemoglobin, blood pressure, pulse, temperature and weight before donation."}
+        return {"summary": summary, "doctor_notes": "Confirm identity with the donor's NIC; check haemoglobin (above 12.5 g/dL), blood pressure, pulse, temperature and weight before donation."}
 
 
 gemini_service = GeminiService()

@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using LifeLink.Common;
 using LifeLink.Data;
+using LifeLink.DTOs.Inventory;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.Transfer;
 using LifeLink.Services.Common;
@@ -35,6 +37,7 @@ namespace LifeLink.Controllers
 
         /// <summary>Creates a transfer "Request" (ask for blood) or "Offer" (send blood) to another hospital.</summary>
         [HttpPost]
+        [LifeLink.Common.Idempotent] // a double submit with the same Idempotency-Key creates nothing twice
         [Authorize(Roles = "HospitalStaff")]
         [ProducesResponseType(typeof(ApiResponse<TransferRequestResponseDto>), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
@@ -47,7 +50,7 @@ namespace LifeLink.Controllers
 
             return await Execute(async hospitalId =>
             {
-                var result = await _transferRequestService.CreateTransferRequestAsync(request, hospitalId);
+                var result = await _transferRequestService.CreateTransferRequestAsync(request, hospitalId, _currentUserService.UserId);
                 return CreatedAtAction(nameof(GetTransferRequestById), new { id = result.TransferRequestId },
                     ApiResponse<TransferRequestResponseDto>.Ok(result, "Transfer request created successfully."));
             });
@@ -90,12 +93,15 @@ namespace LifeLink.Controllers
             return Ok(ApiResponse<TransferRequestResponseDto>.Ok(result, "Transfer request retrieved successfully."));
         }
 
-        /// <summary>The counterpart hospital accepts: packets move immediately and the transfer completes.</summary>
+        /// <summary>
+        /// The counterpart hospital accepts: packets move immediately and the transfer completes. A sender accepting a
+        /// "Request" sends { packetIds } with exactly the requested number of its packets; accepting an offer needs no body.
+        /// </summary>
         [HttpPut("{id:guid}/approve")]
         [Authorize(Roles = "HospitalStaff")]
-        public Task<IActionResult> ApproveTransferRequest(Guid id) =>
+        public Task<IActionResult> ApproveTransferRequest(Guid id, [FromBody] PacketSelectionDto? dto = null) =>
             Execute(async hospitalId => Ok(ApiResponse<TransferRequestResponseDto>.Ok(
-                await _transferRequestService.ApproveTransferRequestAsync(id, hospitalId, _currentUserService.UserId),
+                await _transferRequestService.ApproveTransferRequestAsync(id, hospitalId, _currentUserService.UserId, dto?.PacketIds),
                 "Transfer accepted and inventory updated.")));
 
         /// <summary>The counterpart hospital rejects with a reason; the rejection stays in history.</summary>
@@ -103,7 +109,7 @@ namespace LifeLink.Controllers
         [Authorize(Roles = "HospitalStaff")]
         public Task<IActionResult> RejectTransferRequest(Guid id, [FromBody] RejectTransferDto? dto) =>
             Execute(async hospitalId => Ok(ApiResponse<TransferRequestResponseDto>.Ok(
-                await _transferRequestService.RejectTransferRequestAsync(id, hospitalId, dto?.Reason),
+                await _transferRequestService.RejectTransferRequestAsync(id, hospitalId, dto?.Reason, _currentUserService.UserId),
                 "Transfer request rejected.")));
 
         /// <summary>The creator deletes a pending transfer; it stays in history as Cancelled.</summary>
@@ -111,7 +117,7 @@ namespace LifeLink.Controllers
         [Authorize(Roles = "HospitalStaff")]
         public Task<IActionResult> DeleteTransferRequest(Guid id) =>
             Execute(async hospitalId => Ok(ApiResponse<TransferRequestResponseDto>.Ok(
-                await _transferRequestService.DeleteTransferRequestAsync(id, hospitalId),
+                await _transferRequestService.DeleteTransferRequestAsync(id, hospitalId, _currentUserService.UserId),
                 "Transfer request deleted.")));
 
         // Admin: no scope (null). Hospital staff: own hospital, or Guid.Empty when the account has no hospital.
@@ -141,7 +147,11 @@ namespace LifeLink.Controllers
             {
                 return NotFound(ApiResponse<object>.Fail(ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (ConflictException ex)
+            {
+                return StatusCode(StatusCodes.Status409Conflict, ApiResponse<object>.Fail(ex.Message));
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
             {
                 return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { bloodRequestApi, acceptanceApi, profileApi } from '../../api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { bloodRequestApi, acceptanceApi, profileApi, activityApi } from '../../api';
+import ActivityLogList from '../../components/activity/ActivityLogList';
 import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../../components/common/Badge';
 import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingProgress';
@@ -13,6 +14,7 @@ export const DonorDashboard = () => {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const { user } = useAuth();
+  const loadActivity = useCallback((params) => activityApi.getMyActivity(params), []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -163,6 +165,9 @@ export const DonorDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* 5.4: the user's own activity (admin actions on the account show as "Administrator") */}
+      <ActivityLogList load={loadActivity} title="My activity" description="What you did on LifeLink, and actions taken on your account." />
     </div>
   );
 };

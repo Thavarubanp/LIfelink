@@ -714,7 +714,7 @@ namespace LifeLink.Tests
             var stats = await adminService.GetDashboardStatsAsync();
 
             // Assert (all 9 metrics!)
-            Assert.Equal(3, stats.TotalUsers);
+            Assert.Equal(3, stats.TotalDonorPatients);
             Assert.Equal(2, stats.TotalHospitals);
             Assert.Equal(1, stats.TotalDoctors);
             Assert.Equal(1, stats.ActiveRequests);

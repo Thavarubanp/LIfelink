@@ -11,8 +11,15 @@ export const authApi = {
     return response.data;
   },
 
-  logout: async () => {
-    const response = await client.post('/Auth/logout');
+  /** Ends the server-side session (every tab); reason 'idle' when signed out for inactivity */
+  logout: async (reason) => {
+    const response = await client.post('/Auth/logout', null, reason ? { params: { reason } } : undefined);
+    return response.data;
+  },
+
+  /** Heartbeat: the user is active (mouse, keyboard, touch, scroll or "Stay signed in"); keeps the session alive */
+  recordActivity: async () => {
+    const response = await client.post('/Auth/activity', null, { reportActivity: true });
     return response.data;
   },
 

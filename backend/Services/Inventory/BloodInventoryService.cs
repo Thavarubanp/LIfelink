@@ -6,13 +6,14 @@ using LifeLink.Data;
 using LifeLink.DTOs.Inventory;
 using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
+using LifeLink.Services.Common;
 
 namespace LifeLink.Services.Inventory
 {
     /// <summary>
     /// Blood group categories (thresholds and capacity) and packet-level stock. UnitsAvailable is the count of
-    /// Available packets and changes only through InventoryLedger: recorded donations, completed transfers,
-    /// issuing and expiry. It can never be raised by hand.
+    /// Available packets and changes only through InventoryLedger: packets entered by staff, recorded donations,
+    /// transfers, issuing, donations to requests and expiry. It is never typed in as a number.
     /// </summary>
     public class BloodInventoryService : IBloodInventoryService
     {
@@ -45,18 +46,31 @@ namespace LifeLink.Services.Inventory
             var existing = await _context.BloodInventories
                 .FirstOrDefaultAsync(i => i.HospitalId == dto.HospitalId && i.BloodGroup == dto.BloodGroup);
 
+            var now = DateTime.UtcNow;
+            if (existing != null && existing.DeletedAt != null)
+            {
+                // A deleted group is added again: the same row comes back with the threshold and capacity entered now
+                existing.DeletedAt = null;
+                existing.MinimumThreshold = dto.MinimumThreshold;
+                existing.MaximumCapacity = dto.MaximumCapacity;
+                existing.UpdatedAt = now;
+                await ActivityLogger.AddForHospitalAsync(_context, dto.HospitalId, "Inventory.GroupAdded", ActivityLogger.Types.Inventory, existing.InventoryId,
+                    $"Added blood group {dto.BloodGroup} again (threshold {dto.MinimumThreshold}, capacity {dto.MaximumCapacity}).");
+                await _context.SaveChangesAsync();
+                return await MapToResponseDtoAsync(existing.InventoryId);
+            }
+
             if (existing != null)
             {
                 throw new InvalidOperationException($"Blood inventory for hospital '{dto.HospitalId}' and blood group '{dto.BloodGroup}' already exists.");
             }
 
-            var now = DateTime.UtcNow;
             var inventory = new BloodInventory
             {
                 InventoryId = Guid.NewGuid(),
                 HospitalId = dto.HospitalId,
                 BloodGroup = dto.BloodGroup,
-                UnitsAvailable = 0, // stock arrives only as packets from donations or transfers
+                UnitsAvailable = 0, // stock arrives only as packets
                 MinimumThreshold = dto.MinimumThreshold,
                 MaximumCapacity = dto.MaximumCapacity,
                 LastUpdated = now,
@@ -65,19 +79,21 @@ namespace LifeLink.Services.Inventory
             };
 
             _context.BloodInventories.Add(inventory);
+            await ActivityLogger.AddForHospitalAsync(_context, dto.HospitalId, "Inventory.GroupAdded", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                $"Added blood group {dto.BloodGroup} (threshold {dto.MinimumThreshold}, capacity {dto.MaximumCapacity}).");
             await _context.SaveChangesAsync();
 
             return await MapToResponseDtoAsync(inventory.InventoryId);
         }
 
         /// <summary>
-        /// Updates thresholds and capacity. A lower UnitsAvailable issues that many packets (earliest expiry first)
-        /// with the audit note as the reason. Raising stock is refused: packets only come from donations or transfers.
+        /// Updates thresholds and capacity, and issues the packets staff selected (IssuePacketIds) with the audit note
+        /// as the reason. The unit count itself cannot be changed: it is the number of Available packets.
         /// </summary>
         public async Task<InventoryResponseDto> UpdateInventoryAsync(Guid id, UpdateInventoryDto dto, Guid? performedByUserId = null)
         {
             var inventory = await _context.BloodInventories.FindAsync(id);
-            if (inventory == null)
+            if (inventory == null || inventory.DeletedAt != null)
             {
                 throw new KeyNotFoundException($"Blood inventory record with ID '{id}' was not found.");
             }
@@ -92,34 +108,38 @@ namespace LifeLink.Services.Inventory
                 throw new InvalidOperationException("MaximumCapacity cannot be less than MinimumThreshold.");
             }
 
+            if (dto.UnitsAvailable.HasValue && dto.UnitsAvailable.Value != inventory.UnitsAvailable)
+            {
+                throw new InvalidOperationException(dto.UnitsAvailable.Value > inventory.UnitsAvailable
+                    ? "Stock cannot be typed in. Add blood packets instead."
+                    : "Select the packets to issue.");
+            }
+
             var now = DateTime.UtcNow;
+            if (inventory.MinimumThreshold != dto.MinimumThreshold || inventory.MaximumCapacity != dto.MaximumCapacity)
+            {
+                await ActivityLogger.AddForHospitalAsync(_context, inventory.HospitalId, "Inventory.ThresholdsChanged", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                    $"Changed {inventory.BloodGroup} threshold {inventory.MinimumThreshold} -> {dto.MinimumThreshold}, capacity {inventory.MaximumCapacity} -> {dto.MaximumCapacity}.");
+            }
             inventory.MinimumThreshold = dto.MinimumThreshold;
             inventory.MaximumCapacity = dto.MaximumCapacity;
             inventory.UpdatedAt = now;
 
-            if (dto.UnitsAvailable.HasValue && dto.UnitsAvailable.Value != inventory.UnitsAvailable)
+            if (dto.IssuePacketIds is { Count: > 0 })
             {
-                if (dto.UnitsAvailable.Value < 0)
-                {
-                    throw new InvalidOperationException("UnitsAvailable cannot be negative.");
-                }
-
-                if (dto.UnitsAvailable.Value > inventory.UnitsAvailable)
-                {
-                    throw new InvalidOperationException("Stock can only be added through recorded donations or completed hospital transfers.");
-                }
-
                 var reason = dto.AuditNotes?.Trim();
                 if (string.IsNullOrWhiteSpace(reason))
                 {
                     throw new InvalidOperationException("A reason (audit note) is required when issuing blood from stock.");
                 }
 
-                var toIssue = inventory.UnitsAvailable - dto.UnitsAvailable.Value;
-                await InventoryLedger.IssuePacketsAsync(_context, inventory.HospitalId, inventory.BloodGroup, toIssue, null, reason, performedByUserId);
+                var packets = await InventoryLedger.RequireSelectablePacketsAsync(_context, inventory.HospitalId, dto.IssuePacketIds, inventory.BloodGroup);
+                await InventoryLedger.IssuePacketsAsync(_context, packets, null, reason, performedByUserId);
+                await ActivityLogger.AddForHospitalAsync(_context, inventory.HospitalId, "Inventory.PacketsIssued", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                    $"Issued {packets.Count} {inventory.BloodGroup} packet(s) ({string.Join(", ", packets.Select(x => x.TrackingNumber))}): {reason}");
             }
 
-            await _context.SaveChangesAsync();
+            await InventoryLedger.SavePacketChangesAsync(_context);
             return await MapToResponseDtoAsync(inventory.InventoryId);
         }
 
@@ -127,7 +147,7 @@ namespace LifeLink.Services.Inventory
         {
             var inventory = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .FirstOrDefaultAsync(i => i.InventoryId == id);
+                .FirstOrDefaultAsync(i => i.InventoryId == id && i.DeletedAt == null);
 
             if (inventory == null) return null;
             return (await MapManyAsync(new[] { inventory })).First();
@@ -137,7 +157,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .Where(i => i.HospitalId == hospitalId)
+                .Where(i => i.HospitalId == hospitalId && i.DeletedAt == null)
                 .OrderBy(i => i.BloodGroup)
                 .ToListAsync();
 
@@ -148,6 +168,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
+                .Where(i => i.DeletedAt == null)
                 .OrderBy(i => i.HospitalId)
                 .ThenBy(i => i.BloodGroup)
                 .ToListAsync();
@@ -155,11 +176,14 @@ namespace LifeLink.Services.Inventory
             return await MapManyAsync(list);
         }
 
-        /// <summary>Only an unused category can be deleted; anything with packets or audit history is kept.</summary>
+        /// <summary>
+        /// Only an unused category can be deleted; anything with packets or audit history is kept. Soft delete: the row
+        /// stays (hidden from every list); adding the same blood group again restores it.
+        /// </summary>
         public async Task<bool> DeleteInventoryAsync(Guid id)
         {
             var inventory = await _context.BloodInventories.FindAsync(id);
-            if (inventory == null)
+            if (inventory == null || inventory.DeletedAt != null)
             {
                 return false;
             }
@@ -171,7 +195,10 @@ namespace LifeLink.Services.Inventory
                 throw new InvalidOperationException("This blood group has stock or audit history and cannot be deleted. Set its threshold to 0 instead.");
             }
 
-            _context.BloodInventories.Remove(inventory);
+            inventory.DeletedAt = DateTime.UtcNow;
+            inventory.UpdatedAt = inventory.DeletedAt.Value;
+            await ActivityLogger.AddForHospitalAsync(_context, inventory.HospitalId, "Inventory.GroupDeleted", ActivityLogger.Types.Inventory, inventory.InventoryId,
+                $"Deleted the unused blood group {inventory.BloodGroup}.");
             await _context.SaveChangesAsync();
             return true;
         }
@@ -180,7 +207,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .Where(i => i.UnitsAvailable <= i.MinimumThreshold)
+                .Where(i => i.DeletedAt == null && i.UnitsAvailable < i.MinimumThreshold) // the single "below threshold" rule (InventoryRules.IsBelowThreshold)
                 .OrderBy(i => i.UnitsAvailable)
                 .ToListAsync();
 
@@ -191,7 +218,7 @@ namespace LifeLink.Services.Inventory
         {
             var list = await _context.BloodInventories
                 .Include(i => i.Hospital)
-                .Where(i => i.UnitsAvailable >= (i.MaximumCapacity * 0.8))
+                .Where(i => i.DeletedAt == null && i.UnitsAvailable >= (i.MaximumCapacity * 0.8))
                 .OrderByDescending(i => i.UnitsAvailable)
                 .ToListAsync();
 
@@ -209,38 +236,94 @@ namespace LifeLink.Services.Inventory
         }
 
         /// <summary>
-        /// Packets owned by a hospital (optionally one group or status). With packetId, returns that single packet
-        /// with its full audit history, including moves between hospitals.
+        /// Staff enter collected blood: one packet per unit, each with its own tracking number, owned and created by
+        /// the signed-in hospital. The collected date is mandatory and cannot be in the future.
         /// </summary>
-        public async Task<IEnumerable<BloodPacketResponseDto>> GetPacketsAsync(Guid? hospitalId, string? bloodGroup, string? status, Guid? packetId)
+        public async Task<List<BloodPacketResponseDto>> CreatePacketsAsync(Guid hospitalId, CreateBloodPacketsDto dto, Guid? performedByUserId)
         {
-            var query = _context.BloodPackets.Include(p => p.Hospital).AsQueryable();
+            if (!BloodGroup.IsValid(dto.BloodGroup))
+            {
+                throw new InvalidOperationException("Select a valid blood group (A+, A-, B+, B-, AB+, AB-, O+, O-).");
+            }
+
+            if (dto.Quantity < 1 || dto.Quantity > CreateBloodPacketsDto.MaxQuantity)
+            {
+                throw new InvalidOperationException($"Quantity must be between 1 and {CreateBloodPacketsDto.MaxQuantity}.");
+            }
+
+            var hospital = await _context.Hospitals.FindAsync(hospitalId)
+                           ?? throw new InvalidOperationException("Your hospital was not found.");
+            var collected = PacketDateRules.Validate(dto.CollectionDate, hospital.PacketShelfLifeDays, DateTime.UtcNow);
+            var bloodGroup = NormalizeGroup(dto.BloodGroup);
+
+            var packets = await InventoryLedger.AddCollectedPacketsAsync(_context, hospitalId, bloodGroup, dto.Quantity, collected,
+                BloodPacketSource.Manual, null, TransactionType.StockAddition, "Collected blood entered by hospital staff", performedByUserId);
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Inventory.PacketsAdded", ActivityLogger.Types.Inventory, null,
+                $"Added {packets.Count} {bloodGroup} packet(s) collected {collected:d MMM yyyy}" +
+                (packets.Count > 0 ? $" ({packets.First().TrackingNumber}{(packets.Count > 1 ? " to " + packets.Last().TrackingNumber : "")})." : "."));
+            await InventoryLedger.SavePacketChangesAsync(_context);
+
+            var ids = packets.Select(p => p.PacketId).ToList();
+            return (await QueryPacketsAsync(_context.BloodPackets.Where(p => ids.Contains(p.PacketId)), hospitalId))
+                .OrderBy(p => p.TrackingNumber).ToList();
+        }
+
+        /// <summary>
+        /// Edits a packet's blood group and collected date. Only the hospital that created it may edit it, and only
+        /// while it still owns the packet and the packet is Available (so a transferred packet is read-only for everyone).
+        /// </summary>
+        public async Task<BloodPacketResponseDto> UpdatePacketAsync(Guid packetId, Guid hospitalId, UpdateBloodPacketDto dto, Guid? performedByUserId)
+        {
+            var packet = await _context.BloodPackets.FindAsync(packetId)
+                         ?? throw new KeyNotFoundException("Blood packet not found.");
+
+            if (packet.CreatedByHospitalId != hospitalId)
+            {
+                throw new UnauthorizedAccessException("Only the hospital that created this packet can edit it.");
+            }
+
+            if (packet.HospitalId != hospitalId)
+            {
+                throw new InvalidOperationException("This packet is no longer in your inventory and cannot be edited.");
+            }
+
+            if (packet.Status != BloodPacketStatus.Available)
+            {
+                throw new InvalidOperationException($"Only available packets can be edited. This packet is {packet.Status}.");
+            }
+
+            if (!BloodGroup.IsValid(dto.BloodGroup))
+            {
+                throw new InvalidOperationException("Select a valid blood group (A+, A-, B+, B-, AB+, AB-, O+, O-).");
+            }
+
+            var shelfLifeDays = await _context.Hospitals.Where(h => h.HospitalId == hospitalId).Select(h => h.PacketShelfLifeDays).FirstAsync();
+            var collected = PacketDateRules.Validate(dto.CollectionDate, shelfLifeDays, DateTime.UtcNow);
+
+            await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "Inventory.PacketEdited", ActivityLogger.Types.Inventory, packet.PacketId,
+                $"Edited packet {packet.TrackingNumber}: {packet.BloodGroup} -> {NormalizeGroup(dto.BloodGroup)}, collected {collected:d MMM yyyy}.");
+            await InventoryLedger.ChangePacketDetailsAsync(_context, packet, NormalizeGroup(dto.BloodGroup), collected, shelfLifeDays, performedByUserId);
+            await InventoryLedger.SavePacketChangesAsync(_context);
+
+            return (await QueryPacketsAsync(_context.BloodPackets.Where(p => p.PacketId == packetId), hospitalId)).Single();
+        }
+
+        private static string NormalizeGroup(string bloodGroup) =>
+            BloodGroup.All.First(g => string.Equals(g, bloodGroup.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>
+        /// Packets owned by a hospital (optionally one group or status). With packetId, returns that single packet
+        /// with its full audit history, including moves between hospitals. viewerHospitalId decides CanEdit.
+        /// </summary>
+        public async Task<IEnumerable<BloodPacketResponseDto>> GetPacketsAsync(Guid? hospitalId, string? bloodGroup, string? status, Guid? packetId, Guid? viewerHospitalId = null)
+        {
+            var query = _context.BloodPackets.AsQueryable();
             if (packetId.HasValue) query = query.Where(p => p.PacketId == packetId.Value);
             if (hospitalId.HasValue) query = query.Where(p => p.HospitalId == hospitalId.Value);
             if (!string.IsNullOrWhiteSpace(bloodGroup)) query = query.Where(p => p.BloodGroup == bloodGroup);
             if (!string.IsNullOrWhiteSpace(status)) query = query.Where(p => p.Status == status);
 
-            var packets = await query
-                .OrderBy(p => p.Status == BloodPacketStatus.Available ? 0 : 1)
-                .ThenBy(p => p.ExpiryDate)
-                .Take(500)
-                .ToListAsync();
-
-            var now = DateTime.UtcNow;
-            var result = packets.Select(p => new BloodPacketResponseDto
-            {
-                PacketId = p.PacketId,
-                HospitalId = p.HospitalId,
-                HospitalName = p.Hospital?.Name ?? string.Empty,
-                BloodGroup = p.BloodGroup,
-                VolumeMl = p.VolumeMl,
-                CollectionDate = p.CollectionDate,
-                ExpiryDate = p.ExpiryDate,
-                Status = p.Status,
-                Source = p.Source,
-                SourceReferenceId = p.SourceReferenceId,
-                IsExpiringSoon = p.Status == BloodPacketStatus.Available && p.ExpiryDate <= now.AddDays(p.Hospital?.ExpiryAlertDays ?? 5)
-            }).ToList();
+            var result = await QueryPacketsAsync(query, viewerHospitalId);
 
             if (packetId.HasValue && result.Count == 1)
             {
@@ -254,15 +337,71 @@ namespace LifeLink.Services.Inventory
             return result;
         }
 
-        /// <summary>Background sweep: available packets past their expiry date become Expired.</summary>
+        private async Task<List<BloodPacketResponseDto>> QueryPacketsAsync(IQueryable<BloodPacket> query, Guid? viewerHospitalId)
+        {
+            var packets = await query
+                .Include(p => p.Hospital)
+                .Include(p => p.CreatedByHospital)
+                .OrderBy(p => p.Status == BloodPacketStatus.Available ? 0 : 1)
+                .ThenBy(p => p.ExpiryDate)
+                .Take(500)
+                .ToListAsync();
+
+            var now = DateTime.UtcNow;
+            return packets.Select(p => new BloodPacketResponseDto
+            {
+                PacketId = p.PacketId,
+                TrackingNumber = p.TrackingNumber,
+                CreatedByHospitalId = p.CreatedByHospitalId,
+                CreatedByHospitalName = p.CreatedByHospital?.Name ?? string.Empty,
+                HospitalId = p.HospitalId,
+                HospitalName = p.Hospital?.Name ?? string.Empty,
+                BloodGroup = p.BloodGroup,
+                VolumeMl = p.VolumeMl,
+                CollectionDate = p.CollectionDate,
+                ExpiryDate = p.ExpiryDate,
+                Status = p.Status,
+                Source = p.Source,
+                SourceReferenceId = p.SourceReferenceId,
+                IsExpiringSoon = p.Status == BloodPacketStatus.Available && p.ExpiryDate <= now.AddDays(p.Hospital?.ExpiryAlertDays ?? 5),
+                CreatedAt = p.CreatedAt,
+                CanEdit = viewerHospitalId.HasValue && p.CreatedByHospitalId == viewerHospitalId && p.HospitalId == viewerHospitalId &&
+                          p.Status == BloodPacketStatus.Available
+            }).ToList();
+        }
+
+        /// <summary>
+        /// Background sweep: available packets past their expiry date become Expired. Each hospital + blood group is saved
+        /// on its own, so a packet used at the same moment (409) only postpones that group to the next sweep.
+        /// </summary>
         public async Task<int> ProcessExpiredPacketsAsync()
         {
-            var count = await InventoryLedger.ExpirePacketsAsync(_context, DateTime.UtcNow);
-            if (count > 0)
+            var now = DateTime.UtcNow;
+            var groups = await _context.BloodPackets
+                .Where(p => p.Status == BloodPacketStatus.Available && p.ExpiryDate <= now)
+                .Select(p => new { p.HospitalId, p.BloodGroup })
+                .Distinct()
+                .ToListAsync();
+
+            var total = 0;
+            foreach (var group in groups)
             {
-                await _context.SaveChangesAsync();
+                try
+                {
+                    var count = await InventoryLedger.ExpirePacketsAsync(_context, now, group.HospitalId, group.BloodGroup);
+                    if (count > 0)
+                    {
+                        await _context.SaveChangesAsync();
+                    }
+                    total += count;
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    // Someone used a packet of this group at the same moment; the next sweep tries again
+                    _context.ChangeTracker.Clear();
+                }
             }
-            return count;
+            return total;
         }
 
         private async Task EnsureHospitalExistsAsync(Guid hospitalId)

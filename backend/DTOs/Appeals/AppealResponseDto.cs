@@ -22,6 +22,8 @@ namespace LifeLink.DTOs.Appeals
         public bool IsClosed { get; set; }            // APPROVED or CLOSED: read-only
         public bool AwaitingAdminReply { get; set; }  // appellant spoke last
         public bool CanAppellantReply { get; set; }   // admin spoke last and the thread is open
+        public bool CanReject { get; set; }           // open and never rejected: an appeal is rejected at most once
+        public DateTime? RejectedAt { get; set; }
     }
 
     public class AppealMessageDto

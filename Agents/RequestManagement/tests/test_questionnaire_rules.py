@@ -1,74 +1,106 @@
 import json
+from datetime import date, timedelta
 
-from models.donor_screening import QUESTIONS_BY_ID, SECTIONS, get_applicable_questions, render_question
-from services import answer_parser, eligibility_rules
-from services.report_service import deidentified_answers
+from models.donor_screening import DONT_REMEMBER, PARTS_BY_ID, QUESTIONS, QUESTIONS_BY_ID, missing_parts, render_question
+from services import eligibility_rules, report_service
+from services.answer_parser import parse_part, parse_text
 
-
-def test_all_twelve_sections_are_covered():
-    sections = {q.section_index for q in get_applicable_questions({"gender": "Female"}, {"DH_BEFORE": "Yes"})}
-    assert sections == set(SECTIONS)
-
-
-def test_female_only_and_follow_up_questions():
-    male = [q.question_id for q in get_applicable_questions({"gender": "Male"}, {})]
-    assert "BE_PREGNANT" not in male and "FD_MISCARRIAGE" not in male
-    assert "DH_LAST_DATE" not in male and "MH_DETAILS" not in male
-
-    female = [q.question_id for q in get_applicable_questions({"gender": "Male"}, {"P_GENDER": "Female", "DH_BEFORE": "Yes",
-                                                                                   "MH_CONDITIONS": json.dumps(["Asthma"])})]
-    assert "BE_PREGNANT" in female and "DH_LAST_DATE" in female and "MH_DETAILS" in female
-    none_ticked = [q.question_id for q in get_applicable_questions({}, {"MH_CONDITIONS": "[]"})]
-    assert "MH_DETAILS" not in none_ticked
+TODAY = date(2026, 10, 4)
+BASE = {"P_NAME": "Kamal Perera", "P_DOB": "1995-04-10", "P_GENDER": "Male", "P_WEIGHT_KG": "68", "P_CONTACT": "0771234567",
+        "DH_BEFORE": "No", "CH_WELL": "Yes", "CH_INFECTION_2W": "No", "CH_MEAL_4H": "Yes", "CH_SLEEP_6H": "Yes", "CH_ALCOHOL_24H": "No",
+        "MH_CONDITIONS": "[]", "MH_MEDICINES": "No", "RE_EVENTS": "[]", "TR_ABROAD": "No", "IR_RISK": "No"}
 
 
-def test_section_one_is_prefilled_for_confirmation():
-    rendered = render_question(QUESTIONS_BY_ID["P_NAME"], {"fullName": "Kamal Perera"})
-    assert "Kamal Perera" in rendered["text"] and "yes to confirm" in rendered["text"]
-    parsed = answer_parser.parse("yes", QUESTIONS_BY_ID["P_NAME"], {"fullName": "Kamal Perera"})
-    assert parsed.kind == "answer" and parsed.value == "Kamal Perera"
-    corrected = answer_parser.parse("Kamal S. Perera", QUESTIONS_BY_ID["P_NAME"], {"fullName": "Kamal Perera"})
-    assert corrected.value == "Kamal S. Perera"
+def codes(answers):
+    return {f["code"]: f["severity"] for f in eligibility_rules.evaluate({**BASE, **answers}, TODAY)["flags"]}
 
 
-def test_parser_understands_answers_questions_and_withdrawal():
-    yes_no = QUESTIONS_BY_ID["CH_WELL"]
-    assert answer_parser.parse("Yes, I feel fine", yes_no, {}).value == "Yes"
-    assert answer_parser.parse("no, I haven't", QUESTIONS_BY_ID["CH_ALCOHOL_24H"], {}).value == "No"
-    assert answer_parser.parse("What does this mean?", yes_no, {}).kind == "question"
-    assert answer_parser.parse("I want to withdraw my donation", yes_no, {}).kind == "withdraw"
-    assert answer_parser.parse("maybe", yes_no, {}).kind == "clarify"
-
-    assert answer_parser.parse("2026-01-15", QUESTIONS_BY_ID["DH_LAST_DATE"], {}).value == "2026-01-15"
-    assert answer_parser.parse("March 2025", QUESTIONS_BY_ID["DH_LAST_DATE"], {}).value == "2025-03"
-    assert answer_parser.parse("twice", QUESTIONS_BY_ID["DH_COUNT"], {}).value == "2"
-    assert answer_parser.parse("o positive", QUESTIONS_BY_ID["P_BLOOD_GROUP"], {}).value == "O+"
-
-    checklist = QUESTIONS_BY_ID["CH_SYMPTOMS"]
-    assert answer_parser.parse("none", checklist, {}).value == "[]"
-    assert json.loads(answer_parser.parse("a cough and a cold", checklist, {}).value) == ["Cough", "Cold"]
-    assert json.loads(answer_parser.parse('["Fever"]', checklist, {}).value) == ["Fever"]
-    assert answer_parser.parse("same", checklist, {}, previous='["Fever"]').value == '["Fever"]'
+def ago(days):
+    return (TODAY - timedelta(days=days)).isoformat()
 
 
-def test_rules_flag_deferrals_and_keep_confidential_answers_out_of_messages():
-    clean = eligibility_rules.evaluate({"CH_WELL": "Yes", "BE_WEIGHT_50": "Yes", "RE_EVENTS": "[]", "IR_ITEMS": "[]"})
-    assert clean["risk_level"] == "LOW" and clean["recommendation"] == "Eligible"
-
-    tattoo = eligibility_rules.evaluate({"RE_EVENTS": json.dumps(["Tattoo"])})
-    assert tattoo["recommendation"] == "Temporarily Deferred" and tattoo["risk_level"] == "MEDIUM"
-
-    recent = eligibility_rules.evaluate({"DH_LAST_DATE": "2999-01-01"})
-    assert any(f["code"] == "DONATION_INTERVAL" for f in recent["flags"])
-
-    risk = eligibility_rules.evaluate({"IR_ITEMS": json.dumps(["Injected recreational drugs"])})
-    assert risk["risk_level"] == "HIGH" and risk["recommendation"] == "Requires Doctor Review"
-    assert all("Injected" not in f["message"] for f in risk["flags"])
+def test_exactly_seven_questions_and_no_occupation():
+    assert [q.number for q in QUESTIONS] == [1, 2, 3, 4, 5, 6, 7]
+    assert "P_OCCUPATION" not in PARTS_BY_ID and "P_NIC" not in PARTS_BY_ID
+    assert QUESTIONS_BY_ID["Q7"].confidential
 
 
-def test_llm_input_never_contains_personal_or_confidential_answers():
-    answers = {"P_NAME": "Kamal Perera", "P_NIC": "199512345678", "CH_WELL": "Yes",
-               "IR_ITEMS": json.dumps(["HIV/AIDS"]), "RS_SYMPTOMS": "[]"}
-    text = json.dumps(deidentified_answers(answers))
-    assert "Kamal" not in text and "199512345678" not in text and "HIV" not in text
-    assert "feeling well" in text
+def test_pregnancy_part_only_for_female_donors_and_follow_ups_only_when_triggered():
+    q7, q3, q6 = QUESTIONS_BY_ID["Q7"], QUESTIONS_BY_ID["Q3"], QUESTIONS_BY_ID["Q6"]
+    assert [p.id for p in missing_parts(q7, {"gender": "Male"}, {})] == ["IR_RISK"]
+    assert [p.id for p in missing_parts(q7, {"gender": "Female"}, {})] == ["FD_STATUS", "IR_RISK"]
+    assert "Are you pregnant" in render_question(q7, {"gender": "Female"}, {})["text"]
+    assert [p.id for p in missing_parts(q3, {}, {"DH_BEFORE": "No"})] == []
+    assert [p.id for p in missing_parts(q3, {}, {"DH_BEFORE": "Yes"})] == ["DH_LAST_DATE"]
+    assert [p.id for p in missing_parts(q6, {}, {"RE_EVENTS": json.dumps(["Tattoo", "Surgery"]), "TR_ABROAD": "Yes"})] == \
+        ["RE_TATTOO_DATE", "RE_SURGERY_DATE", "TR_TRIPS"]
+
+
+def test_no_flags_means_low_risk_and_the_ai_never_approves():
+    result = eligibility_rules.evaluate(BASE, TODAY)
+    assert result["flags"] == [] and result["risk_level"] == "LOW" and result["recommendation"] == "No flags raised"
+
+
+def test_deferral_flags_for_the_doctor():
+    assert codes({"P_DOB": "2010-01-01"})["AGE_RANGE"] == "defer"
+    assert codes({"P_DOB": "1965-01-01"})["AGE_RANGE"] == "defer"                     # 61 years old in Oct 2026
+    assert "AGE_RANGE" not in codes({"P_DOB": "1966-01-01", "DH_BEFORE": "Yes", "DH_LAST_DATE": ago(400)})  # 60: still eligible
+    assert codes({"P_DOB": "1969-01-01", "DH_BEFORE": "No"})["FIRST_TIME_OVER_55"] == "defer"
+    assert "FIRST_TIME_OVER_55" not in codes({"P_DOB": "1969-01-01", "DH_BEFORE": "Yes", "DH_LAST_DATE": ago(400)})
+    assert codes({"P_WEIGHT_KG": "50"})["WEIGHT"] == "defer"
+    assert "WEIGHT" not in codes({"P_WEIGHT_KG": "50.5"})
+    assert codes({"DH_BEFORE": "Yes", "DH_LAST_DATE": ago(119)})["DONATION_INTERVAL"] == "defer"
+    assert "DONATION_INTERVAL" not in codes({"DH_BEFORE": "Yes", "DH_LAST_DATE": ago(120)})
+    assert codes({"DH_BEFORE": "Yes", "DH_LAST_DATE": DONT_REMEMBER})["LAST_DONATION_UNKNOWN"] == "info"
+    assert codes({"RE_EVENTS": '["Tattoo"]', "RE_TATTOO_DATE": ago(300)})["TATTOO"] == "defer"
+    assert "TATTOO" not in codes({"RE_EVENTS": '["Tattoo"]', "RE_TATTOO_DATE": ago(800)})
+    assert codes({"FD_STATUS": '["Pregnant"]'})["PREGNANCY"] == "defer"
+    assert codes({"IR_RISK": "Yes"})["RISK_BEHAVIOUR"] == "defer"
+
+
+def test_travel_malaria_risk_within_three_years_or_any_country_within_three_months():
+    trip = lambda country, days: {"TR_ABROAD": "Yes", "TR_TRIPS": json.dumps([{"country": country, "return_date": ago(days)}])}
+    assert codes(trip("India", 700))["MALARIA_TRAVEL"] == "defer"
+    assert "MALARIA_TRAVEL" not in codes(trip("India", 1200))
+    assert codes(trip("Australia", 60))["RECENT_TRAVEL"] == "defer"
+    assert codes(trip("Australia", 100)) == {}
+    assert codes({"TR_ABROAD": "Yes", "TR_TRIPS": json.dumps([{"country": "Japan", "return_date": DONT_REMEMBER}])})["TRAVEL_DATE_UNKNOWN"] == "review"
+    assert not eligibility_rules.is_malaria_risk_country("Sri Lanka")
+
+
+def test_review_flags():
+    found = codes({"CH_WELL": "No", "CH_INFECTION_2W": "Yes", "CH_MEAL_4H": "No", "CH_SLEEP_6H": "No", "CH_ALCOHOL_24H": "Yes",
+                   "MH_CONDITIONS": '["Diabetes"]', "MH_MEDICINES": "Yes", "RE_EVENTS": '["Surgery", "Blood transfusion"]'})
+    assert {"UNWELL_TODAY", "RECENT_INFECTION", "NO_MEAL", "LITTLE_SLEEP", "ALCOHOL", "ILLNESS", "MEDICINES", "SURGERY", "TRANSFUSION"} <= set(found)
+    assert set(found.values()) == {"review"}
+    result = eligibility_rules.evaluate({**BASE, "CH_WELL": "No"}, TODAY)
+    assert result["risk_level"] == "MEDIUM" and result["recommendation"] == "Requires Doctor Review"
+
+
+def test_parser_reads_dates_unknowns_lists_and_trips():
+    assert parse_part(PARTS_BY_ID["DH_LAST_DATE"], "I can't remember")[0] == DONT_REMEMBER
+    assert parse_part(PARTS_BY_ID["DH_LAST_DATE"], "2026-02-03")[0] == "2026-02-03"
+    assert parse_part(PARTS_BY_ID["DH_LAST_DATE"], "2999-01-01")[1]            # future date refused
+    assert parse_part(PARTS_BY_ID["P_DOB"], "I don't remember")[1]             # only some dates allow "don't remember"
+    assert parse_part(PARTS_BY_ID["MH_CONDITIONS"], "none of these")[0] == "[]"
+    assert json.loads(parse_part(PARTS_BY_ID["MH_CONDITIONS"], ["Diabetes", "Epilepsy"])[0]) == ["Diabetes", "Epilepsy"]
+    assert parse_part(PARTS_BY_ID["P_WEIGHT_KG"], "about 72 kg")[0] == "72"
+    assert parse_part(PARTS_BY_ID["P_WEIGHT_KG"], "5")[1]                      # outside 20-250
+    trips = parse_part(PARTS_BY_ID["TR_TRIPS"], [{"country": "India", "return_date": "2026-05-01"}])[0]
+    assert json.loads(trips) == [{"country": "India", "return_date": "2026-05-01"}]
+
+
+def test_free_text_rules():
+    q4 = QUESTIONS_BY_ID["Q4"]
+    parsed = parse_text("yes, no, yes, yes, no", q4.parts, {})
+    assert parsed.kind == "answer" and parsed.values["CH_INFECTION_2W"] == "No" and parsed.values["CH_ALCOHOL_24H"] == "No"
+    assert parse_text("What is an infection?", q4.parts, {}).kind == "question"
+    assert parse_text("I want to withdraw my donation", q4.parts, {}).kind == "withdraw"
+    assert parse_text("feeling great", q4.parts, {}).kind == "extract"
+
+
+def test_llm_never_sees_personal_details_or_question_seven():
+    shared = json.dumps(report_service.deidentified_answers({**BASE, "FD_STATUS": '["Pregnant"]', "IR_RISK": "Yes"}))
+    for hidden in ("Kamal", "0771234567", "1995-04-10", "risk behaviours", "Pregnant"):
+        assert hidden not in shared
+    assert "68 kg" in shared
