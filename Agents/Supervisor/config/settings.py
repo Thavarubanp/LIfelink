@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Gemini (chat, intent classification, grounded answers) and embeddings (RAG)
     GOOGLE_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
-    MODEL_NAME: str = "gemini-2.5-flash"
+    MODEL_NAME: str = "gemini-3.5-flash-lite"
     EMBEDDING_MODEL: str = "models/gemini-embedding-001"
 
     # Knowledge base: medical guidance and LifeLink platform guidance are kept in separate collections

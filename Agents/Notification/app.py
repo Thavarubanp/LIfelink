@@ -49,7 +49,7 @@ protected = [Depends(require_internal_key)]
 @app.get("/health")
 def health_check():
     api_key_configured = bool(os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY"))
-    model_name = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+    model_name = os.getenv("MODEL_NAME", "gemini-3.5-flash-lite")
     return {
         "status": "Healthy",
         "agent": "LifeLink Notification Agent",
@@ -145,14 +145,15 @@ async def hospital_alerts(input_data: HospitalAlertsInput):
             try:
                 from langchain_core.messages import HumanMessage
                 prompt = HOSPITAL_ALERT_PROMPT.format(kind=alert.kind, facts=copy["message"], title=copy["title"])
-                text = llm.invoke([HumanMessage(content=prompt)]).content.strip().strip("`")
+                from nodes import message_text
+                text = message_text(llm.invoke([HumanMessage(content=prompt)])).strip().strip("`")
                 if text.lower().startswith("json"):
                     text = text[4:]
                 data = json.loads(text)
                 if data.get("title") and data.get("message"):
                     copy = {"title": str(data["title"])[:120], "message": str(data["message"])[:600]}
             except Exception as ex:
-                logger.warning("Hospital alert copy fell back to template (%s)", type(ex).__name__)
+                logger.warning("Hospital alert copy fell back to template (%s: %s)", type(ex).__name__, ex)
         notifications.append(HospitalNotification(recipient_id=alert.hospital_id, dedupe_key=alert.dedupe_key,
                                                   notification_type=ALERT_TYPES.get(alert.kind, "InventoryAlert"), **copy))
     return HospitalAlertsResponse(notifications=notifications)

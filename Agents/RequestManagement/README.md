@@ -80,7 +80,7 @@ If the backend is unreachable, the agent returns 503 and saves nothing.
 | `HOST` / `PORT` | `127.0.0.1` / `8001` | Loopback only |
 | `DATABASE_URL` | `sqlite:///./screening_agent.db` | Agent-owned tables: sessions, answers, report versions |
 | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) | empty | Optional; without it a rule-based summary is used |
-| `MODEL_NAME` | `gemini-2.5-flash` | |
+| `MODEL_NAME` | `gemini-3.5-flash-lite` | |
 | `BACKEND_BASE_URL` | `http://127.0.0.1:5231` | LifeLink backend |
 | `INTERNAL_SERVICE_API_KEY` | `LifeLink-Internal-Agent-Key-2026` | Must match the backend and the other agents. Local-development default only; shared and production environments must override it (see the root README) |
 

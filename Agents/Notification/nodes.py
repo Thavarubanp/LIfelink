@@ -12,6 +12,17 @@ from prompts import DONOR_RANKING_PROMPT, NOTIFICATIONS_GENERATION_PROMPT
 load_dotenv()
 logger = logging.getLogger("NotificationAgent")
 
+
+def message_text(message) -> str:
+    """Plain text of a LangChain reply: newer Gemini models may return content as a list of blocks."""
+    content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b if isinstance(b, str) else str(b.get("text", "")) for b in content
+                       if isinstance(b, str) or (isinstance(b, dict) and b.get("type", "text") == "text"))
+    return str(content or "")
+
 # Request alerts go to donors of the EXACT blood group only (owner's decision, 4.4/6.1). Accepting a request with a
 # compatible group is still allowed by the backend (BloodCompatibilityService), but nobody is alerted for it.
 def alert_groups(target_blood_group: str) -> List[str]:
@@ -24,7 +35,7 @@ URGENT_PRIORITIES = ["CRITICAL"]
 
 def get_llm():
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    model_name = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+    model_name = os.getenv("MODEL_NAME", "gemini-3.5-flash-lite")
     if not api_key:
         logger.warning("GOOGLE_API_KEY is not set. Fallback templates will be used.")
         return None
@@ -123,7 +134,7 @@ def rank_donors_node(state: NotificationAgentState) -> Dict[str, Any]:
             )
             
             response = llm.invoke([HumanMessage(content=prompt)])
-            text = response.content.strip()
+            text = message_text(response).strip()
             
             # Clean markdown codeblocks if present
             if text.startswith("```json"):
@@ -188,7 +199,7 @@ def generate_notifications_node(state: NotificationAgentState) -> Dict[str, Any]
                     recipient_role=role
                 )
                 res = llm.invoke([HumanMessage(content=prompt)])
-                txt = res.content.strip()
+                txt = message_text(res).strip()
                 if txt.startswith("```json"):
                     txt = txt[7:]
                 elif txt.startswith("```"):

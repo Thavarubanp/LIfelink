@@ -25,8 +25,9 @@ class GeminiService:
                 result = await self._call_gemini(deidentified_answers, evaluation)
                 if result:
                     return result
+                logger.warning("Gemini summary was empty; using template summary.")
             except Exception as ex:
-                logger.warning("Gemini summary failed (%s); using template summary.", type(ex).__name__)
+                logger.warning("Gemini summary failed (%s: %s); using template summary.", type(ex).__name__, ex)
         return self.template_summary(evaluation)
 
     async def _call_gemini(self, answers: List[Dict[str, str]], evaluation: Dict[str, Any]) -> Optional[Dict[str, str]]:
@@ -64,7 +65,7 @@ class GeminiService:
             data = json.loads(text)
             return data if isinstance(data, dict) else {}
         except Exception as ex:
-            logger.warning("Gemini answer extraction failed (%s); asking one part at a time.", type(ex).__name__)
+            logger.warning("Gemini answer extraction failed (%s: %s); asking one part at a time.", type(ex).__name__, ex)
             return {}
 
     @staticmethod
