@@ -17,7 +17,7 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./screening_agent.db")
 
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or ""
-    MODEL_NAME: str = os.getenv("MODEL_NAME", "gemini-2.5-flash")
+    MODEL_NAME: str = os.getenv("MODEL_NAME", "gemini-3.5-flash-lite")
 
     BACKEND_BASE_URL: str = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:5231")
     INTERNAL_SERVICE_API_KEY: str = os.getenv("INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")

@@ -9,6 +9,17 @@ logger = logging.getLogger("Supervisor.LLM")
 _chat_model = None
 
 
+def message_text(message) -> str:
+    """Plain text of a LangChain reply: newer Gemini models may return content as a list of blocks."""
+    content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(b if isinstance(b, str) else str(b.get("text", "")) for b in content
+                       if isinstance(b, str) or (isinstance(b, dict) and b.get("type", "text") == "text"))
+    return str(content or "")
+
+
 def llm_available() -> bool:
     return bool(settings.gemini_key)
 
@@ -29,10 +40,12 @@ async def complete(system: str, prompt: str) -> Optional[str]:
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
         result = await model.ainvoke([SystemMessage(content=system), HumanMessage(content=prompt)])
-        text = result.content if isinstance(result.content, str) else str(result.content)
-        return text.strip() or None
+        text = message_text(result).strip()
+        if not text:
+            logger.warning("Gemini returned an empty reply; using rule-based fallback.")
+        return text or None
     except Exception as ex:
-        logger.warning("Gemini call failed (%s); using rule-based fallback.", type(ex).__name__)
+        logger.warning("Gemini call failed (%s: %s); using rule-based fallback.", type(ex).__name__, ex)
         return None
 
 
@@ -46,5 +59,6 @@ async def complete_json(system: str, prompt: str) -> Optional[Any]:
         cleaned = cleaned[4:] if cleaned.lower().startswith("json") else cleaned
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as ex:
+        logger.warning("Gemini reply was not valid JSON (%s); using rule-based fallback.", ex)
         return None

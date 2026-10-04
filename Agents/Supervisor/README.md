@@ -107,7 +107,7 @@ Suggested actions are links that the UI opens in the user's own session. Agents 
 | `AGENT2_MATCHING_URL` | `http://127.0.0.1:8000` | Notification agent |
 | `AGENT3_INVENTORY_URL` | `http://127.0.0.1:8003` | Inventory agent |
 | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | empty | Optional; enables Gemini answers, intent refinement and vector search |
-| `MODEL_NAME` / `EMBEDDING_MODEL` | `gemini-2.5-flash` / `models/gemini-embedding-001` | |
+| `MODEL_NAME` / `EMBEDDING_MODEL` | `gemini-3.5-flash-lite` / `models/gemini-embedding-001` | |
 | `RETRIEVAL_MAX_DISTANCE` | `0.40` | Knowledge relevance cut-off |
 | `MAX_SUPERVISOR_STEPS` | `8` | Step budget per request |
 

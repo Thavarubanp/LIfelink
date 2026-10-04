@@ -190,7 +190,7 @@ class KnowledgeStore:
                 return [by_id[chunk_id] for chunk_id, distance in zip(result["ids"][0], result["distances"][0])
                         if chunk_id in by_id and distance <= settings.RETRIEVAL_MAX_DISTANCE]
             except Exception as ex:
-                logger.warning("Vector search failed for %s (%s); using keyword retrieval.", domain, type(ex).__name__)
+                logger.warning("Vector search failed for %s (%s: %s); using keyword retrieval.", domain, type(ex).__name__, ex)
 
         return self._keyword_search(chunks, query, k)
 
