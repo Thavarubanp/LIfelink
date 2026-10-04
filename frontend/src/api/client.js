@@ -12,7 +12,7 @@ import {
 
 // Base Axios instance matching LifeLink ASP.NET Core backend API
 const client = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   headers: {
     'Content-Type': 'application/json',
   },
