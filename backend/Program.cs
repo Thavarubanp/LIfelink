@@ -200,7 +200,13 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173")
+        // Allowed origins from config (Cors:AllowedOrigins, e.g. env Cors__AllowedOrigins__0); local dev origins otherwise
+        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        if (allowedOrigins == null || allowedOrigins.Length == 0)
+        {
+            allowedOrigins = new[] { "http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173" };
+        }
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -268,7 +274,8 @@ using (var scope = app.Services.CreateScope())
 // 6. Request Pipeline Configuration
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
-if (app.Environment.IsDevelopment())
+// Swagger: always in Development; elsewhere when Swagger:Enabled is true (env Swagger__Enabled)
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Swagger:Enabled", false))
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
@@ -288,5 +295,12 @@ app.UseMiddleware<RestrictedGovernanceModeMiddleware>();
 app.UseRateLimiter();
 
 app.MapControllers();
+
+// Health check for the hosting platform: 200 when the database is reachable, 503 otherwise (no login needed)
+app.MapGet("/health", async (AppDbContext db) =>
+        await db.Database.CanConnectAsync()
+            ? Results.Ok(new { status = "Healthy" })
+            : Results.Json(new { status = "Unhealthy" }, statusCode: StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous();
 
 app.Run();
