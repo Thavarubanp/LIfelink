@@ -94,7 +94,7 @@ Deterministic code decides eligibility, compatibility, donation intervals, quest
 2. The backend selects eligible exact-group donors and hospitals with suitable stock.
 3. The Supervisor runs planning and Notification.
 4. Notification rechecks deterministic candidate fields, optionally ranks/composes, and returns alerts.
-5. The backend saves alerts only for its original recipients. Normal and High requests do not trigger these broadcast alerts.
+5. The backend saves alerts only for its original recipients. Normal requests are silent; High alerts exact-group eligible donors only, while Critical may also alert qualifying hospitals above their own minimum threshold.
 
 ### Inventory analysis
 

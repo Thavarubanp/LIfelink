@@ -50,7 +50,7 @@ The original LangGraph workflow is kept for standalone use (see below).
 |---|---|---|
 | GET | `/health` | Health check (no key needed) |
 | POST | `/analyze` | Supervisor entry point (above) |
-| POST | `/run` | Legacy workflow: reads inventory from the backend itself and posts recommendations to `/api/notifications/recommendations` |
+| POST | `/run` | Legacy analysis workflow: reads inventory and returns recommendations; it no longer writes notifications directly |
 
 ## Legacy scheduler
 

@@ -1,9 +1,14 @@
 from fastapi.testclient import TestClient
+from graph.workflow import workflow_app
 
 from api.app import app
 
 KEY = {"X-Internal-Key": "test-key"}
 client = TestClient(app)
+
+
+def test_legacy_workflow_does_not_directly_dispatch_recommendations():
+    assert "send_notifications" not in workflow_app.get_graph().nodes
 
 INVENTORIES = [
     {"facility_id": "h-1", "facility_name": "General", "blood_group": "O+", "current_units": 2, "minimum_threshold": 10, "expiring_soon_units": 0},

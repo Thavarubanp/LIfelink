@@ -41,7 +41,7 @@ question asked mid-interview is answered from the knowledge base before the inte
 
 | Event | Sent by (backend) | Steps | Result |
 |---|---|---|---|
-| `BloodRequestApproved` | `VerificationService`, when a doctor verifies a request | planning, notification | `EligibleDonorAlert` for donors that pass every check (saved blood group exactly the request's, 120 days since last donation, age 18-60, active, not suspended or blocked). `UrgentHospitalAlert` for hospitals holding that exact group. Critical requests only; Normal and High requests send no alerts. |
+| `BloodRequestApproved` | `VerificationService`, when a doctor verifies a request | planning, notification | `EligibleDonorAlert` for donors that pass every check (saved blood group exactly the request's, 120 days since last donation, age 18-60, active, not suspended or blocked). High sends donor alerts only. Critical also sends `UrgentHospitalAlert` to backend-approved hospitals with valid exact-group stock strictly above their own minimum threshold. Normal sends no proactive alerts. |
 | `DonorAccepted` | `AcceptanceService` | request_management | Starts the donor's screening interview. |
 | `EmergencyShortage` | `EmergencyRequestService` | planning, inventory, notification | `EmergencyStockAlert` for hospitals holding stock of the exact blood group. |
 | `InventoryCheck` | `InventoryMonitor`, every `InventoryMonitoring:IntervalMinutes` | inventory, planning, notification | `InventoryShortage` and `PacketsExpiringSoon` alerts, at most 3 per hospital. |

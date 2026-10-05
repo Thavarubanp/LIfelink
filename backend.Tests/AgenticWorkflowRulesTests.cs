@@ -134,11 +134,46 @@ namespace LifeLink.Tests
             var listed = Assert.Single(await new BloodRequestService(w.Db).GetPublicRequestsAsync());
             Assert.Equal(3, listed.RemainingUnits);
             Assert.False(listed.IsAcceptingDonors); // every remaining slot is reserved: new acceptances pause
+            Assert.Single(w.Db.Notifications.Where(n => n.UserId == w.Patient.UserId && n.NotificationType == "DonationProgress"));
 
             await w.Acceptances.FinalizeDonorSelectionAsync(w.Request.BloodRequestId, approved.Skip(2).ToList(), w.AssignedDoctor.UserId!.Value);
             Assert.Equal(5, w.Request.FulfilledUnits);
             Assert.Equal(0, w.Request.ReservedUnits);
             Assert.Equal(BloodRequestStatus.Completed, w.Request.Status);
+            Assert.Single(w.Db.Notifications.Where(n => n.UserId == w.Patient.UserId && n.NotificationType == "BloodRequestCompleted"));
+        }
+
+        [Theory]
+        [InlineData("inactive")]
+        [InlineData("deleted")]
+        [InlineData("suspended")]
+        [InlineData("blocked")]
+        [InlineData("first-login")]
+        public async Task Screening_Falls_Back_To_Hospital_When_Assigned_Doctor_Is_Not_Eligible(string condition)
+        {
+            var w = await CreateWorldAsync();
+            var login = await w.Db.Users.FindAsync(w.AssignedDoctor.UserId!.Value);
+            if (condition == "inactive") w.AssignedDoctor.IsActive = false;
+            if (condition == "deleted") w.AssignedDoctor.DeletedAt = DateTime.UtcNow;
+            if (condition == "suspended") login!.IsSuspended = true;
+            if (condition == "blocked") login!.IsPermanentlyBlocked = true;
+            if (condition == "first-login") w.AssignedDoctor.MustChangePassword = true;
+            await w.Db.SaveChangesAsync();
+
+            await ScreenedDonorAsync(w, await AddDonorAsync(w));
+
+            Assert.Single(w.Db.Notifications.Where(n => n.HospitalId == w.Hospital.HospitalId && n.NotificationType == "ScreeningReportSubmitted"));
+            Assert.DoesNotContain(w.Db.Notifications, n => n.UserId == w.AssignedDoctor.UserId && n.NotificationType == "ScreeningReportSubmitted");
+        }
+
+        [Fact]
+        public async Task Screening_Notifies_The_Eligible_Assigned_Doctor_Instead_Of_Hospital()
+        {
+            var w = await CreateWorldAsync();
+            await ScreenedDonorAsync(w, await AddDonorAsync(w));
+
+            Assert.Single(w.Db.Notifications.Where(n => n.UserId == w.AssignedDoctor.UserId && n.NotificationType == "ScreeningReportSubmitted"));
+            Assert.DoesNotContain(w.Db.Notifications, n => n.HospitalId == w.Hospital.HospitalId && n.NotificationType == "ScreeningReportSubmitted");
         }
 
         [Fact]
@@ -435,6 +470,31 @@ namespace LifeLink.Tests
             Assert.Equal(BloodRequestStatus.Cancelled, request.Status);
             Assert.Equal(0, request.ReservedUnits);
             Assert.NotEqual(AcceptanceStatus.Verified, (await check.Db.Acceptances.AsNoTracking().SingleAsync(a => a.AcceptanceId == acceptanceId)).Status);
+        }
+
+        [Fact]
+        public async Task Creator_Cancellation_Notifies_Only_Active_Affected_Parties()
+        {
+            var w = await CreateWorldAsync(unitsRequired: 3);
+            var activeDonor = await AddDonorAsync(w);
+            var historicalDonor = await AddDonorAsync(w);
+            var active = await w.Acceptances.AcceptRequestAsync(activeDonor.UserId,
+                new CreateAcceptanceDto { BloodRequestId = w.Request.BloodRequestId, DonorBloodGroup = activeDonor.BloodGroup! });
+            w.Db.Acceptances.Add(new Acceptance
+            {
+                AcceptanceId = Guid.NewGuid(), BloodRequestId = w.Request.BloodRequestId,
+                DonorUserId = historicalDonor.UserId, Status = AcceptanceStatus.Matched
+            });
+            await w.Db.SaveChangesAsync();
+
+            await new BloodRequestService(w.Db).CancelRequestAsync(w.Request.BloodRequestId, w.Patient.UserId);
+
+            Assert.Equal(AcceptanceStatus.Cancelled, (await w.Db.Acceptances.FindAsync(active.AcceptanceId))!.Status);
+            Assert.Single(w.Db.Notifications.Where(n => n.HospitalId == w.Hospital.HospitalId && n.NotificationType == "BloodRequestCancelled"));
+            Assert.Single(w.Db.Notifications.Where(n => n.UserId == w.AssignedDoctor.UserId && n.NotificationType == "BloodRequestCancelled"));
+            Assert.Single(w.Db.Notifications.Where(n => n.UserId == activeDonor.UserId && n.NotificationType == "BloodRequestCancelled"));
+            Assert.DoesNotContain(w.Db.Notifications, n => n.UserId == historicalDonor.UserId && n.NotificationType == "BloodRequestCancelled");
+            Assert.DoesNotContain(w.Db.Notifications, n => n.UserId == w.Patient.UserId && n.NotificationType == "BloodRequestCancelled");
         }
     }
 }

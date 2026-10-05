@@ -175,6 +175,39 @@ namespace LifeLink.Tests
             Assert.Equal(1, await db.Notifications.CountAsync());
         }
 
+        [Fact]
+        public async Task Agent_Inventory_Alerts_Are_Limited_To_The_Backend_Action_Authorization_Tuple()
+        {
+            var db = NewDb();
+            var low = AddHospital(db, "Hospital A");
+            var unrelated = AddHospital(db, "Hospital B");
+            AddGroup(db, low, "A+", 2, 5);
+            AddGroup(db, unrelated, "B+", 20, 5);
+            await db.SaveChangesAsync();
+
+            var arbitrary = Guid.NewGuid();
+            var plan = new PlanResponseDto
+            {
+                Success = true,
+                Notifications = new List<AgentNotificationDto>
+                {
+                    new() { RecipientType = "Hospital", RecipientId = low.HospitalId.ToString(), NotificationType = InventoryMonitor.ShortageType,
+                        Title = "Authorized wording", Message = "Authorized.", DedupeKey = InventoryMonitor.ShortageKey("A+") },
+                    new() { RecipientType = "Hospital", RecipientId = unrelated.HospitalId.ToString(), NotificationType = InventoryMonitor.ShortageType,
+                        Title = "Unrelated", Message = "Must not persist.", DedupeKey = InventoryMonitor.ShortageKey("A+") },
+                    new() { RecipientType = "Hospital", RecipientId = arbitrary.ToString(), NotificationType = InventoryMonitor.ShortageType,
+                        Title = "Arbitrary", Message = "Must not persist.", DedupeKey = InventoryMonitor.ShortageKey("A+") }
+                }
+            };
+
+            var result = await Monitor(db, plan).RunInventoryCheckAsync();
+
+            Assert.True(result.UsedAgents);
+            var saved = await db.Notifications.SingleAsync();
+            Assert.Equal(low.HospitalId, saved.HospitalId);
+            Assert.Equal("Authorized wording", saved.Title);
+        }
+
         // ---------- 5.5 Manual / scheduled analysis ----------
 
         [Fact]

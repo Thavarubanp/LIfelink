@@ -12,6 +12,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using LifeLink.Controllers;
+using Microsoft.AspNetCore.Authorization;
 
 namespace LifeLink.Tests
 {
@@ -167,6 +169,39 @@ namespace LifeLink.Tests
             Assert.Equal(0, await service.GetUnreadCountAsync(s.Creator));
             Assert.Single(await service.GetNotificationsForCallerAsync(s.Staff));
             Assert.False(await service.DeleteNotificationAsync(mine.NotificationId, s.Creator)); // already dismissed
+        }
+
+        [Fact]
+        public async Task Admin_Read_Mutations_Remain_Scoped_To_The_Admins_Own_Notifications()
+        {
+            var s = await SeedAsync();
+            var hospital = Guid.NewGuid();
+            var mine = new Notification { NotificationId = Guid.NewGuid(), UserId = s.Admin1, Title = "mine", Message = "mine" };
+            var otherUser = new Notification { NotificationId = Guid.NewGuid(), UserId = s.Creator, Title = "user", Message = "user" };
+            var otherHospital = new Notification { NotificationId = Guid.NewGuid(), HospitalId = hospital, Title = "hospital", Message = "hospital" };
+            await s.Context.Notifications.AddRangeAsync(mine, otherUser, otherHospital);
+            await s.Context.SaveChangesAsync();
+            var service = new LifeLink.Services.Notification.NotificationAgentService(s.Context, new System.Net.Http.HttpClient(),
+                new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build(), NullLogger<LifeLink.Services.Notification.NotificationAgentService>.Instance);
+
+            Assert.False(await service.MarkNotificationReadAsync(otherUser.NotificationId, s.Admin1, null, true));
+            Assert.False(await service.MarkNotificationReadAsync(otherHospital.NotificationId, s.Admin1, null, true));
+            Assert.True(await service.MarkNotificationReadAsync(mine.NotificationId, s.Admin1, null, true));
+
+            mine.IsRead = false;
+            await s.Context.SaveChangesAsync();
+            Assert.Equal(1, await service.MarkAllNotificationsReadAsync(s.Admin1, null, true));
+            Assert.True(mine.IsRead);
+            Assert.False(otherUser.IsRead);
+            Assert.False(otherHospital.IsRead);
+        }
+
+        [Fact]
+        public void Legacy_Recommendation_Write_Is_Admin_Only_Not_InternalAgent()
+        {
+            var method = typeof(NotificationsController).GetMethod(nameof(NotificationsController.CreateRecommendationNotification));
+            var authorize = Assert.Single(method!.GetCustomAttributes(typeof(AuthorizeAttribute), true).Cast<AuthorizeAttribute>());
+            Assert.Equal("Admin", authorize.Roles);
         }
     }
 }

@@ -511,7 +511,7 @@ namespace LifeLink.Services.BloodRequests
                 throw new InvalidOperationException("This blood request has been deleted.");
             }
 
-            await AcceptanceClosure.CloseAllAsync(_context, request, AcceptanceClosure.ActiveStatuses,
+            var closed = await AcceptanceClosure.CloseAllAsync(_context, request, AcceptanceClosure.ActiveStatuses,
                 AcceptanceStatus.Cancelled, "The request was cancelled by its creator.", "Request cancelled by its creator.");
 
             request.Status = BloodRequestStatus.Cancelled;
@@ -520,6 +520,47 @@ namespace LifeLink.Services.BloodRequests
 
             await ActivityLogger.AddAsync(_context, patientUserId, "BloodRequest.Cancelled", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
                 $"Cancelled blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}, {request.UnitsRequired} unit(s)).");
+
+            var createdByHospital = await _context.UserRoles
+                .AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
+            if (!createdByHospital)
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForHospital(request.HospitalId, "BloodRequestCancelled",
+                    "Blood Request Cancelled",
+                    $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was cancelled by its creator."));
+            }
+
+            var assignedDoctorId = await _context.BloodRequestVerifications
+                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null && v.Status != VerificationStatus.Closed)
+                .OrderByDescending(v => v.UpdatedAt)
+                .Select(v => v.DoctorId)
+                .FirstOrDefaultAsync();
+            var doctorUserId = await NotificationFactory.EligibleDoctorUserIdAsync(_context, assignedDoctorId, request.HospitalId);
+            if (doctorUserId.HasValue && doctorUserId.Value != patientUserId)
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForUser(doctorUserId.Value, "Doctor", "BloodRequestCancelled",
+                    "Blood Request Cancelled",
+                    $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was cancelled by its creator."));
+            }
+
+            foreach (var acceptance in closed)
+            {
+                if (acceptance.DonorHospitalId.HasValue)
+                {
+                    if (acceptance.DonorHospitalId.Value != request.HospitalId || !createdByHospital)
+                    {
+                        await _context.Notifications.AddAsync(NotificationFactory.ForHospital(acceptance.DonorHospitalId.Value,
+                            "BloodRequestCancelled", "Blood Request Cancelled",
+                            $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was cancelled. Your active donation offer was closed and held packets were released."));
+                    }
+                }
+                else if (acceptance.DonorUserId != patientUserId)
+                {
+                    await _context.Notifications.AddAsync(NotificationFactory.ForUser(acceptance.DonorUserId, "Donor",
+                        "BloodRequestCancelled", "Blood Request Cancelled",
+                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was cancelled. Your active participation was closed."));
+                }
+            }
             await _context.SaveChangesAsync();
 
             return (await MapManyAsync(new[] { request })).First();

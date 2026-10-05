@@ -11,7 +11,7 @@ Donors, patients, hospital staff and the Admin can create a blood request from *
 1. The request is **Pending** until the hospital reviews it.
 2. The hospital **verifies** it and assigns one of its doctors (status **Verified**), or rejects it with a reason.
 3. The assigned doctor **approves** it (status **Approved**) or rejects it with a reason.
-4. Approved requests appear in **Donate Blood / Available Requests**. Normal and High (Urgent) priority requests send no alerts: donors find them in that list. For Critical requests, eligible donors whose saved blood group is exactly the request's group are notified, and the hospitals holding that group.
+4. Approved requests appear in **Donate Blood / Available Requests**. Normal requests send no proactive alerts. High (Urgent) requests notify eligible donors whose saved blood group exactly matches the request, but do not alert hospitals. Critical requests notify those exact-group eligible donors and qualifying other hospitals whose valid exact-group stock is strictly above their own minimum threshold.
 
 # Donated, reserved and remaining units
 

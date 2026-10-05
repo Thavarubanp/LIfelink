@@ -15,13 +15,13 @@ check priority -> find eligible donors (rules) -> rank (Gemini or deterministic)
 - **Eligibility uses fixed rules, never Gemini.** The backend sends only donors it already filtered. The agent
   re-checks every rule before alerting anyone:
   - active account, not suspended, not permanently blocked;
-  - compatible blood group;
+  - exact requested blood group;
   - at least 120 days since the last donation;
   - age 18-60 when the date of birth is known.
 - **Ranking** sends Gemini only the user ID, blood group and last donation date. Names, locations and contact
   details are never sent. Without a key, or if the call fails, a deterministic ranking is used.
 - **Alert text** is written once per role (donor, hospital) from request facts only, with templates as the
-  fallback. Hospital alerts are added only for High and Critical priority.
+  fallback. High sends donor alerts only; hospital candidates are used only for Critical.
 
 **Hospital alerts** (`POST /hospital-alerts`, used for `EmergencyShortage` and `InventoryCheck`):
 
@@ -43,7 +43,7 @@ check priority -> find eligible donors (rules) -> rank (Gemini or deterministic)
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | Health, model name, whether a key is configured (no internal key needed) |
-| POST | `/process-request` | Donor (and High/Critical hospital) alerts for an approved request |
+| POST | `/process-request` | Exact-group donor alerts for High/Critical requests; backend-supplied hospital alerts for Critical only |
 | POST | `/hospital-alerts` | Hospital alerts from Inventory agent facts: `{"alerts": [...], "context": {...}}` |
 | POST | `/rank-donors`, `/generate-notifications` | The individual steps, for testing |
 
