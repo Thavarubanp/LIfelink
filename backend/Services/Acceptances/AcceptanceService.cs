@@ -356,16 +356,12 @@ namespace LifeLink.Services.Acceptances
 
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
             var wasReserved = acceptance.Status == AcceptanceStatus.Verified;
-            var hadReport = acceptance.Status == AcceptanceStatus.ScreeningCompleted || wasReserved;
 
             await AcceptanceClosure.CloseAsync(_context, acceptance, request, AcceptanceStatus.Cancelled, null, "Donor withdrew.");
 
-            if (hadReport)
-            {
-                await NotifyRequestStaffAsync(request, "DonorWithdrew", "Donor Withdrew",
-                    $"A donor withdrew from blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup})." +
-                    (wasReserved ? " Their reserved slot is free again." : string.Empty));
-            }
+            await NotifyWithdrawalRecipientsAsync(request, "DonorWithdrew", "Donor Withdrew",
+                $"A donor withdrew from blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup})." +
+                (wasReserved ? " Their reserved slot is free again." : string.Empty));
 
             await ActivityLogger.AddAsync(_context, donorUserId, "Donation.Withdrawn", ActivityLogger.Types.Donation, acceptance.AcceptanceId,
                 $"Withdrew from blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}).");
@@ -1261,6 +1257,34 @@ namespace LifeLink.Services.Acceptances
                 .Select(v => v.DoctorId)
                 .FirstOrDefaultAsync();
             await NotifyAssignedDoctorOrHospitalAsync(request, assignedDoctorId, type, title, message);
+        }
+
+        /// <summary>
+        /// A donor withdrawal affects both operational scopes: the request hospital always receives an in-app notice,
+        /// and the latest assigned doctor receives one only while their doctor and login accounts remain active.
+        /// </summary>
+        private async Task NotifyWithdrawalRecipientsAsync(BloodRequest request, string type, string title, string message)
+        {
+            await _context.Notifications.AddAsync(NotificationFactory.ForHospital(request.HospitalId, type, title, message));
+
+            var assignedDoctorId = await _context.BloodRequestVerifications
+                .Where(v => v.BloodRequestId == request.BloodRequestId && v.DoctorId != null && v.Status != VerificationStatus.Closed)
+                .OrderByDescending(v => v.UpdatedAt)
+                .Select(v => v.DoctorId)
+                .FirstOrDefaultAsync();
+            if (!assignedDoctorId.HasValue) return;
+
+            var doctorUserId = await _context.Doctors
+                .Where(d => d.DoctorId == assignedDoctorId.Value && d.HospitalId == request.HospitalId && d.IsActive &&
+                            !d.MustChangePassword && d.DeletedAt == null && d.UserId != null &&
+                            _context.Users.Any(u => u.UserId == d.UserId.Value && u.AccountStatus == AccountStatus.Active &&
+                                                    !u.IsSuspended && !u.IsPermanentlyBlocked))
+                .Select(d => d.UserId)
+                .FirstOrDefaultAsync();
+            if (doctorUserId.HasValue)
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForUser(doctorUserId.Value, "Doctor", type, title, message));
+            }
         }
 
         private static string RequireReason(string? reason, string missingMessage)

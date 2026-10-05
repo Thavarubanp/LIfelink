@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { governanceApi, appealApi } from '../../api';
+import { governanceApi, appealApi, acceptanceApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
@@ -45,6 +45,8 @@ export const SuspendedGovernancePage = () => {
   const [attachment, setAttachment] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [replyTarget, setReplyTarget] = useState(null);
+  const [activeAcceptances, setActiveAcceptances] = useState([]);
+  const [withdrawing, setWithdrawing] = useState(null);
   const { logout } = useAuth();
   const { addToast } = useNotification();
 
@@ -52,6 +54,12 @@ export const SuspendedGovernancePage = () => {
     try {
       const res = await governanceApi.getStatus();
       setStatus(res.data);
+      if (res.data?.profile?.role === 'User') {
+        const active = await acceptanceApi.getMyActiveWithdrawals();
+        setActiveAcceptances(Array.isArray(active) ? active : []);
+      } else {
+        setActiveAcceptances([]);
+      }
     } catch (err) {
       addToast({ title: 'Error', message: getApiErrorMessage(err), type: 'error' });
     } finally {
@@ -103,6 +111,24 @@ export const SuspendedGovernancePage = () => {
     addToast({ title: 'Reply Sent', message: 'The administrator has been notified.', type: 'success' });
     setReplyTarget(null);
     await fetchStatus();
+  };
+
+  const withdrawAcceptance = async (acceptance) => {
+    const reserved = acceptance.status === 'Verified';
+    if (!window.confirm(reserved
+      ? 'Withdraw from this donation? Your reserved slot will be released for another donor.'
+      : 'Withdraw from this donation? Your active participation will be closed.')) return;
+    setWithdrawing(acceptance.acceptanceId);
+    try {
+      await acceptanceApi.withdrawWhileSuspended(acceptance.acceptanceId);
+      addToast({ title: 'Withdrawn', message: 'Your donation participation has been closed.', type: 'info' });
+      await fetchStatus();
+    } catch (err) {
+      addToast({ title: 'Could not withdraw', message: getApiErrorMessage(err), type: 'error' });
+      if (isConflictError(err)) await fetchStatus();
+    } finally {
+      setWithdrawing(null);
+    }
   };
 
   if (loading) {
@@ -192,6 +218,42 @@ export const SuspendedGovernancePage = () => {
             </button>
           </div>
         </div>
+
+        {/* Narrow safety exception: suspended donors may end existing participation, but cannot enter donor workflows. */}
+        {profile?.role === 'User' && activeAcceptances.length > 0 && (
+          <div className={`${card} p-5`}>
+            <div className="flex items-center gap-2 mb-2">
+              <LogOut className="w-4 h-4 text-rose-600" />
+              <h3 className="text-sm font-bold">Active Donation Participation</h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Suspension blocks new donor activity, but you may withdraw from an existing commitment.
+            </p>
+            <div className="space-y-3">
+              {activeAcceptances.map((acceptance) => (
+                <div key={acceptance.acceptanceId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+                  <div className="text-xs">
+                    <div className="font-bold text-slate-900 dark:text-slate-100">
+                      {acceptance.hospitalName || 'Request hospital'} · {acceptance.requestBloodGroup || 'Blood request'}
+                    </div>
+                    <div className="text-slate-500 dark:text-slate-400 mt-0.5">
+                      Status: {acceptance.status} · Accepted {fmt(acceptance.acceptedAt)}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={withdrawing === acceptance.acceptanceId}
+                    onClick={() => withdrawAcceptance(acceptance)}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900 disabled:opacity-50"
+                  >
+                    {withdrawing === acceptance.acceptanceId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
+                    Withdraw
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Appeal threads */}
         {appeals.map((appeal) => (
