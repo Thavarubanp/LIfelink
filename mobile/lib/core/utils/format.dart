@@ -12,14 +12,14 @@ class Fmt {
   static String sriLankaDateTime(DateTime? value) {
     if (value == null) return '-';
     final local = toSriLanka(value);
-    return '${DateFormat('d MMM yyyy, h:mm', 'en').format(local)} ${local.hour < 12 ? 'am' : 'pm'}';
+    return '${DateFormat('d MMM yyyy, h:mm').format(local)} ${local.hour < 12 ? 'am' : 'pm'}';
   }
 
   /// "3 Oct 2026" in Sri Lanka time.
-  static String date(DateTime? value) => value == null ? '-' : DateFormat('d MMM yyyy', 'en').format(toSriLanka(value));
+  static String date(DateTime? value) => value == null ? '-' : DateFormat('d MMM yyyy').format(toSriLanka(value));
 
   /// A calendar date as the API expects it: yyyy-MM-dd.
-  static String apiDate(DateTime value) => DateFormat('yyyy-MM-dd', 'en').format(value);
+  static String apiDate(DateTime value) => DateFormat('yyyy-MM-dd').format(value);
 
   /// Today's calendar date in Sri Lanka (the API treats "today" as the Sri Lanka date).
   static DateTime sriLankaToday([DateTime? now]) {

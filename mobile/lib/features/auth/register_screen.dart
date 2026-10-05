@@ -134,6 +134,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _gender,
                     decoration: const InputDecoration(labelText: 'Gender'),
                     items: const [
@@ -147,6 +148,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: DropdownButtonFormField<String?>(
+                    isExpanded: true,
                     initialValue: _bloodGroup,
                     decoration: InputDecoration(labelText: 'Blood group', errorText: _fieldErrors['bloodGroup']),
                     items: [

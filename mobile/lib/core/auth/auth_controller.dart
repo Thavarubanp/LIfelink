@@ -57,14 +57,16 @@ class AuthController extends Notifier<AuthState> {
     state = const AuthState.unknown();
     final tokens = ref.read(tokenStorageProvider);
     final token = await tokens.load();
+    if (!ref.mounted) return;
     if (token == null || token.isEmpty) {
       state = const AuthState.signedOut();
       return;
     }
     try {
       final user = await ref.read(authRepositoryProvider).me();
-      state = AuthState.signedIn(user);
+      if (ref.mounted) state = AuthState.signedIn(user);
     } on ApiError catch (e) {
+      if (!ref.mounted) return;
       if (e.isNetwork) {
         // Keep the token: the account may still be signed in once the server is reachable
         state = AuthState.unreachable(e.message);
@@ -79,13 +81,14 @@ class AuthController extends Notifier<AuthState> {
     // The API starts the session's idle clock while handling this request
     final sentAt = activity.nowMs;
     final result = await ref.read(authRepositoryProvider).login(email, password);
+    if (!ref.mounted) return;
     await ref.read(tokenStorageProvider).save(result.token);
     activity.markConfirmed(sentAt);
     try {
       final user = result.user ?? await ref.read(authRepositoryProvider).me();
-      state = AuthState.signedIn(user);
+      if (ref.mounted) state = AuthState.signedIn(user);
     } catch (e) {
-      await _clear(null);
+      if (ref.mounted) await _clear(null);
       rethrow;
     }
   }
@@ -99,13 +102,13 @@ class AuthController extends Notifier<AuthState> {
         // The API ends idle or expired sessions on its own
       }
     }
-    await _clear(reason);
+    if (ref.mounted) await _clear(reason);
   }
 
   /// Reloads the signed-in account (e.g. after a password change or an approval).
   Future<CurrentUser?> refreshUser() async {
     final user = await ref.read(authRepositoryProvider).me();
-    state = AuthState.signedIn(user);
+    if (ref.mounted) state = AuthState.signedIn(user);
     return user;
   }
 
@@ -115,8 +118,10 @@ class AuthController extends Notifier<AuthState> {
 
   Future<void> _clear(SignOutReason? reason) async {
     final idle = state.user?.sessionIdleTimeoutMinutes;
-    await ref.read(tokenStorageProvider).clear();
-    ref.read(sessionActivityProvider).reset();
-    state = AuthState.signedOut(reason: reason, idleMinutes: idle);
+    final tokens = ref.read(tokenStorageProvider);
+    final activity = ref.read(sessionActivityProvider);
+    await tokens.clear();
+    activity.reset();
+    if (ref.mounted) state = AuthState.signedOut(reason: reason, idleMinutes: idle);
   }
 }

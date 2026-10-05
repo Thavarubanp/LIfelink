@@ -91,8 +91,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
               BusyButton(key: const Key('login-submit'), label: 'Sign in', busy: _busy, onPressed: _submit, icon: Icons.login),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   const Text('New donor or patient?'),
                   TextButton(onPressed: () => context.push(AppRoutes.register), child: const Text('Create an account')),

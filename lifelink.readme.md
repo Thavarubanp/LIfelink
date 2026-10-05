@@ -22,6 +22,7 @@ This guide describes the whole LifeLink repository as it is in the code today: b
 14. [Testing](#14-testing)
 15. [Known issues and notes](#15-known-issues-and-notes)
 16. [Glossary](#16-glossary)
+17. [Flutter mobile app](#17-flutter-mobile-app)
 
 ---
 
@@ -1235,3 +1236,93 @@ See each agent README for exact steps (Request Management also documents `uvicor
 | Idempotency key | A client-generated key sent once per form submission (`Idempotency-Key` header); the same key again creates nothing |
 | Lease | A time-limited claim (`BackgroundJobLeases`) that lets only one backend instance run the background sweep |
 | Session | One sign-in (`UserSessions`, the token's `sid`); ends on sign-out or after the idle timeout |
+
+---
+
+## 17. Flutter mobile app
+
+A native Android app in `mobile/` (package `lifelink_mobile`) for the user-facing and operational workflows. It uses the same ASP.NET Core API, endpoints and rules as the React app; no API change was needed. It is built in four steps, one per student:
+
+| Step | Owner | Scope | Status |
+|---|---|---|---|
+| 1 | Thavaruban P | Shared foundation; hospital home, inventory, packets with QR, scan, transfers, emergencies, donate blood, inventory analysis and recommendations | Done |
+| 2 | Vidya R | Donor/patient requests, accept, screening interview, my donations, complaints, appeals | Route stubs |
+| 3 | Ahamed MSA | Doctor approvals and screening reports; hospital verify requests and doctors | Route stubs |
+| 4 | Mayureshan P | Governance status and appeals, admin messages, activity log, admin actions | Route stubs |
+
+The stubs are real routes on their final paths (`lib/core/routing/routes.dart`), so later steps only replace the screen widget.
+
+### Stack and why
+
+| Concern | Choice | Why |
+|---|---|---|
+| State management | Riverpod (`flutter_riverpod` 3.4.3) | Providers are testable without widgets and need no `BuildContext`; tests override them with fakes; `FutureProvider` gives loading / error / data for every screen. It plays the role of the web app's React Context. |
+| Routing | `go_router` 18.0.2 | Declarative routes, one `redirect` guard (the web's `ProtectedRoute`), a bottom-navigation shell per role, deep links such as `/hospital/packets/:id`. |
+| HTTP | `dio` 5.11.1 | Interceptors for the token, the idle-timeout activity header, the idempotency key and 401 handling; timeouts; mockable in tests. |
+| Token storage | `flutter_secure_storage` 11.2.0 | The JWT is kept in Android Keystore-backed storage, never in plain preferences. |
+| Device feature | `mobile_scanner` 7.4.2 + `qr_flutter` 4.1.0 | Scan a packet's QR code with the camera to open its details and history; each packet shows its own QR code. |
+| Other | `intl` (dates, Sri Lanka time UTC+5:30), `shared_preferences` (theme choice only) | |
+| Tests | `flutter_test`, `mocktail`, `http_mock_adapter` | |
+
+### Structure
+
+```
+mobile/lib/
+  core/api        ApiClient (JWT, X-LifeLink-Activity, Idempotency-Key, 401), ApiError, response unwrapping
+  core/auth       token storage, session activity, AuthController (Riverpod), idle-timeout guard
+  core/routing    paths, role guard (resolveRedirect), GoRouter, hospital routes
+  core/theme      light/dark theme with the web colours
+  core/widgets    loading / empty / error views, badges, search, filter chips, dialogs, "show more" list
+  features/       auth, home (role shells, More, stubs), profile, notifications, governance,
+                  inventory (home, groups, packets, QR, scan), transfers, emergencies, donate, analysis
+mobile/test/      unit, widget, navigation and mocked-HTTP integration tests
+```
+
+### Behaviour shared with the web app
+
+- **Sign-in:** donor/patient registration, login, forgot password with the 6-digit code, change password, logout. Hospital registration stays on the web app; an unapproved hospital sees a waiting screen.
+- **Guards, in the web order:** signed out → sign in; suspended → governance status; unapproved hospital → waiting screen; doctor with a temporary password → change password; wrong role → own home.
+- **Idle timeout:** user actions send `X-LifeLink-Activity: 1` (at most every 15 s), background refreshes never do. Touches send a heartbeat (at most every 30 s). A warning with "Stay signed in" appears one minute before the API's idle limit, and the check runs again when the app returns from the background.
+- **Errors:** a 409 shows the API's message and reloads the screen; network failures and timeouts have their own messages; every screen has loading, empty and error-with-retry states.
+
+### Run on a phone (USB)
+
+1. Start the backend as usual (`dotnet run` in `backend/`, port 5231).
+2. Connect the phone with USB debugging on, then run:
+
+```bash
+adb reverse tcp:5231 tcp:5231
+cd mobile
+flutter pub get
+flutter run        # default API: http://127.0.0.1:5231/api
+```
+
+On the Android emulator, use `flutter run --dart-define=API_BASE_URL=http://10.0.2.2:5231/api` instead.
+
+### Build
+
+```bash
+flutter build apk --debug                                    # build/app/outputs/flutter-apk/app-debug.apk
+flutter build apk --release --dart-define=API_BASE_URL=https://<api>.onrender.com/api
+```
+
+The release APK needs the deployed API URL (including `/api`).
+
+### Android permissions
+
+| Permission | Why |
+|---|---|
+| `INTERNET` | API calls. |
+| `CAMERA` | Scan packet QR codes; the camera is optional (`required="false"`), so the tracking number can also be typed. |
+
+Plain HTTP is allowed only in debug builds and only for `127.0.0.1` and `10.0.2.2` (`android/app/src/debug/res/xml/network_security_config.xml`). Release builds use HTTPS only.
+
+### Tests and CI
+
+```bash
+cd mobile
+flutter analyze
+flutter test
+```
+
+The tests cover: the API client headers and error mapping; the auth repository and controller; the low-stock rule, collected-date and tracking-number rules; formatting; the route guards (unit and router tests); the login, register, inventory, add-packets and analysis-panel widgets; and repositories against a mocked HTTP layer. `.github/workflows/flutter-ci.yml` runs `flutter analyze` and `flutter test` on pushes and pull requests to `main` and `development` that change `mobile/`.
