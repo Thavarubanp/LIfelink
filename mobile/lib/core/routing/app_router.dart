@@ -17,6 +17,7 @@ import '../../features/profile/profile_screen.dart';
 import '../auth/auth_controller.dart';
 import '../../features/admin/directory/directory.dart' show myActivityScreen;
 import 'admin_routes.dart';
+import 'doctor_routes.dart';
 import 'hospital_routes.dart';
 import 'routes.dart';
 
@@ -79,24 +80,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       _stubRoute(AppRoutes.donorAppeals, _step2('Appeals', 'Your appeal threads.')),
 
       // Doctor (Step 3: Ahamed)
-      _shell(
-        tabs: const [
-          ShellTab('Requests', Icons.assignment_outlined, Icons.assignment),
-          ShellTab('Reports', Icons.fact_check_outlined, Icons.fact_check),
-          ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
-        ],
-        branches: [
-          (AppRoutes.doctorHome, _step3('Assigned requests', 'Approve or reject the blood requests assigned to you.')),
-          (AppRoutes.doctorReports, _step3('Screening reports', 'Review donor screening report versions.')),
-          (
-            AppRoutes.doctorMore,
-            const MoreScreen(entries: [
-              MoreEntry('Hospital donations', Icons.local_hospital_outlined, AppRoutes.doctorHospitalDonations),
-            ]),
-          ),
-        ],
-      ),
-      _stubRoute(AppRoutes.doctorHospitalDonations, _step3('Hospital donations', 'Approve or reject hospital donations.')),
+      ...doctorRoutes(),
 
       // Admin (Step 4: Mayureshan)
       ...adminRoutes(),
@@ -107,7 +91,6 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 Widget _step2(String title, String description) => StubScreen(title: title, step: 2, owner: 'Vidya R', description: description);
-Widget _step3(String title, String description) => StubScreen(title: title, step: 3, owner: 'Ahamed MSA', description: description);
 
 GoRoute _stubRoute(String path, Widget screen) => GoRoute(path: path, builder: (_, _) => screen);
 
