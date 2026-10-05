@@ -11,6 +11,7 @@ import '../../core/theme/theme_controller.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
+import '../doctors/doctor_profile_card.dart';
 import 'profile_repository.dart';
 
 /// The signed-in account, the hospital for hospital staff, theme and sign out.
@@ -44,6 +45,10 @@ class ProfileScreen extends ConsumerWidget {
                 ],
               ),
             ),
+            if (user.hasRole(Roles.doctor)) ...[
+              const SizedBox(height: 12),
+              const DoctorProfileCard(),
+            ],
             if (isHospital) ...[
               const SizedBox(height: 12),
               const _HospitalCard(),

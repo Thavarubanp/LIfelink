@@ -6,13 +6,15 @@ import '../../features/donate/donate_blood_screen.dart';
 import '../../features/emergencies/emergencies_screen.dart';
 import '../../features/home/more_screen.dart';
 import '../../features/home/role_shell.dart';
-import '../../features/home/stub_screen.dart';
+import '../../features/doctors/doctors_screen.dart';
 import '../../features/inventory/hospital_home_screen.dart';
 import '../../features/inventory/inventory_screen.dart';
 import '../../features/inventory/packet_detail_screen.dart';
 import '../../features/inventory/packet_forms.dart';
 import '../../features/inventory/scan_packet_screen.dart';
 import '../../features/transfers/transfers_screen.dart';
+import '../../features/verification/request_donors_screen.dart';
+import '../../features/verification/verify_requests_screen.dart';
 import 'app_router.dart';
 import 'routes.dart';
 
@@ -66,14 +68,17 @@ List<RouteBase> hospitalRoutes() => [
       GoRoute(
         path: AppRoutes.hospitalVerifyRequests,
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const StubScreen(
-            title: 'Verify blood requests', step: 3, owner: 'Ahamed MSA', description: 'Verify requests and assign a doctor.'),
+        builder: (_, _) => const VerifyRequestsScreen(),
       ),
       GoRoute(
         path: AppRoutes.hospitalDoctors,
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const StubScreen(
-            title: 'Doctors', step: 3, owner: 'Ahamed MSA', description: 'Add and manage your hospital\'s doctors.'),
+        builder: (_, _) => const DoctorsScreen(),
+      ),
+      GoRoute(
+        path: '/hospital/requests/:requestId/donors',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => RequestDonorsScreen(requestId: state.pathParameters['requestId']!, isDoctor: false),
       ),
     ];
 

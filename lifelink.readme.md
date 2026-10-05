@@ -1247,7 +1247,7 @@ A native Android app in `mobile/` (package `lifelink_mobile`) for the user-facin
 |---|---|---|---|
 | 1 | Thavaruban P | Shared foundation; hospital home, inventory, packets with QR, scan, transfers, emergencies, donate blood, inventory analysis and recommendations | Done |
 | 2 | Vidya R | Donor/patient requests, accept, screening interview, my donations, complaints, appeals | Route stubs |
-| 3 | Ahamed MSA | Doctor approvals and screening reports; hospital verify requests and doctors | Route stubs |
+| 3 | Ahamed MSA | Hospital: verify requests, manage doctors; doctor: assigned requests, screening reports, hospital donations, record donation / release, profile; call or email donors | Done |
 | 4 | Mayureshan P | Admin home and badges, hospital registrations, appeals, complaints, activity log with suspend/lift, user and hospital directories, messages, suspend/reinstate, governance and appeals for every role, phone notifications | Done |
 
 The stubs are real routes on their final paths (`lib/core/routing/routes.dart`), so later steps only replace the screen widget.
@@ -1264,6 +1264,7 @@ The stubs are real routes on their final paths (`lib/core/routing/routes.dart`),
 | Attachments | `file_picker` 13.1.0, `image_picker` 1.2.3 | Attach PDF/Word/image files or a camera photo to registration decisions, complaint and appeal messages, with the web's limits (data URL, 2 MB, PDF/DOC/DOCX/PNG/JPG) checked before sending. |
 | Opening files | `open_filex` 4.7.0, `path_provider` 2.1.6 | Images show inline; PDFs and Word files are written to the app's temporary folder and opened in the phone's viewer. |
 | Phone notifications | `flutter_local_notifications` 21.0.0 | Shows new LifeLink notifications (admin messages, alerts, decisions) and the admin's new attention items as phone notifications; tapping one opens the matching screen. Newer versions conflict with `file_picker`'s Linux dependency. |
+| Contacting donors | `url_launcher` 6.3.3 | Call or email a donor from the request's donor list (phone dialer / mail app); a phone without such an app gets a clear message. |
 | Background polling | `workmanager` 0.10.10 | Android WorkManager runs a periodic task (about every 15 minutes, the Android minimum) while the app is closed. No push service and no backend change. |
 | Other | `intl` (dates, Sri Lanka time UTC+5:30), `shared_preferences` (theme choice and the notification "last seen" marker) | |
 | Tests | `flutter_test`, `mocktail`, `http_mock_adapter` | |
@@ -1279,7 +1280,9 @@ mobile/lib/
   core/widgets    loading / empty / error views, badges, search, filter chips, dialogs, "show more" list
   core/attachments  pick / validate / show / open attachments (data URLs, 2 MB)
   core/notifications  phone notifications: new-item rules, poll, WorkManager task, permission
-  features/       auth, home (role shells, More, stubs), profile, notifications, governance (status, appeals),
+  features/       verification (hospital verify, donors list, record / release), doctors (manage, profile),
+                  doctor (assigned requests, hospital donations, screening reports),
+                  auth, home (role shells, More, stubs), profile, notifications, governance (status, appeals),
                   inventory (home, groups, packets, QR, scan), transfers, emergencies, donate, analysis,
                   admin (home, registrations, appeals, complaints, oversight, directory, actions), activity
 mobile/test/      unit, widget, navigation and mocked-HTTP integration tests
@@ -1291,6 +1294,20 @@ mobile/test/      unit, widget, navigation and mocked-HTTP integration tests
 - **Guards, in the web order:** signed out → sign in; suspended → governance status; unapproved hospital → waiting screen; doctor with a temporary password → change password; wrong role → own home.
 - **Idle timeout:** user actions send `X-LifeLink-Activity: 1` (at most every 15 s), background refreshes never do. Touches send a heartbeat (at most every 30 s). A warning with "Stay signed in" appears one minute before the API's idle limit, and the check runs again when the app returns from the background.
 - **Errors:** a 409 shows the API's message and reloads the screen; network failures and timeouts have their own messages; every screen has loading, empty and error-with-retry states.
+
+### Doctor and verification (Step 3)
+
+| Screen | API (same as the web) | Rules kept from the web |
+|---|---|---|
+| Hospital: Verify requests (More → Verify requests) | `GET /BloodRequests/hospital`, `PUT /requests/{id}/verify` (`doctorId`), `PUT /requests/{id}/reject` (`notes`) | Status filter (Pending first) and search; only Pending, unsuspended requests; the doctor picker lists only active doctors who completed their first sign-in (the API enforces the same); rejection message required (max 500) |
+| Hospital: Doctors (More → Doctors) | `GET /Doctors`, `POST /Doctors`, `DELETE /Doctors/{id}` | "Pending first login" badge; add doctor with the DTO rules (names ≤ 100, email, strong temporary password, SLMC required and not already used, 10-digit phone); remove behind a confirm (soft delete, history shows "Removed doctor") |
+| Doctor: Requests tab | `GET /BloodRequests/assigned`, `PUT /requests/{id}/approve` (`notes`, optional), `PUT /requests/{id}/reject` (`notes`, required) | Only Verified, unsuspended requests can be decided; "Awaiting you" filter by default |
+| Doctor: Reports tab (screening queue) | `GET /donor-verification`, `PUT /donor-verification/{id}/approve` (`notes`), `…/reject` (`notes`, required) | One row per donor with all versions; "Waiting for review" (assigned to you first, then highest risk, then oldest) / "Approved – awaiting donation" / "History". The detail shows the AI's risk, recommendation, summary and flags ("Likely deferral – doctor to confirm" or "Review"), every answer with flagged sections highlighted; only the newest Pending version of a completed screening can be decided; superseded and decided versions are read-only; Approve is disabled without a free slot. The AI never decides. |
+| Donors of a request (doctor and hospital) | `GET /BloodRequests/{id}/acceptances`, `PUT /BloodRequests/{id}/finalize-selection`, `PUT /Acceptances/{id}/release`, `PUT /Acceptances/{id}/hospital-approve\|hospital-reject` | Record donation needs the tested blood group; release needs a reason; only the doctor approves or rejects hospital donations (reason required to reject); 409 shows the message and reloads |
+| Doctor: Hospital donations (More) | `GET /BloodRequests/assigned` (`pendingHospitalDonations`) | Opens the request's donors to decide |
+| Doctor profile (Profile screen) and first-login password | `GET /profiles/me`, `GET`/`PUT /profiles/doctor/{id}`, `POST /Auth/change-password` | Name, phone (10 digits), specialization, SLMC (unique, API 409 shown); the route guard sends a doctor with a temporary password to Change password first |
+
+**Device feature (Step 3):** the donor list has **Call** and **Email** buttons (`url_launcher`, `tel:` / `mailto:`). Missing numbers or addresses and phones without a dialer or mail app show a clear message.
 
 ### Administration and governance (Step 4)
 
@@ -1338,7 +1355,7 @@ The release APK needs the deployed API URL (including `/api`).
 | `CAMERA` | Scan packet QR codes and take photos to attach; the camera is optional (`required="false"`). A refusal shows how to allow it or to type / attach a file instead. |
 | `POST_NOTIFICATIONS` | Phone notifications (Android 13+ asks the user; a refusal leaves the in-app notifications working). |
 
-Android 11+ package visibility: `<queries>` for `ACTION_VIEW` (open attachments in viewer apps) and `IMAGE_CAPTURE` (camera photos). Core library desugaring is enabled for `flutter_local_notifications`.
+Android 11+ package visibility: `<queries>` for `ACTION_VIEW` (open attachments in viewer apps), `IMAGE_CAPTURE` (camera photos), `tel:` and `mailto:` (call or email donors). Core library desugaring is enabled for `flutter_local_notifications`.
 
 Plain HTTP is allowed only in debug builds and only for `127.0.0.1` and `10.0.2.2` (`android/app/src/debug/res/xml/network_security_config.xml`). Release builds use HTTPS only.
 
@@ -1350,4 +1367,4 @@ flutter analyze
 flutter test
 ```
 
-The tests cover: the API client headers and error mapping; the auth repository and controller; the low-stock rule, collected-date and tracking-number rules; formatting; the route guards (unit and router tests); the login, register, inventory, add-packets and analysis-panel widgets; and repositories against a mocked HTTP layer. Step 4 adds tests for the attention badges, registration / appeal / complaint / oversight / directory rules, attachments, the activity-log query, the notification "new item" rules and the background poll (no activity header, stop on 401), widget tests for the admin home, registration detail, appeal detail, complaint filters, admin message and governance screens, and an admin shell router test (102 tests). `.github/workflows/flutter-ci.yml` runs `flutter analyze` and `flutter test` on pushes and pull requests to `main` and `development` that change `mobile/`.
+The tests cover: the API client headers and error mapping; the auth repository and controller; the low-stock rule, collected-date and tracking-number rules; formatting; the route guards (unit and router tests); the login, register, inventory, add-packets and analysis-panel widgets; and repositories against a mocked HTTP layer. Step 4 adds tests for the attention badges, registration / appeal / complaint / oversight / directory rules, attachments, the activity-log query, the notification "new item" rules and the background poll (no activity header, stop on 401), widget tests for the admin home, registration detail, appeal detail, complaint filters, admin message and governance screens, and an admin shell router test. Step 3 adds tests for the verify/decide rules, the doctor picker (pending first login excluded), the add-doctor and profile rules, acceptances, the screening report parsing (flag labels, highlighted sections, read-only versions, queue order), the call/email links, the Step 3 request bodies against a mocked HTTP layer, widget tests for the assign-doctor sheet, doctors list, doctor home, report detail, donors list and record donation, and doctor router tests (125 tests in total). `.github/workflows/flutter-ci.yml` runs `flutter analyze` and `flutter test` on pushes and pull requests to `main` and `development` that change `mobile/`.
