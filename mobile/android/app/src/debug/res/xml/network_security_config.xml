@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: cleartext HTTP is allowed for the local LifeLink API and nothing else. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- USB phone: adb reverse tcp:5231 tcp:5231 -->
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- Android emulator: the PC's localhost -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
