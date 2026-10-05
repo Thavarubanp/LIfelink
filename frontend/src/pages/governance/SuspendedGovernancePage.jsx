@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { governanceApi, appealApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -8,6 +8,7 @@ import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import BrandLogo from '../../components/common/BrandLogo';
 import { useSystemThemePage } from '../../context/useSystemThemePage';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import {
   ShieldAlert, CheckCircle2, XCircle, Clock, Send, Loader2, LogOut, MessageSquare, RefreshCw, User, Paperclip, Lock
 } from 'lucide-react';
@@ -29,7 +30,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const fmt = (iso) => (iso ? new Date(iso).toLocaleString() : '—');
+const fmt = (iso) => formatDisplayDate(iso);
 
 /**
  * Governance Portal: the only screen for suspended users, staff of a suspended hospital and doctors of a
@@ -152,7 +153,7 @@ export const SuspendedGovernancePage = () => {
                 ['Role', profile.role === 'User' ? 'Donor / Patient' : profile.role],
                 ['Phone', profile.phone || 'Not provided'],
                 ['Status', profile.status],
-                ['Member Since', profile.createdAt ? new Date(profile.createdAt).toLocaleDateString() : '—'],
+                ['Member Since', formatDisplayDate(profile.createdAt)],
                 ...(profile.hospitalName ? [['Hospital', profile.hospitalName]] : [])
               ].map(([label, value]) => (
                 <div key={label} className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800">

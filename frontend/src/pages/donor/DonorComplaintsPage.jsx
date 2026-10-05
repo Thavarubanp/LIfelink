@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { complaintApi, hospitalApi, searchApi } from '../../api';
 import { USER_COMPLAINT_CATEGORIES, HOSPITAL_COMPLAINT_CATEGORIES } from '../../api/complaintApi';
 import { useAuth } from '../../context/AuthContext';
@@ -7,6 +7,7 @@ import ComplaintActivityTimeline from '../../components/complaints/ComplaintActi
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import { isConflictError } from '../../utils/errorUtils';
 import { newIdempotencyKey } from '../../session/sessionActivity';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import {
   MessageSquare,
   Trash2,
@@ -15,7 +16,6 @@ import {
   Loader2,
   Search,
   Building2,
-  UserCheck,
   CheckCircle2,
   Clock,
   ShieldCheck,
@@ -389,35 +389,6 @@ export const DonorComplaintsPage = () => {
     );
   };
 
-  // 3-Stage Progress Timeline Component
-  const renderTimeline = (status, hasReply) => {
-    const norm = (status || 'OPEN').toUpperCase();
-    let step = 1;
-    if (norm === 'UNDER_REVIEW' || norm === 'AWAITING_INFORMATION' || norm === 'IN PROGRESS') step = 2;
-    if (norm === 'RESOLVED' || norm === 'REJECTED' || hasReply) step = 3;
-
-    return (
-      <div className="pt-3 pb-1 border-t border-slate-200 dark:border-slate-800/80">
-        <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500 dark:text-slate-400 mb-1.5">
-          <span className={step >= 1 ? 'text-cyan-700 dark:text-cyan-400' : ''}>1. Submitted</span>
-          <span className={step >= 2 ? 'text-blue-700 dark:text-blue-400' : ''}>2. In Review</span>
-          <span className={step >= 3 ? (norm === 'REJECTED' ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400') : ''}>
-            3. Action Taken
-          </span>
-        </div>
-        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
-          <div className={`h-full transition-all duration-500 ${step >= 1 ? 'bg-cyan-500 w-1/3' : 'w-0'}`} />
-          <div className={`h-full transition-all duration-500 ${step >= 2 ? 'bg-blue-500 w-1/3' : 'w-0'}`} />
-          <div
-            className={`h-full transition-all duration-500 ${
-              step >= 3 ? (norm === 'REJECTED' ? 'bg-red-500 w-1/3' : 'bg-emerald-500 w-1/3') : 'w-0'
-            }`}
-          />
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Header */}
@@ -741,13 +712,7 @@ export const DonorComplaintsPage = () => {
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                       Submitted on{' '}
                       <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {new Date(item.createdAt).toLocaleDateString(undefined, {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
+                        {formatDisplayDate(item.createdAt)}
                       </span>
                     </p>
                   </div>
@@ -863,7 +828,7 @@ export const DonorComplaintsPage = () => {
                                 <div className="flex items-center justify-between">
                                   <span className="font-bold text-cyan-700 dark:text-cyan-400">{report.title}</span>
                                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-                                    {new Date(report.submittedAt).toLocaleDateString()}
+                                    {formatDisplayDate(report.submittedAt)}
                                   </span>
                                 </div>
                                 <p className="text-slate-700 dark:text-slate-300">{report.description}</p>

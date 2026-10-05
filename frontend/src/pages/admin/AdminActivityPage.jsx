@@ -6,6 +6,7 @@ import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/comm
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { ATTENTION_UPDATED_EVENT } from '../../context/useAdminAttention';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const TABS = [
   { key: 'blood-requests', label: 'Blood requests', icon: ClipboardList, countKey: 'newBloodRequests', seenKey: 'bloodRequestsSeenAt' },
@@ -17,9 +18,8 @@ const TRANSFER_STATUSES = ['Pending', 'Approved', 'Completed', 'Rejected', 'Canc
 const SUSPENDABLE_REQUEST = ['Pending', 'Verified', 'Approved'];
 const SUSPENDED_FILTER = '__suspended';
 
-// Sri Lanka time / calendar day
-const fmt = (value) =>
-  new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+// Sri Lanka calendar day for display; yyyy-mm-dd remains internal for filters.
+const fmt = (value) => formatDisplayDate(value);
 const sriLankaDay = (value) => new Date(value).toLocaleDateString('en-CA', { timeZone: 'Asia/Colombo' }); // yyyy-mm-dd
 const unwrap = (res) => (Array.isArray(res) ? res : Array.isArray(res?.data) ? res.data : []);
 

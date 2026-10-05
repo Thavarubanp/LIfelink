@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, History, Loader2, RotateCcw } from 'lucide-react';
 import { Badge } from '../common/Badge';
 import { getApiErrorMessage } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const PAGE_SIZE = 10;
 
@@ -24,10 +25,57 @@ const TYPE_LABELS = {
 const ROLE_VARIANT = { Admin: 'primary', HospitalStaff: 'info', Doctor: 'success', System: 'default', User: 'default' };
 const ROLE_LABEL = { Admin: 'Admin', HospitalStaff: 'Hospital', Doctor: 'Doctor', System: 'System', User: 'User' };
 
-// All times in Sri Lanka time
-const fmtTime = (value) =>
-  new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-const fmtDate = (value) => new Date(value).toLocaleDateString('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric' });
+const ENTITY_LABELS = {
+  Account: 'Account',
+  BloodRequest: 'Blood request',
+  Donation: 'Donation',
+  Screening: 'Screening',
+  Inventory: 'Inventory',
+  Transfer: 'Transfer',
+  Emergency: 'Emergency',
+  Doctor: 'Doctor',
+  Complaint: 'Complaint',
+  Appeal: 'Appeal',
+  Hospital: 'Hospital',
+  Governance: 'Governance'
+};
+
+const friendlyAction = (action) => {
+  const name = String(action || '').split('.').pop();
+  return name ? name.replace(/([a-z0-9])([A-Z])/g, '$1 $2') : 'Activity';
+};
+
+const shortReference = (label, value) => value ? `${label} #${String(value).substring(0, 8)}` : null;
+
+const StructuredContext = ({ entry }) => {
+  const primary = entry.recordReference || (entry.entityId
+    ? `${ENTITY_LABELS[entry.entityType] || entry.entityType || 'Record'} #${String(entry.entityId).substring(0, 8)}`
+    : null);
+  const related = [];
+  const primaryId = entry.entityId && String(entry.entityId).toLowerCase();
+  const addRelated = (label, value) => {
+    if (value && String(value).toLowerCase() !== primaryId) related.push(shortReference(label, value));
+  };
+  addRelated('Blood request', entry.bloodRequestId);
+  addRelated('Acceptance', entry.acceptanceId);
+  addRelated('Screening', entry.screeningVerificationId);
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+      <span className="font-semibold text-slate-700 dark:text-slate-200">{friendlyAction(entry.action)}</span>
+      {primary && <span title={entry.entityId || undefined} className="font-mono">{primary}</span>}
+      {related.map((reference) => <span key={reference} className="font-mono">{reference}</span>)}
+      {entry.bloodGroup && <Badge variant="blood" size="sm">{entry.bloodGroup}</Badge>}
+      {entry.hospitalName && <span>Hospital: {entry.hospitalName}</span>}
+      {(entry.transferSourceHospitalName || entry.transferDestinationHospitalName) && (
+        <span>
+          {entry.transferSourceHospitalName || 'Unknown hospital'} → {entry.transferDestinationHospitalName || 'Unknown hospital'}
+        </span>
+      )}
+      {entry.packetTrackingNumber && <span className="font-mono">Packet {entry.packetTrackingNumber}</span>}
+    </div>
+  );
+};
 
 /**
  * Paged activity log with a filter by action type and date range (Sri Lanka dates).
@@ -94,7 +142,7 @@ export const ActivityLogList = ({ load, title = 'Activity log', description }) =
           {description && <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{description}</p>}
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 sm:text-right">
-          Activity is recorded from {fmtDate(data?.recordedFrom || '2026-10-03T00:00:00Z')}.
+          Activity is recorded from {formatDisplayDate(data?.recordedFrom || '2026-10-03T00:00:00Z')}.
         </p>
       </div>
 
@@ -139,7 +187,7 @@ export const ActivityLogList = ({ load, title = 'Activity log', description }) =
           {data.items.map((entry) => (
             <li key={entry.id} className="py-2.5 flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
               <time className="text-[11px] font-mono text-slate-500 dark:text-slate-400 sm:w-40 shrink-0" dateTime={entry.occurredAt}>
-                {fmtTime(entry.occurredAt)}
+                {formatDisplayDate(entry.occurredAt)}
               </time>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -147,6 +195,7 @@ export const ActivityLogList = ({ load, title = 'Activity log', description }) =
                   <Badge variant={ROLE_VARIANT[entry.actorRole] || 'default'} size="sm">{ROLE_LABEL[entry.actorRole] || entry.actorRole}</Badge>
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">{TYPE_LABELS[entry.entityType] || entry.entityType}</span>
                 </div>
+                <StructuredContext entry={entry} />
                 <p className="text-xs text-slate-700 dark:text-slate-300 mt-0.5 break-words">{entry.summary}</p>
               </div>
             </li>

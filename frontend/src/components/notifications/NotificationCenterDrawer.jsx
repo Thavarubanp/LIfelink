@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Bell, Inbox, Loader2, CheckCheck } from 'lucide-react';
 import notificationApi from '../../api/notificationApi';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
   const [notifications, setNotifications] = useState([]);
@@ -119,12 +120,7 @@ export const NotificationCenterDrawer = ({ isOpen, onClose }) => {
                   <div className="flex items-center gap-1 shrink-0">
                     <span className="text-[10px] text-slate-400">
                       {n.createdAt
-                        ? new Date(n.createdAt).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })
+                        ? formatDisplayDate(n.createdAt)
                         : ''}
                     </span>
                     <button

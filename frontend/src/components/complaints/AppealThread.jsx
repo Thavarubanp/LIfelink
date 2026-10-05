@@ -1,6 +1,6 @@
-import React from 'react';
 import { MessageSquare, ShieldCheck, Calendar } from 'lucide-react';
 import AttachmentLink from '../common/AttachmentLink';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 // Decisions are recorded as "[APPROVED] ..." admin messages and never carry a file
 const isDecision = (m) => m.fromAdmin && /^\[(APPROVED|REJECTED|CLOSED|PENDING)\]/.test(m.message || '');
@@ -44,7 +44,7 @@ export const AppealThread = ({ appeal, appellantLabel = 'You' }) => {
               </div>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono">
                 <Calendar className="w-3 h-3 text-slate-400" />
-                {new Date(m.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {formatDisplayDate(m.createdAt)}
               </span>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-300 font-medium bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 whitespace-pre-line">

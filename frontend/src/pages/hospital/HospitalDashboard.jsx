@@ -5,11 +5,11 @@ import { inventoryApi, emergencyApi, profileApi, activityApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { InventoryAnalysisStatus } from '../../components/workflow/InventoryAnalysisStatus';
 import ActivityLogList from '../../components/activity/ActivityLogList';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const unwrap = (res) => res?.data || (Array.isArray(res) ? res : []);
 const groupLink = (group) => `/hospital/inventory?group=${encodeURIComponent(group)}`;
-const fmtSriLanka = (value) =>
-  new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtSriLanka = (value) => formatDisplayDate(value);
 
 const cardClass = 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm';
 const clickableCard = `${cardClass} text-left w-full hover:border-red-300 dark:hover:border-red-800 hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-red-500/40`;

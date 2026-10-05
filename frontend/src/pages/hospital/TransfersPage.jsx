@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CheckCircle2, Loader2, Send, Trash2, X, XCircle } from 'lucide-react';
 import { hospitalApi, inventoryApi, profileApi, transferApi } from '../../api';
 import { Badge, SuspendedBadge } from '../../components/common/Badge';
@@ -6,11 +6,12 @@ import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { newIdempotencyKey } from '../../session/sessionActivity';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const STATUS_VARIANT = { Pending: 'warning', Completed: 'success', Rejected: 'primary', Cancelled: 'default' };
 const unwrap = (res) => res?.data || (Array.isArray(res) ? res : []);
-const fmt = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
+const fmt = (value) => formatDisplayDate(value, '');
 
 /**
  * Inter-Hospital Blood Transfer between approved hospitals: request blood from, or offer blood to, another

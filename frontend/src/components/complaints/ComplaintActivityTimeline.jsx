@@ -1,9 +1,8 @@
-import React from 'react';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import {
   AlertTriangle,
   Clock,
   FileQuestion,
-  FileText,
   CheckCircle2,
   XCircle,
   Building2,
@@ -230,15 +229,7 @@ export const ComplaintActivityTimeline = ({ complaint }) => {
               </div>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono">
                 <Calendar className="w-3 h-3 text-slate-400" />
-                {event.date.toLocaleDateString(undefined, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric'
-                })}{' '}
-                {event.date.toLocaleTimeString(undefined, {
-                  hour: '2-digit',
-                  minute: '2-digit'
-                })}
+                {formatDisplayDate(event.date)}
               </span>
             </div>
 

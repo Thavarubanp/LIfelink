@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using LifeLink.Data;
 using LifeLink.DTOs.ActivityLogs;
@@ -41,10 +42,15 @@ namespace LifeLink.Controllers
             {
                 var hospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
                 if (hospitalId == null) return StatusCode(StatusCodes.Status403Forbidden, new { message = "Your account is not linked to a hospital." });
-                return Ok(await ActivityLogQueries.PageAsync(ActivityLogQueries.ForHospital(_context, hospitalId.Value), query, viewerIsAdmin: false));
+                var viewer = new ActivityLogViewerContext(userId.Value, new HashSet<string>(roles), hospitalId);
+                return Ok(await ActivityLogQueries.PageAsync(_context, ActivityLogQueries.ForHospital(_context, hospitalId.Value), query, viewer));
             }
 
-            return Ok(await ActivityLogQueries.PageAsync(ActivityLogQueries.ForUser(_context, userId.Value), query, viewerIsAdmin: roles.Contains("Admin")));
+            var viewerHospitalId = roles.Contains("Doctor")
+                ? await CallerHospitalResolver.ResolveAsync(_context, _currentUserService)
+                : null;
+            var ownViewer = new ActivityLogViewerContext(userId.Value, new HashSet<string>(roles), viewerHospitalId);
+            return Ok(await ActivityLogQueries.PageAsync(_context, ActivityLogQueries.ForUser(_context, userId.Value), query, ownViewer));
         }
     }
 }

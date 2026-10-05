@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect } from 'react';
 import { authApi } from '../api';
 import { clearSession, markActivityConfirmed } from '../session/sessionActivity';
 
@@ -48,7 +48,7 @@ export const AuthProvider = ({ children }) => {
         try {
           const meRes = await authApi.getCurrentUser();
           if (meRes?.data) setUser(meRes.data);
-        } catch (e) {
+        } catch {
           setUser({ email: credentials.email, roles: ['User'] });
         }
       }
@@ -61,7 +61,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       await authApi.logout();
-    } catch (e) {
+    } catch {
       // Ignore network errors on logout
     } finally {
       // Clears the token and cached data here and signs out every other open tab

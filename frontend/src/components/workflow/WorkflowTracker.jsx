@@ -1,5 +1,4 @@
-import React from 'react';
-import { CheckCircle2, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 
 export const WorkflowTracker = ({ steps = [], currentStepIndex = 0, title }) => {
   return (

@@ -1,4 +1,3 @@
-import React from 'react';
 import { Sparkles, ShieldCheck, Zap, Database } from 'lucide-react';
 
 export const AgentStatusCard = ({ type = 'matching', title, description, metrics = [], status = 'active' }) => {

@@ -1,8 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   User,
-  Mail,
   Phone,
   Calendar,
   MapPin,
@@ -24,6 +23,7 @@ import ActivityLogList from '../../components/activity/ActivityLogList';
 import AdminMessageButton from '../../components/admin/AdminMessageButton';
 import { getUserRoles } from '../../utils/roleUtils';
 import { activityApi } from '../../api';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const USER_EDIT_FIELDS = [
   { name: 'firstName', label: 'First Name' },
@@ -236,7 +236,7 @@ export const UserProfilePage = () => {
                 )}
                 <div className="text-[11px] text-slate-500">
                   {profile.nextEligibleDonationDate && new Date(profile.nextEligibleDonationDate) > new Date()
-                    ? `Can donate again from ${new Date(profile.nextEligibleDonationDate).toLocaleDateString()}`
+                    ? `Can donate again from ${formatDisplayDate(profile.nextEligibleDonationDate)}`
                     : 'Eligible to donate (120-day interval met)'}
                 </div>
               </div>
@@ -248,7 +248,7 @@ export const UserProfilePage = () => {
             <div>
               <span className="text-slate-400 text-[10px] uppercase font-semibold">Member Since</span>
               <div className="font-bold text-slate-900 dark:text-slate-100">
-                {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString([], { month: 'long', year: 'numeric', day: 'numeric' }) : 'N/A'}
+                {formatDisplayDate(profile.createdAt, 'N/A')}
               </div>
             </div>
           </div>

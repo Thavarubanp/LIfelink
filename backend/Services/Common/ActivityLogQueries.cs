@@ -30,7 +30,8 @@ namespace LifeLink.Services.Common
         /// Filters (type, Sri Lanka date range) and pages the entries, newest first. Admin names are shown as
         /// "Administrator" to everyone except the Admin.
         /// </summary>
-        public static async Task<ActivityLogPageDto> PageAsync(IQueryable<ActivityLog> query, ActivityLogQueryDto filter, bool viewerIsAdmin)
+        public static async Task<ActivityLogPageDto> PageAsync(AppDbContext context, IQueryable<ActivityLog> query, ActivityLogQueryDto filter,
+            ActivityLogViewerContext viewer)
         {
             var page = Math.Max(1, filter.Page);
             var pageSize = Math.Clamp(filter.PageSize, 1, MaxPageSize);
@@ -69,13 +70,15 @@ namespace LifeLink.Services.Common
                 })
                 .ToListAsync();
 
-            if (!viewerIsAdmin)
+            if (!viewer.IsAdmin)
             {
                 foreach (var item in items.Where(i => i.ActorRole == "Admin"))
                 {
                     item.ActorName = "Administrator";
                 }
             }
+
+            await ActivityLogEnrichment.EnrichAsync(context, items, viewer);
 
             return new ActivityLogPageDto
             {

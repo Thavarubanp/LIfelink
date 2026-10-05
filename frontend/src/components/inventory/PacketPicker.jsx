@@ -3,8 +3,9 @@ import { Loader2, Package } from 'lucide-react';
 import { inventoryApi } from '../../api';
 import { Badge } from '../common/Badge';
 import { getApiErrorMessage } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
-const fmtDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
+const fmtDate = (value) => formatDisplayDate(value, '-');
 
 /**
  * Lets hospital staff choose the exact packets to issue, transfer or donate: the signed-in hospital's Available,

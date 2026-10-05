@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Building2,
@@ -27,6 +27,7 @@ import { DocumentPreviewModal } from '../../components/common/DocumentPreviewMod
 import ActivityLogList from '../../components/activity/ActivityLogList';
 import AdminMessageButton from '../../components/admin/AdminMessageButton';
 import { activityApi } from '../../api';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 // Email, license number and registration number are not editable
 const HOSPITAL_EDIT_FIELDS = [
@@ -239,7 +240,7 @@ export const HospitalProfilePage = () => {
                 <span className="text-slate-400 text-[11px] block">Partner Since</span>
                 <span className="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5 mt-0.5">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                  {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString([], { month: 'long', year: 'numeric', day: 'numeric' }) : 'N/A'}
+                  {formatDisplayDate(profile.createdAt, 'N/A')}
                 </span>
               </div>
             </div>

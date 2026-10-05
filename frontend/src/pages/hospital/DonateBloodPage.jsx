@@ -6,6 +6,7 @@ import { Badge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const DONATION_STATUS = {
@@ -14,7 +15,7 @@ const DONATION_STATUS = {
   Rejected: { label: 'Not approved', variant: 'danger' },
   Cancelled: { label: 'Withdrawn', variant: 'default' }
 };
-const fmt = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
+const fmt = (value) => formatDisplayDate(value, '');
 const freeSlots = (r) => Math.max(0, (r.unitsRequired || 0) - (r.fulfilledUnits || 0) - (r.reservedUnits || 0));
 
 /**

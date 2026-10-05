@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import profileApi from '../../api/profileApi';

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { adminApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { readFileAsAttachment } from '../../utils/fileUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import { DocumentPreviewModal } from '../../components/common/DocumentPreviewModal';
 import AttachmentLink from '../../components/common/AttachmentLink';
 import RegistrationThread from '../../components/hospital/RegistrationThread';
@@ -254,7 +255,7 @@ export const HospitalManagementPage = () => {
         <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2">
           <Lock className="w-4 h-4 shrink-0 mt-0.5" />
           <span>
-            Approved{h.approvedAt ? ` on ${new Date(h.approvedAt).toLocaleDateString()}` : ''}. Approved registrations are
+            Approved{h.approvedAt ? ` on ${formatDisplayDate(h.approvedAt)}` : ''}. Approved registrations are
             read-only; suspension is managed from the Admin Dashboard.
           </span>
         </div>
@@ -467,7 +468,7 @@ export const HospitalManagementPage = () => {
                           Registration Details
                         </h3>
                         <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Registered: {hospital.createdAt ? new Date(hospital.createdAt).toLocaleDateString() : 'N/A'}
+                          Registered: {formatDisplayDate(hospital.createdAt, 'N/A')}
                         </span>
                       </div>
 

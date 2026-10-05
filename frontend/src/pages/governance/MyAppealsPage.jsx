@@ -3,6 +3,7 @@ import { FileText, Loader2, AlertCircle } from 'lucide-react';
 import { appealApi } from '../../api';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import AppealThread from '../../components/complaints/AppealThread';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const STATUS_STYLES = {
   PENDING: 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-900',
@@ -60,7 +61,7 @@ export const MyAppealsPage = () => {
           <div key={appeal.appealId} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-slate-500 dark:text-slate-400">
-                Submitted {new Date(appeal.submittedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                Submitted {formatDisplayDate(appeal.submittedAt)}
                 {appeal.hospitalName ? ` · ${appeal.hospitalName}` : ''}
               </span>
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_STYLES[appeal.status] || STATUS_STYLES.CLOSED}`}>

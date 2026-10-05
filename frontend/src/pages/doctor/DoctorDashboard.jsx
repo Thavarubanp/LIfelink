@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { bloodRequestApi, screeningApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { DataTable } from '../../components/common/DataTable';
-import { AgentStatusCard } from '../../components/workflow/AgentStatusCard';
 import { HospitalDonationReview } from '../../components/workflow/HospitalDonationReview';
 import { Stethoscope, CheckCircle2, XCircle, X, Loader2, HeartHandshake } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -196,33 +195,28 @@ export const DoctorDashboard = () => {
       </div>
 
       {/* KPI Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <Link to="/doctor/screenings?view=all" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-all hover:border-blue-300 dark:hover:border-blue-800 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50">
           <span className="text-xs font-semibold text-slate-500">Screened Donors</span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : acceptances.length}
           </div>
-          <p className="text-[11px] text-blue-500 mt-1">Donors with a screening report at your hospital</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+          <p className="text-[11px] text-blue-500 mt-1">Latest screening cases per acceptance at your hospital</p>
+        </Link>
+        <Link to="/doctor/screenings?view=review" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-all hover:border-amber-300 dark:hover:border-amber-800 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50">
           <span className="text-xs font-semibold text-slate-500">Pending Reviews</span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : pendingCount}
           </div>
           <p className="text-[11px] text-amber-500 mt-1">Awaiting clinical sign-off</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
+        </Link>
+        <Link to="/doctor/screenings?view=awaiting" className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm transition-all hover:border-emerald-300 dark:hover:border-emerald-800 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/50">
           <span className="text-xs font-semibold text-slate-500">Approved, Awaiting Donation</span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : approvedCount}
           </div>
           <p className="text-[11px] text-emerald-500 mt-1">Slots reserved; record the donation when done</p>
-        </div>
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-sm">
-          <span className="text-xs font-semibold text-slate-500">Doctor Queue Status</span>
-          <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">Active</div>
-          <p className="text-[11px] text-emerald-500 mt-1">AI pre-evaluation active</p>
-        </div>
+        </Link>
       </div>
 
       {/* Assigned Blood Requests (hospital-verified, awaiting this doctor's decision) */}
@@ -248,17 +242,6 @@ export const DoctorDashboard = () => {
           />
         )}
       </div>
-
-      <AgentStatusCard
-        type="screening"
-        title="Intelligent Screening Assessment Engine"
-        description="The Request Management agent interviews donors and prepares screening reports. It never approves or rejects; you decide."
-        metrics={[
-          { label: 'Waiting for Review', value: `${pendingCount}` },
-          { label: 'Evaluation Engine', value: 'ONLINE' },
-          { label: 'Agent Status', value: 'ACTIVE' }
-        ]}
-      />
 
       {reviewing && (
         <HospitalDonationReview

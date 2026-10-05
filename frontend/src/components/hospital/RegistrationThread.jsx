@@ -1,5 +1,6 @@
 import { Building2, Calendar, CheckCircle2, FilePlus2, MessageSquare, XCircle } from 'lucide-react';
 import AttachmentLink from '../common/AttachmentLink';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 // Tailwind needs literal class names, so each tone is spelled out
 const TONES = {
@@ -59,7 +60,7 @@ export const RegistrationThread = ({ entries, onPreview }) => {
                 </div>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-mono">
                   <Calendar className="w-3 h-3 text-slate-400" />
-                  {new Date(entry.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {formatDisplayDate(entry.timestamp)}
                 </span>
               </div>
 

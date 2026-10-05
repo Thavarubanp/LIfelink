@@ -13,6 +13,15 @@ namespace LifeLink.DTOs.ActivityLogs
         public string EntityType { get; set; } = string.Empty;
         public Guid? EntityId { get; set; }
         public string Summary { get; set; } = string.Empty;
+        public string? RecordReference { get; set; }
+        public Guid? BloodRequestId { get; set; }
+        public Guid? AcceptanceId { get; set; }
+        public Guid? ScreeningVerificationId { get; set; }
+        public string? BloodGroup { get; set; }
+        public string? HospitalName { get; set; }
+        public string? TransferSourceHospitalName { get; set; }
+        public string? TransferDestinationHospitalName { get; set; }
+        public string? PacketTrackingNumber { get; set; }
     }
 
     /// <summary>One page of an activity log, newest first.</summary>
