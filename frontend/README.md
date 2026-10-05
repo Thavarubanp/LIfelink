@@ -1,16 +1,39 @@
-# React + Vite
+# LifeLink web application
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The web client is a React 19 single-page application. It calls only the ASP.NET Core API; browsers never call the Python agents directly.
 
-Currently, two official plugins are available:
+## Setup and commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-## React Compiler
+Other commands:
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```powershell
+npm run build
+npm run lint
+npm run preview
+```
 
-## Expanding the ESLint configuration
+`VITE_API_BASE_URL` optionally overrides the default `/api`. During local development Vite proxies `/api` to the backend.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Structure
+
+| Path | Purpose |
+|---|---|
+| `src/api/` | Axios client and domain API modules |
+| `src/pages/` | Role-oriented auth, donor, hospital, doctor, admin, governance, and profile pages |
+| `src/components/` | Shared layout, tables, dialogs, workflow, assistant, screening, and notification UI |
+| `src/context/` | Authentication, toast notifications, theme, and admin-attention state |
+| `src/session/` | Cross-tab session activity and idempotency-key helpers |
+| `src/utils/` | Role, error, and file utilities |
+
+Routes live in `src/App.jsx`. `ProtectedRoute` sends unauthenticated users to login, suspended accounts to governance, unapproved hospitals to the waiting page, doctors with a temporary password to password change, and wrong-role users to their own dashboard.
+
+`AuthContext` owns the authenticated user. The API client attaches the JWT, uses `X-LifeLink-Activity` only for user activity, handles ended sessions, and supports `Idempotency-Key` for protected create operations. `NotificationContext` provides toasts; theme state follows the system initially and can be changed for the current session.
+
+See [docs/README.md](../docs/README.md#frontend) for the complete route and page map.
+

@@ -102,7 +102,7 @@ Suggested actions are links that the UI opens in the user's own session. Agents 
 | Variable | Default | Purpose |
 |---|---|---|
 | `HOST` / `PORT` | `127.0.0.1` / `8004` | Loopback only; the backend is the only caller |
-| `INTERNAL_SERVICE_API_KEY` | `LifeLink-Internal-Agent-Key-2026` | Must match the backend's `InternalService:ApiKey` and every agent. Local-development default only; shared and production environments must override it (see the root README) |
+| `INTERNAL_SERVICE_API_KEY` | Required secret | Must match the backend's `InternalService__ApiKey` and every agent; never commit or document its value |
 | `AGENT1_SCREENING_URL` | `http://127.0.0.1:8001` | Request Management agent |
 | `AGENT2_MATCHING_URL` | `http://127.0.0.1:8000` | Notification agent |
 | `AGENT3_INVENTORY_URL` | `http://127.0.0.1:8003` | Inventory agent |
