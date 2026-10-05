@@ -38,6 +38,24 @@ Future<Attachment?> takePhoto() async {
   }
 }
 
+/// Chooses a photo from the device gallery and applies the same 2 MB attachment rules.
+Future<Attachment?> pickGalleryImage() async {
+  try {
+    final photo = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2000, maxHeight: 2000, imageQuality: 80);
+    if (photo == null) return null;
+    final lower = photo.name.toLowerCase();
+    final name = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')
+        ? photo.name
+        : 'gallery_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    return Attachment.fromBytes(name, await photo.readAsBytes());
+  } on PlatformException catch (e) {
+    if (e.code.contains('denied')) {
+      throw const AttachmentException('Photo access was denied. Allow photos for LifeLink in Settings, or attach a file instead.');
+    }
+    throw AttachmentException(e.message ?? 'The photo gallery could not be opened.');
+  }
+}
+
 /// "Attach file" / "Take photo" with the chosen attachment shown below (removable). Errors are shown under it.
 class AttachmentPickerField extends StatefulWidget {
   const AttachmentPickerField({super.key, required this.value, required this.onChanged, this.enabled = true, this.label = 'Attachment (optional)'});
@@ -99,6 +117,12 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
                   onPressed: !widget.enabled || _busy ? null : () => _pick(takePhoto),
                   icon: const Icon(Icons.photo_camera_outlined, size: 18),
                   label: const Text('Take photo'),
+                ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                  onPressed: !widget.enabled || _busy ? null : () => _pick(pickGalleryImage),
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: const Text('Gallery'),
                 ),
               ],
             ),

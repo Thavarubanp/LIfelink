@@ -192,3 +192,29 @@ class DonorProfileSummary {
 
   bool eligibleAt(DateTime now) => nextEligibleDonationDate == null || !nextEligibleDonationDate!.isAfter(now);
 }
+
+class HospitalChoice {
+  const HospitalChoice({required this.id, required this.name, required this.address, required this.email});
+  factory HospitalChoice.fromJson(Map<String, dynamic> j) => HospitalChoice(
+        id: str(j['hospitalId']),
+        name: str(j['name']),
+        address: str(j['address']),
+        email: str(j['email']),
+      );
+  final String id;
+  final String name;
+  final String address;
+  final String email;
+}
+
+class DoctorChoice {
+  const DoctorChoice({required this.id, required this.name, required this.specialization});
+  factory DoctorChoice.fromJson(Map<String, dynamic> j) => DoctorChoice(
+        id: str(j['doctorId']),
+        name: 'Dr. ${str(j['firstName'])} ${str(j['lastName'])}'.trim(),
+        specialization: str(j['specialization']),
+      );
+  final String id;
+  final String name;
+  final String specialization;
+}

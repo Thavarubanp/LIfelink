@@ -7,6 +7,12 @@ import '../../features/auth/forgot_password_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/blood_requests/donor_home_screen.dart';
+import '../../features/blood_requests/public_requests_screen.dart';
+import '../../features/blood_requests/request_detail_screen.dart';
+import '../../features/blood_requests/create_request_screen.dart';
+import '../../features/complaints/complaints_screen.dart';
+import '../../features/screening/my_acceptances_screen.dart';
+import '../../features/screening/screening_interview_screen.dart';
 import '../../features/governance/governance_status_screen.dart';
 import '../../features/governance/waiting_approval_screen.dart';
 import '../../features/home/more_screen.dart';
@@ -64,8 +70,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         ],
         branches: [
           (AppRoutes.donorHome, const DonorHomeScreen()),
-          (AppRoutes.donorRequests, _step2('Blood requests', 'Available requests, accepting and your own requests.')),
-          (AppRoutes.donorAcceptances, _step2('My donations', 'Screening interview, answers and doctor decisions.')),
+          (AppRoutes.donorRequests, const PublicRequestsScreen()),
+          (AppRoutes.donorAcceptances, const MyAcceptancesScreen()),
           (
             AppRoutes.donorMore,
             const MoreScreen(entries: [
@@ -75,9 +81,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      _stubRoute(AppRoutes.createRequest, _step2('Create blood request', 'Create a blood request (including Critical).')),
-      _stubRoute(AppRoutes.donorComplaints, _step2('Complaints', 'File and follow your complaints.')),
-      _stubRoute(AppRoutes.donorAppeals, _step2('Appeals', 'Your appeal threads.')),
+      GoRoute(path: AppRoutes.createRequest, parentNavigatorKey: rootNavigatorKey, builder: (_, state) => CreateRequestScreen(
+        initialPriority: state.uri.queryParameters['priority'], initialBloodGroup: state.uri.queryParameters['bloodGroup'])),
+      GoRoute(path: '${AppRoutes.donorRequests}/:requestId', parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => RequestDetailScreen(requestId: state.pathParameters['requestId']!)),
+      GoRoute(path: '${AppRoutes.donorAcceptances}/:acceptanceId/screening', parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => ScreeningInterviewScreen(acceptanceId: state.pathParameters['acceptanceId']!)),
+      GoRoute(path: AppRoutes.donorComplaints, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => const ComplaintsScreen()),
+      GoRoute(path: AppRoutes.donorAppeals, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => const MyAppealsScreen()),
 
       // Doctor (Step 3: Ahamed)
       _shell(
@@ -107,7 +118,6 @@ final routerProvider = Provider<GoRouter>((ref) {
   return router;
 });
 
-Widget _step2(String title, String description) => StubScreen(title: title, step: 2, owner: 'Vidya R', description: description);
 Widget _step3(String title, String description) => StubScreen(title: title, step: 3, owner: 'Ahamed MSA', description: description);
 
 GoRoute _stubRoute(String path, Widget screen) => GoRoute(path: path, builder: (_, _) => screen);

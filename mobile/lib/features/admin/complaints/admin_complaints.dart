@@ -91,6 +91,7 @@ class Complaint {
     required this.logs,
     required this.reports,
     required this.awaitingAdminReply,
+    this.canCreatorReply = false,
   });
 
   factory Complaint.fromJson(Map<String, dynamic> j) => Complaint(
@@ -112,6 +113,7 @@ class Complaint {
             ? (j['activityReports'] as List).whereType<Map>().map((e) => ActivityReport.fromJson(Map<String, dynamic>.from(e))).toList()
             : const [],
         awaitingAdminReply: boolOf(j['awaitingAdminReply']),
+        canCreatorReply: boolOf(j['canCreatorReply']),
       );
 
   final String id;
@@ -128,6 +130,7 @@ class Complaint {
   final List<ComplaintLog> logs;
   final List<ActivityReport> reports;
   final bool awaitingAdminReply;
+  final bool canCreatorReply;
 
   bool get isOpen => !const {'RESOLVED', 'REJECTED', 'CANCELLED'}.contains(status);
 
