@@ -16,7 +16,10 @@ namespace LifeLink.Services.BloodRequests
 {
     public class BloodRequestService : IBloodRequestService
     {
+        // Retained only for backward compatibility with historical rows and activity data. Blood requests no longer
+        // expire automatically; the non-null database column remains without requiring a migration.
         public const string ExpiryRejectionReason = "Request expired before it was fulfilled.";
+        private static readonly DateTime NoExpirySentinel = new(9999, 12, 31, 23, 59, 59, DateTimeKind.Utc);
 
         private readonly AppDbContext _context;
 
@@ -119,7 +122,7 @@ namespace LifeLink.Services.BloodRequests
                 Status = assignedDoctor != null ? BloodRequestStatus.Verified : BloodRequestStatus.Pending,
                 CreatedAt = now,
                 UpdatedAt = now,
-                ExpiryDate = now.AddDays(7),
+                ExpiryDate = NoExpirySentinel,
                 CancelledAt = null
             };
 
@@ -162,11 +165,6 @@ namespace LifeLink.Services.BloodRequests
             if (request.Status != BloodRequestStatus.Pending)
             {
                 throw new InvalidOperationException($"Only pending requests can be edited. This request is {request.Status}.");
-            }
-
-            if (request.ExpiryDate <= DateTime.UtcNow)
-            {
-                throw new InvalidOperationException("This request has expired and can no longer be edited.");
             }
 
             if (!BloodValidationHelper.IsValidBloodGroup(dto.BloodGroup))
@@ -383,13 +381,8 @@ namespace LifeLink.Services.BloodRequests
 
             var notifications = new List<LifeLink.Entities.Notification>();
 
-            // The hospital the request was sent to, unless the hospital itself created (and is now deleting) it
-            var createdByHospital = await _context.UserRoles
-                .AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
-            if (!createdByHospital)
-            {
-                notifications.Add(NotificationFactory.ForHospital(request.HospitalId, type, title, summary));
-            }
+            // The hospital the request belongs to is always operationally affected, including hospital-created requests.
+            notifications.Add(NotificationFactory.ForHospital(request.HospitalId, type, title, summary));
 
             // The assigned doctor (latest assignment that is not closed), if the doctor still has an active login
             var assignedDoctorId = await _context.BloodRequestVerifications
@@ -428,74 +421,20 @@ namespace LifeLink.Services.BloodRequests
 
         public async Task<BloodRequestResponseDto?> GetRequestByIdAsync(Guid requestId)
         {
-            var now = DateTime.UtcNow;
             var request = await _context.BloodRequests.FindAsync(requestId);
             if (request == null)
             {
                 return null;
             }
 
-            // Automatic expiry check: if expired and still open, mark Rejected and release its donors
-            if (IsExpiredAndOpen(request, now))
-            {
-                try
-                {
-                    await ExpireAsync(_context, request, now);
-                    await _context.SaveChangesAsync();
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    // Another viewer or the expiry sweep changed it at the same moment: show the current state
-                    _context.ChangeTracker.Clear();
-                    request = await _context.BloodRequests.FindAsync(requestId);
-                    if (request == null) return null;
-                }
-            }
-
             return (await MapManyAsync(new[] { request })).First();
-        }
-
-        public static bool IsExpiredAndOpen(BloodRequest request, DateTime now) =>
-            request.ExpiryDate <= now &&
-            request.AdminSuspendedAt == null && // suspended requests are not expired (Q7); the next sweep after the lift is
-            request.Status != BloodRequestStatus.Completed &&
-            request.Status != BloodRequestStatus.Cancelled &&
-            request.Status != BloodRequestStatus.Rejected &&
-            request.Status != BloodRequestStatus.Deleted;
-
-        /// <summary>
-        /// Expires a request: Rejected with the expiry reason, and every donor still in progress is closed so their
-        /// reserved slot and their one-active-donation lock are released. Saved by the caller.
-        /// </summary>
-        public static async Task ExpireAsync(AppDbContext context, BloodRequest request, DateTime now)
-        {
-            request.Status = BloodRequestStatus.Rejected;
-            request.RejectionReason = ExpiryRejectionReason;
-            request.UpdatedAt = now;
-            ActivityLogger.AddSystem(context, "BloodRequest.Expired", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
-                $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}) expired before it was fulfilled.",
-                request.HospitalId, request.PatientUserId);
-
-            var closed = await AcceptanceClosure.CloseAllAsync(context, request, AcceptanceClosure.ActiveStatuses,
-                AcceptanceStatus.Cancelled, "The request expired before it was fulfilled.", "Request expired.");
-            foreach (var acceptance in closed)
-            {
-                await context.Notifications.AddAsync(acceptance.DonorHospitalId != null
-                    ? NotificationFactory.ForHospital(acceptance.DonorHospitalId.Value, "RequestExpired", "Blood Request Expired",
-                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} expired before your donation was approved. The reserved packets are back in your inventory.")
-                    : NotificationFactory.ForUser(acceptance.DonorUserId, "Donor", "RequestExpired",
-                        "Blood Request Expired",
-                        $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} expired before it was fulfilled. Your acceptance has been closed and you are free to accept other requests."));
-            }
         }
 
         public async Task<IEnumerable<BloodRequestResponseDto>> GetPublicRequestsAsync(string? bloodGroup = null, int? expiringWithinHours = null)
         {
-            var now = DateTime.UtcNow;
             var query = _context.BloodRequests
                 .Where(r => r.Status == BloodRequestStatus.Approved
                             && r.CancelledAt == null
-                            && r.ExpiryDate > now
                             && r.FulfilledUnits < r.UnitsRequired
                             && r.AdminSuspendedAt == null // suspended by the admin (Q7): hidden from donors
                             // A suspended hospital's requests cannot proceed, so donors do not see them
@@ -510,16 +449,10 @@ namespace LifeLink.Services.BloodRequests
                 }
             }
 
-            if (expiringWithinHours.HasValue && expiringWithinHours.Value > 0)
-            {
-                var threshold = now.AddHours(expiringWithinHours.Value);
-                query = query.Where(r => r.ExpiryDate <= threshold);
-            }
-
             var list = await query
                 .OrderByDescending(r => r.Priority == "Critical")
                 .ThenByDescending(r => r.Priority == "High")
-                .ThenBy(r => r.ExpiryDate)
+                .ThenByDescending(r => r.CreatedAt)
                 .ToListAsync();
 
             return await MapManyAsync(list);
@@ -695,7 +628,7 @@ namespace LifeLink.Services.BloodRequests
                 var dto = MapToResponseDto(r);
                 var hospital = hospitals.GetValueOrDefault(r.HospitalId);
                 dto.HospitalName = hospital?.Name;
-                dto.IsAcceptingDonors = r.Status == BloodRequestStatus.Approved && r.ExpiryDate > now &&
+                dto.IsAcceptingDonors = r.Status == BloodRequestStatus.Approved &&
                                         r.FulfilledUnits + r.ReservedUnits < r.UnitsRequired && hospital?.IsSuspended != true;
                 dto.CreatedByName = creatorNames.GetValueOrDefault(r.PatientUserId);
                 dto.PendingHospitalDonations = pendingHospitalDonations.GetValueOrDefault(r.BloodRequestId);

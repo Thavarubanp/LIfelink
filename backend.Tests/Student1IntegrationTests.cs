@@ -220,10 +220,10 @@ namespace LifeLink.Tests
 
         /// <summary>
         /// SCENARIO 3:
-        /// Expired request cannot be accepted
+        /// A legacy expiry date does not prevent acceptance
         /// </summary>
         [Fact]
-        public async Task Integration_Scenario_3_Expired_Request_Cannot_Be_Accepted()
+        public async Task Integration_Scenario_3_Old_Approved_Request_Can_Be_Accepted()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, donors) = await SetupScenarioAsync(context, donorCount: 1);
@@ -245,14 +245,13 @@ namespace LifeLink.Tests
             await context.BloodRequests.AddAsync(expiredReq);
             await context.SaveChangesAsync();
 
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                acceptanceService.AcceptRequestAsync(donors[0].UserId, new CreateAcceptanceDto
+            var acceptance = await acceptanceService.AcceptRequestAsync(donors[0].UserId, new CreateAcceptanceDto
                 {
                     BloodRequestId = expiredReq.BloodRequestId,
                     DonorBloodGroup = "O-"
-                }));
+                });
 
-            Assert.Contains("expired", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("Accepted", acceptance.Status);
         }
 
         /// <summary>

@@ -104,15 +104,16 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task An_Expired_Pending_Request_Cannot_Be_Edited()
+        public async Task A_Legacy_Expiry_Date_Does_Not_Block_A_Pending_Edit()
         {
             var s = await SeedAsync();
             var created = await CreateAsync(s);
             (await s.Context.BloodRequests.SingleAsync()).ExpiryDate = DateTime.UtcNow.AddMinutes(-1);
             await s.Context.SaveChangesAsync();
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => s.Service.UpdatePendingRequestAsync(created.BloodRequestId, s.Patient.UserId,
-                new UpdateBloodRequestDto { BloodGroup = "A+", UnitsRequired = 1 }));
+            var updated = await s.Service.UpdatePendingRequestAsync(created.BloodRequestId, s.Patient.UserId,
+                new UpdateBloodRequestDto { BloodGroup = "A+", UnitsRequired = 1 });
+            Assert.Equal("A+", updated.BloodGroup);
         }
 
         [Theory]

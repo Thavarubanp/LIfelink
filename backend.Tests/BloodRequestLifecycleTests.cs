@@ -273,7 +273,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Hospital_Deleting_Its_Own_Request_Does_Not_Notify_Itself()
+        public async Task Hospital_Deleting_Its_Own_Request_Is_Still_Notified_As_The_Affected_Hospital()
         {
             var s = await SeedAsync();
             var request = await AddRequestAsync(s.Context, s.HospitalStaff.UserId, s.Hospital.HospitalId);
@@ -281,7 +281,9 @@ namespace LifeLink.Tests
             await new BloodRequestService(s.Context).DeleteRequestAsync(request.BloodRequestId, s.HospitalStaff.UserId);
 
             Assert.Equal(BloodRequestStatus.Deleted, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
-            Assert.Empty(s.Context.Notifications.Where(n => n.NotificationType == "BloodRequestDeleted"));
+            var notification = Assert.Single(s.Context.Notifications.Where(n => n.NotificationType == "BloodRequestDeleted"));
+            Assert.Equal(s.Hospital.HospitalId, notification.HospitalId);
+            Assert.Equal("HospitalStaff", notification.RecipientRole);
         }
 
         [Fact]

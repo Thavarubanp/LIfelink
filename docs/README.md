@@ -256,7 +256,7 @@ ASP.NET automatically returns 400 for invalid annotated DTOs. Services then enfo
 |---|---|
 | Identity | Required valid email; PBKDF2 password hashing; strong password rules; normalized unique email; JWT/session/account state required |
 | Blood | One of A+, A-, B+, B-, AB+, AB-, O+, O-; normalized before storage |
-| Requests | Units 1–10; Normal/High/Critical; verified non-suspended destination; one active creator/hospital/group request; seven-day expiry; only creator edits pending group/units |
+| Requests | Units 1–10; Normal/High/Critical; verified non-suspended destination; one active creator/hospital/group request; no automatic time-based expiry; only creator edits pending group/units |
 | Donors | Active/unblocked/unsuspended User; compatible group; age 18–60 when DOB known; at least 120 days since last donation; one active donation process |
 | Screening | Only newest pending version can be decided; reports/answers are versioned and immutable; rejection/release reasons required; approval requires a free slot |
 | Doctors | Own-hospital active doctor; first-login password must be changed before new assignment/fallback; email unique among non-removed doctors; SLMC unique per hospital |
@@ -275,7 +275,7 @@ Important database constraints/indexes include unique user/doctor email, hospita
 
 `IConcurrencyVersioned` entities use advancing tokens; packets/inventory have equivalent protection. Adding acceptance, registration, complaint, or appeal child rows bumps the relevant parent. Unique/foreign-key conflicts are mapped to 409. Multi-row actions use EF transactions. The frontend/mobile disable repeated actions and reload after 409.
 
-`RequestExpiryBackgroundService` runs request expiry, packet expiry, idempotency cleanup, and inventory monitoring. A PostgreSQL-backed `BackgroundJobLeases` lease prevents duplicate sweeps across API instances. Work is saved in small scopes so one conflict is skipped and retried later.
+`RequestExpiryBackgroundService` retains the shared scheduled host for packet expiry, idempotency cleanup, and inventory monitoring. Its legacy blood-request expiry step is a no-op because blood requests no longer expire with time. A PostgreSQL-backed `BackgroundJobLeases` lease prevents duplicate sweeps across API instances.
 
 ## Database
 
@@ -366,7 +366,7 @@ Applied in filename order:
 7. A doctor/hospital staff records the actual donation with the tested group; only then do fulfilled units rise. Own-hospital requests create a packet.
 8. Releasing/withdrawing an approved donor frees the reservation. The request completes when fulfilled units reach required units.
 
-Creators may soft-delete requests in any status; active acceptances close, reservations/held packets release, reports remain, and participants are notified. Pending/Approved requests expire after seven days unless admin-suspended.
+Creators may soft-delete requests in any status; active acceptances close, reservations/held packets release, reports remain, and currently affected participants are notified. Matched donations and fulfilled units remain historical. Blood requests do not expire automatically and remain governed by explicit workflow status changes.
 
 ### Inventory, packets, transfers, emergencies, and analysis
 
@@ -386,7 +386,7 @@ Creators may soft-delete requests in any status; active acceptances close, reser
 
 ### Alert rules
 
-- Normal and High requests rely on the public list; only Critical requests broadcast donor/hospital alerts.
+- Normal requests rely on the public list. High approval proactively alerts eligible exact-group donors only. Critical approval alerts those donors plus other verified, active hospitals whose valid exact-group stock is strictly above their configured minimum threshold.
 - Donor candidates must be backend-selected, active, eligible, and have the exact saved request group for alerts.
 - Emergency hospital alerts use compatible available unexpired stock as selected by the backend.
 - Inventory alerts cover shortage and expiring packets, are capped/deduplicated, and never authorize a stock movement.
@@ -455,7 +455,7 @@ The following D1–D19 decisions are preserved from the approved phase plan with
 | D8 | The Surplus inventory badge remains a display badge, not a surplus alert. |
 | D9 | During the phase test backend, scheduled inventory runs were disabled and scheduled panel states were checked with mocked status to avoid alerting real hospitals. |
 | D10 | A doctor assigned before the first-login restriction keeps the old assignment; only new assignments are refused while `MustChangePassword` is true. |
-| D11 | Only Critical requests send broadcast alerts. High behaves like Normal; ordinary status notifications still apply. |
+| D11 | Approval alerts: Normal sends none; High alerts eligible exact-group donors; Critical alerts the same donors plus qualifying other hospitals with valid exact-group stock above their own minimum threshold. |
 | D12 | Screening answer editing calls Request Management directly from the backend using `ScreeningAgent__BaseUrl`, because validation must succeed before superseding the old version. |
 | D13 | Malaria-risk countries use the fixed sourced list in `eligibility_rules.py`; unknown country names receive the other-travel rule. The current NBTS deferral list remains **TO CONFIRM**. |
 | D14 | With no flags the recommendation is “No flags raised”; any flag becomes “Requires Doctor Review”, with risk indicating likely deferral or review. |

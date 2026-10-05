@@ -476,7 +476,7 @@ namespace LifeLink.Tests
         // ---------------- Background sweeps ----------------
 
         [Fact]
-        public async Task Request_Expiry_Sweep_Skips_A_Request_Changed_At_The_Same_Moment_And_Expires_The_Rest()
+        public async Task Request_Expiry_Sweep_Is_A_NoOp_Even_For_Old_Requests()
         {
             var w = await SeedAsync();
             var changed = await AddApprovedRequestAsync(w, group: "O+");
@@ -490,14 +490,14 @@ namespace LifeLink.Tests
 
             var expired = await new RequestExpiryService(sweep, NullLogger<RequestExpiryService>.Instance).ProcessExpiredRequestsAsync();
 
-            Assert.Equal(1, expired);
+            Assert.Equal(0, expired);
             using var check = w.NewContext();
             Assert.Equal(BloodRequestStatus.Cancelled, (await check.BloodRequests.FindAsync(changed.BloodRequestId))!.Status);
-            Assert.Equal(BloodRequestStatus.Rejected, (await check.BloodRequests.FindAsync(other.BloodRequestId))!.Status);
+            Assert.Equal(BloodRequestStatus.Approved, (await check.BloodRequests.FindAsync(other.BloodRequestId))!.Status);
         }
 
         [Fact]
-        public async Task Opening_A_Request_While_The_Sweep_Expires_It_Shows_The_Current_State_Instead_Of_409()
+        public async Task Opening_An_Old_Request_Does_Not_Change_Its_State()
         {
             var w = await SeedAsync();
             var request = await AddApprovedRequestAsync(w);
@@ -509,7 +509,7 @@ namespace LifeLink.Tests
             await new RequestExpiryService(w.NewContext(), NullLogger<RequestExpiryService>.Instance).ProcessExpiredRequestsAsync();
             var shown = await new BloodRequestService(viewer).GetRequestByIdAsync(request.BloodRequestId);
 
-            Assert.Equal(nameof(BloodRequestStatus.Rejected), shown!.Status);
+            Assert.Equal(nameof(BloodRequestStatus.Approved), shown!.Status);
         }
 
         [Fact]

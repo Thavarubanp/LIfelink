@@ -214,7 +214,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Suspended_Requests_Are_Hidden_From_Donors_And_Skipped_By_The_Expiry_Sweep_Until_Lifted()
+        public async Task Suspended_Requests_Are_Hidden_And_Legacy_Expiry_Never_Closes_Them()
         {
             var w = await SeedAsync();
             var overdue = await AddRequestAsync(w, BloodRequestStatus.Approved, expiry: DateTime.UtcNow.AddDays(3));
@@ -228,7 +228,9 @@ namespace LifeLink.Tests
             Assert.Equal(0, await sweep.ProcessExpiredRequestsAsync());
 
             await w.Actions.LiftRequestAsync(overdue.BloodRequestId, w.Admin.UserId);
-            Assert.Equal(1, await sweep.ProcessExpiredRequestsAsync()); // the next sweep after the lift expires it
+            Assert.Equal(0, await sweep.ProcessExpiredRequestsAsync());
+            Assert.Contains(await new BloodRequestService(w.Db).GetPublicRequestsAsync(), r => r.BloodRequestId == overdue.BloodRequestId);
+            Assert.Equal(BloodRequestStatus.Approved, tracked.Status);
         }
 
         [Fact]

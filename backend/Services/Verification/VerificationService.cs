@@ -146,8 +146,8 @@ namespace LifeLink.Services.Verification
         private async Task DispatchApprovalAlertsAsync(BloodRequest request)
         {
             var priority = !string.IsNullOrWhiteSpace(request.Priority) ? request.Priority : "Normal";
-            // Normal and High priority: no alerts to anyone (donors find it in the public list); the creator, the hospital
-            // and the assigned doctor still get their usual status notifications. Only Critical requests alert (D11).
+            // Normal has no proactive alert. High alerts exact-group eligible donors; Critical also alerts qualifying
+            // other hospitals. Recipient authority remains in the backend allowlists below.
             if (!NotificationAgentService.IsAlertPriority(priority))
             {
                 return;
@@ -156,7 +156,9 @@ namespace LifeLink.Services.Verification
             if (_planningAgent != null)
             {
                 var candidates = await _notificationAgent.GetEligibleDonorCandidatesAsync(request.BloodRequestId, request.BloodGroup, request.PatientUserId);
-                var hospitalIds = await _notificationAgent.GetAlertHospitalIdsAsync(request.HospitalId, request.BloodGroup);
+                var hospitalIds = NotificationAgentService.AlertsHospitals(priority)
+                    ? await _notificationAgent.GetAlertHospitalIdsAsync(request.HospitalId, request.BloodGroup)
+                    : new List<Guid>();
                 var hospitalName = await _context.Hospitals.Where(h => h.HospitalId == request.HospitalId).Select(h => h.Name).FirstOrDefaultAsync() ?? "Partner Hospital";
 
                 var planResult = await _planningAgent.DispatchPlanAsync(new PlanRequestDto

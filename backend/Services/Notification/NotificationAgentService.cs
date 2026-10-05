@@ -41,7 +41,7 @@ namespace LifeLink.Services.Notification
         }
 
         /// <summary>
-        /// Donors who may receive a donation alert for this request (Critical requests only). Every rule is checked
+        /// Donors who may receive a donation alert for this request (High and Critical requests only). Every rule is checked
         /// here and again by the Notification agent: plain donor account; Active, not suspended, not permanently blocked;
         /// a SAVED blood group EXACTLY equal to the request's (users without a saved group are never alerted); 120-day
         /// interval; age 18-60 when known; no active donation process; not the request creator; not already accepted or
@@ -76,25 +76,43 @@ namespace LifeLink.Services.Notification
         }
 
         /// <summary>
-        /// Approved, non-suspended hospitals other than the requesting one that hold the EXACT blood group (at least one
-        /// available, unexpired packet of it).
+        /// Approved, non-suspended hospitals other than the requesting one whose available, unexpired packets for the
+        /// exact blood group are strictly above that hospital's configured minimum threshold.
         /// </summary>
-        public Task<List<Guid>> GetAlertHospitalIdsAsync(Guid requestingHospitalId, string bloodGroup)
+        public async Task<List<Guid>> GetAlertHospitalIdsAsync(Guid requestingHospitalId, string bloodGroup)
         {
             var now = DateTime.UtcNow;
-            return _context.Hospitals
-                .Where(h => h.IsVerified && !h.IsSuspended && h.HospitalId != requestingHospitalId &&
-                            _context.BloodPackets.Any(p => p.HospitalId == h.HospitalId && p.BloodGroup == bloodGroup &&
-                                                           p.Status == BloodPacketStatus.Available && p.ExpiryDate > now))
-                .Select(h => h.HospitalId)
+            var thresholds = await _context.BloodInventories
+                .Where(i => i.DeletedAt == null && i.BloodGroup == bloodGroup &&
+                            i.Hospital.IsVerified && !i.Hospital.IsSuspended && !i.Hospital.IsPermanentlyBlocked &&
+                            i.HospitalId != requestingHospitalId)
+                .Select(i => new { i.HospitalId, i.MinimumThreshold })
                 .ToListAsync();
+            if (thresholds.Count == 0) return new List<Guid>();
+
+            var candidateIds = thresholds.Select(i => i.HospitalId).ToList();
+            var availableCounts = await _context.BloodPackets
+                .Where(p => candidateIds.Contains(p.HospitalId) && p.BloodGroup == bloodGroup &&
+                            p.Status == BloodPacketStatus.Available && p.ExpiryDate > now)
+                .GroupBy(p => p.HospitalId)
+                .Select(g => new { HospitalId = g.Key, Units = g.Count() })
+                .ToDictionaryAsync(x => x.HospitalId, x => x.Units);
+
+            return thresholds
+                .Where(i => availableCounts.GetValueOrDefault(i.HospitalId) > i.MinimumThreshold)
+                .Select(i => i.HospitalId)
+                .ToList();
         }
 
         /// <summary>
-        /// Only Critical requests send alerts (owner's decision D11). Normal and High requests alert nobody: donors find
-        /// them in the public list, and the creator, hospital and assigned doctor get their usual status notifications.
+        /// High alerts exact-group eligible donors; Critical alerts those donors plus qualifying hospitals. Normal has no
+        /// proactive approval alert.
         /// </summary>
         public static bool IsAlertPriority(string? priority) =>
+            (priority ?? "Normal").Trim().Equals("High", StringComparison.OrdinalIgnoreCase) ||
+            (priority ?? "Normal").Trim().Equals("Critical", StringComparison.OrdinalIgnoreCase);
+
+        public static bool AlertsHospitals(string? priority) =>
             (priority ?? "Normal").Trim().Equals("Critical", StringComparison.OrdinalIgnoreCase);
 
         public async Task<int> NotifyEligibleDonorsAsync(Guid bloodRequestId, string bloodGroup, Guid hospitalId, string priority)
@@ -200,7 +218,9 @@ namespace LifeLink.Services.Notification
             var creatorId = await _context.BloodRequests.Where(r => r.BloodRequestId == bloodRequestId).Select(r => (Guid?)r.PatientUserId).FirstOrDefaultAsync();
 
             var candidates = await GetEligibleDonorCandidatesAsync(bloodRequestId, bloodGroup, creatorId);
-            var hospitalIds = await GetAlertHospitalIdsAsync(hospitalId, bloodGroup);
+            var hospitalIds = AlertsHospitals(priorityUpper)
+                ? await GetAlertHospitalIdsAsync(hospitalId, bloodGroup)
+                : new List<Guid>();
 
             var payload = new
             {
@@ -250,7 +270,10 @@ namespace LifeLink.Services.Notification
             if (!agentSuccess)
             {
                 await NotifyEligibleDonorsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
-                await NotifyUrgentHospitalsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                if (AlertsHospitals(priorityUpper))
+                {
+                    await NotifyUrgentHospitalsAsync(bloodRequestId, bloodGroup, hospitalId, priorityUpper);
+                }
             }
         }
 
