@@ -53,6 +53,15 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:mimeType="*/*"/>
         </intent>
+        <!-- Call or email a donor from the acceptance list (url_launcher) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="tel"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SENDTO"/>
+            <data android:scheme="mailto"/>
+        </intent>
         <!-- Take a photo to attach (image_picker) -->
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE"/>
