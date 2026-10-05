@@ -3,6 +3,8 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Scan packet QR codes; the app also works without a camera (type the tracking number) -->
     <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Phone notifications for new LifeLink notifications (Android 13+ asks the user) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="LifeLink"

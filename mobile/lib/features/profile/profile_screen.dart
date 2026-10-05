@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/config/constants.dart';
 import '../../core/config/env.dart';
+import '../../core/notifications/phone_notifications.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/theme_controller.dart';
 import '../../core/widgets/badges.dart';
@@ -71,6 +72,7 @@ class ProfileScreen extends ConsumerWidget {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoutes.changePassword),
                   ),
+                  const _PhoneNotificationsTile(),
                   ListTile(
                     leading: const Icon(Icons.dns_outlined),
                     title: const Text('Server'),
@@ -124,4 +126,51 @@ class _HospitalCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Phone notifications on/off; asks for the Android 13+ permission again when it was refused.
+class _PhoneNotificationsTile extends StatefulWidget {
+  const _PhoneNotificationsTile();
+
+  @override
+  State<_PhoneNotificationsTile> createState() => _PhoneNotificationsTileState();
+}
+
+class _PhoneNotificationsTileState extends State<_PhoneNotificationsTile> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final on = await PhoneNotifications.instance.areEnabled();
+    if (mounted) setState(() => _enabled = on);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+        leading: const Icon(Icons.notifications_active_outlined),
+        title: const Text('Phone notifications'),
+        subtitle: Text(_enabled == null
+            ? 'Checking...'
+            : _enabled!
+                ? 'On: new messages and alerts, also when the app is closed'
+                : 'Off: allow them to be told about messages and alerts'),
+        trailing: _enabled == false
+            ? TextButton(
+                onPressed: () async {
+                  final ok = await PhoneNotifications.instance.requestPermission();
+                  await _check();
+                  if (!ok && context.mounted) {
+                    showSnack(context, 'Notifications are blocked. Allow them in Settings → Apps → LifeLink → Notifications.',
+                        type: SnackType.warning);
+                  }
+                },
+                child: const Text('Allow'),
+              )
+            : null,
+      );
 }

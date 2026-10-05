@@ -7,6 +7,10 @@ import 'package:lifelink_mobile/core/routing/routes.dart';
 import 'package:lifelink_mobile/core/theme/app_theme.dart';
 import 'package:lifelink_mobile/features/notifications/notifications_repository.dart';
 
+import 'package:lifelink_mobile/features/admin/admin_repository.dart';
+import 'package:lifelink_mobile/features/admin/attention_controller.dart';
+import 'package:lifelink_mobile/features/governance/governance_repository.dart';
+
 import '../helpers.dart';
 
 AuthState signedIn({
@@ -79,6 +83,13 @@ void main() {
         overrides: [
           authControllerProvider.overrideWith(() => FakeAuthController(state)),
           unreadCountProvider.overrideWith(FakeUnreadCount.new),
+          adminAttentionProvider.overrideWith(FakeAttention.new),
+          adminStatsProvider.overrideWith((ref) async => AdminStats.fromJson({'totalHospitals': 1})),
+          governanceStatusProvider.overrideWith((ref) async => GovernanceStatus.fromJson({
+                'isSuspended': state.user?.isSuspended ?? false,
+                'suspendedEntity': 'User',
+                'profile': {'name': 'Test Person'},
+              })),
         ],
         retry: (_, _) => null,
       );
@@ -108,6 +119,14 @@ void main() {
     testWidgets('doctor with a temporary password lands on change password', (tester) async {
       await pumpRouter(tester, signedIn(roles: ['Doctor'], mustChangePassword: true));
       expect(find.text('Temporary password'), findsOneWidget);
+    });
+
+    testWidgets('admin lands on the admin shell: Home, Attention, Activity, More', (tester) async {
+      await pumpRouter(tester, signedIn(roles: ['Admin']));
+      expect(find.text('Administration'), findsOneWidget);
+      for (final tab in ['Home', 'Attention', 'Activity', 'More']) {
+        expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)), findsOneWidget);
+      }
     });
 
     testWidgets('donor lands on the donor shell with bottom navigation (Step 2 stubs)', (tester) async {
