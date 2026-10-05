@@ -6,6 +6,7 @@ import '../../features/auth/change_password_screen.dart';
 import '../../features/auth/forgot_password_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
+import '../../features/blood_requests/donor_home_screen.dart';
 import '../../features/governance/governance_status_screen.dart';
 import '../../features/governance/waiting_approval_screen.dart';
 import '../../features/home/more_screen.dart';
@@ -62,7 +63,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
         ],
         branches: [
-          (AppRoutes.donorHome, _step2('Donor home', 'Your requests, donations and eligibility at a glance.')),
+          (AppRoutes.donorHome, const DonorHomeScreen()),
           (AppRoutes.donorRequests, _step2('Blood requests', 'Available requests, accepting and your own requests.')),
           (AppRoutes.donorAcceptances, _step2('My donations', 'Screening interview, answers and doctor decisions.')),
           (
