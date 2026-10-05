@@ -39,6 +39,8 @@ class AppRoutes {
   static const createRequest = '/donor/requests/create';
   static const donorComplaints = '/donor/complaints';
   static const donorAppeals = '/donor/appeals';
+  static String requestDetail(String id) => '/donor/requests/$id';
+  static String screening(String acceptanceId) => '/donor/acceptances/$acceptanceId/screening';
 
   // Doctor (Step 3: Ahamed)
   static const doctorHome = '/doctor';
@@ -74,6 +76,8 @@ class AppRoutes {
   static List<String>? rolesFor(String path) {
     const rules = <(String, List<String>)>[
       (createRequest, [Roles.user, Roles.hospitalStaff, Roles.admin]),
+      (donorComplaints, [Roles.user, Roles.hospitalStaff]),
+      (donorAcceptances, [Roles.user]),
       (donorHome, [Roles.user, Roles.admin]),
       (hospitalHome, [Roles.hospitalStaff]),
       (doctorHome, [Roles.doctor]),

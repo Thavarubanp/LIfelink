@@ -36,6 +36,10 @@ List<RouteBase> hospitalRoutes() => [
             const MoreScreen(entries: [
               MoreEntry('Emergencies', Icons.emergency_outlined, AppRoutes.hospitalEmergencies,
                   subtitle: 'Raise and follow hospital emergencies'),
+              MoreEntry('Create blood request', Icons.add_circle_outline, AppRoutes.createRequest,
+                  subtitle: 'Create a request for your hospital'),
+              MoreEntry('Complaints', Icons.report_outlined, AppRoutes.donorComplaints,
+                  subtitle: 'File and follow complaints'),
               MoreEntry('Donate blood', Icons.volunteer_activism_outlined, AppRoutes.hospitalDonate,
                   subtitle: 'Donate packets to public requests'),
               MoreEntry('Scan packet', Icons.qr_code_scanner, AppRoutes.hospitalScan,

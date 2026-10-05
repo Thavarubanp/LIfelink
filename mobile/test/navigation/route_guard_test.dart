@@ -10,6 +10,9 @@ import 'package:lifelink_mobile/features/notifications/notifications_repository.
 import 'package:lifelink_mobile/features/admin/admin_repository.dart';
 import 'package:lifelink_mobile/features/admin/attention_controller.dart';
 import 'package:lifelink_mobile/features/governance/governance_repository.dart';
+import 'package:lifelink_mobile/features/blood_requests/blood_request_models.dart';
+import 'package:lifelink_mobile/features/blood_requests/blood_request_repository.dart';
+import 'package:lifelink_mobile/features/screening/screening_repository.dart';
 
 import 'package:lifelink_mobile/features/verification/verification_repository.dart';
 
@@ -83,6 +86,8 @@ void main() {
       expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.hospitalPacket('p1')), isNull);
       // Hospitals may open the (Step 2) create-request screen, like on the web
       expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.createRequest), isNull);
+      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.donorComplaints), isNull);
+      expect(resolveRedirect(signedIn(roles: ['Admin']), AppRoutes.donorRequests), isNull);
       expect(resolveRedirect(signedIn(roles: ['Doctor']), AppRoutes.donorRequests), AppRoutes.doctorHome);
     });
   });
@@ -105,6 +110,10 @@ void main() {
                 'suspendedEntity': 'User',
                 'profile': {'name': 'Test Person'},
               })),
+          donorHomeProvider.overrideWith((ref) async => DonorHomeData(
+            requests: const [], acceptances: const [], profile: DonorProfileSummary.fromJson({}))),
+          publicBloodRequestsProvider.overrideWith((ref, filter) async => const []),
+          myAcceptancesProvider.overrideWith((ref) async => const []),
         ],
         retry: (_, _) => null,
       );
@@ -152,10 +161,16 @@ void main() {
       }
     });
 
-    testWidgets('donor lands on the donor shell with bottom navigation (Step 2 stubs)', (tester) async {
+    testWidgets('donor lands on the implemented donor home shell', (tester) async {
       await pumpRouter(tester, signedIn());
       expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Coming in Step 2'), findsOneWidget);
+      expect(find.text('Your donor dashboard'), findsOneWidget);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Requests')));
+      await tester.pumpAndSettle();
+      expect(find.text('Available requests'), findsOneWidget);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Donations')));
+      await tester.pumpAndSettle();
+      expect(find.text('My donations'), findsOneWidget);
     });
   });
 }
