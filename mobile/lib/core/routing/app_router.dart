@@ -6,24 +6,24 @@ import '../../features/auth/change_password_screen.dart';
 import '../../features/auth/forgot_password_screen.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
+import '../../features/blood_requests/create_request_screen.dart';
 import '../../features/blood_requests/donor_home_screen.dart';
 import '../../features/blood_requests/public_requests_screen.dart';
 import '../../features/blood_requests/request_detail_screen.dart';
-import '../../features/blood_requests/create_request_screen.dart';
 import '../../features/complaints/complaints_screen.dart';
-import '../../features/screening/my_acceptances_screen.dart';
-import '../../features/screening/screening_interview_screen.dart';
 import '../../features/governance/governance_status_screen.dart';
 import '../../features/governance/waiting_approval_screen.dart';
 import '../../features/home/more_screen.dart';
 import '../../features/home/role_shell.dart';
 import '../../features/home/splash_screen.dart';
-import '../../features/home/stub_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/screening/my_acceptances_screen.dart';
+import '../../features/screening/screening_interview_screen.dart';
 import '../auth/auth_controller.dart';
 import '../../features/admin/directory/directory.dart' show myActivityScreen;
 import 'admin_routes.dart';
+import 'doctor_routes.dart';
 import 'hospital_routes.dart';
 import 'routes.dart';
 
@@ -81,34 +81,37 @@ final routerProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
-      GoRoute(path: AppRoutes.createRequest, parentNavigatorKey: rootNavigatorKey, builder: (_, state) => CreateRequestScreen(
-        initialPriority: state.uri.queryParameters['priority'], initialBloodGroup: state.uri.queryParameters['bloodGroup'])),
-      GoRoute(path: '${AppRoutes.donorRequests}/:requestId', parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) => RequestDetailScreen(requestId: state.pathParameters['requestId']!)),
-      GoRoute(path: '${AppRoutes.donorAcceptances}/:acceptanceId/screening', parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) => ScreeningInterviewScreen(acceptanceId: state.pathParameters['acceptanceId']!)),
-      GoRoute(path: AppRoutes.donorComplaints, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => const ComplaintsScreen()),
-      GoRoute(path: AppRoutes.donorAppeals, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => const MyAppealsScreen()),
+      GoRoute(
+        path: AppRoutes.createRequest,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => CreateRequestScreen(
+          initialPriority: state.uri.queryParameters['priority'],
+          initialBloodGroup: state.uri.queryParameters['bloodGroup'],
+        ),
+      ),
+      GoRoute(
+        path: '${AppRoutes.donorRequests}/:requestId',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => RequestDetailScreen(requestId: state.pathParameters['requestId']!),
+      ),
+      GoRoute(
+        path: '${AppRoutes.donorAcceptances}/:acceptanceId/screening',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => ScreeningInterviewScreen(acceptanceId: state.pathParameters['acceptanceId']!),
+      ),
+      GoRoute(
+        path: AppRoutes.donorComplaints,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const ComplaintsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.donorAppeals,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const MyAppealsScreen(),
+      ),
 
       // Doctor (Step 3: Ahamed)
-      _shell(
-        tabs: const [
-          ShellTab('Requests', Icons.assignment_outlined, Icons.assignment),
-          ShellTab('Reports', Icons.fact_check_outlined, Icons.fact_check),
-          ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
-        ],
-        branches: [
-          (AppRoutes.doctorHome, _step3('Assigned requests', 'Approve or reject the blood requests assigned to you.')),
-          (AppRoutes.doctorReports, _step3('Screening reports', 'Review donor screening report versions.')),
-          (
-            AppRoutes.doctorMore,
-            const MoreScreen(entries: [
-              MoreEntry('Hospital donations', Icons.local_hospital_outlined, AppRoutes.doctorHospitalDonations),
-            ]),
-          ),
-        ],
-      ),
-      _stubRoute(AppRoutes.doctorHospitalDonations, _step3('Hospital donations', 'Approve or reject hospital donations.')),
+      ...doctorRoutes(),
 
       // Admin (Step 4: Mayureshan)
       ...adminRoutes(),
@@ -117,10 +120,6 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.onDispose(router.dispose);
   return router;
 });
-
-Widget _step3(String title, String description) => StubScreen(title: title, step: 3, owner: 'Ahamed MSA', description: description);
-
-GoRoute _stubRoute(String path, Widget screen) => GoRoute(path: path, builder: (_, _) => screen);
 
 /// A role's bottom-navigation shell: one branch (with its own navigation stack) per tab.
 /// [builders] replaces a branch's fixed screen when it needs the route state (e.g. query parameters).

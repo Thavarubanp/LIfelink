@@ -14,6 +14,8 @@ import 'package:lifelink_mobile/features/blood_requests/blood_request_models.dar
 import 'package:lifelink_mobile/features/blood_requests/blood_request_repository.dart';
 import 'package:lifelink_mobile/features/screening/screening_repository.dart';
 
+import 'package:lifelink_mobile/features/verification/verification_repository.dart';
+
 import '../helpers.dart';
 
 AuthState signedIn({
@@ -66,6 +68,18 @@ void main() {
       expect(resolveRedirect(s, AppRoutes.changePassword), isNull);
     });
 
+    test('Step 3 routes: doctors and hospital staff only', () {
+      final doctor = signedIn(roles: ['Doctor']);
+      final staff = signedIn(roles: ['HospitalStaff'], approval: 'Approved');
+      expect(resolveRedirect(doctor, AppRoutes.doctorReport('a1')), isNull);
+      expect(resolveRedirect(doctor, AppRoutes.doctorRequestDonors('r1')), isNull);
+      expect(resolveRedirect(doctor, AppRoutes.hospitalVerifyRequests), AppRoutes.doctorHome);
+      expect(resolveRedirect(staff, AppRoutes.hospitalVerifyRequests), isNull);
+      expect(resolveRedirect(staff, AppRoutes.hospitalRequestDonors('r1')), isNull);
+      expect(resolveRedirect(staff, AppRoutes.doctorReport('a1')), AppRoutes.hospitalHome);
+      expect(resolveRedirect(signedIn(), AppRoutes.hospitalDoctors), AppRoutes.donorHome);
+    });
+
     test('wrong role goes to the own home', () {
       expect(resolveRedirect(signedIn(), AppRoutes.hospitalInventory), AppRoutes.donorHome);
       expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.adminHome), AppRoutes.hospitalHome);
@@ -90,6 +104,7 @@ void main() {
           unreadCountProvider.overrideWith(FakeUnreadCount.new),
           adminAttentionProvider.overrideWith(FakeAttention.new),
           adminStatsProvider.overrideWith((ref) async => AdminStats.fromJson({'totalHospitals': 1})),
+          assignedRequestsProvider.overrideWith((ref) async => []),
           governanceStatusProvider.overrideWith((ref) async => GovernanceStatus.fromJson({
                 'isSuspended': state.user?.isSuspended ?? false,
                 'suspendedEntity': 'User',
@@ -128,6 +143,14 @@ void main() {
     testWidgets('doctor with a temporary password lands on change password', (tester) async {
       await pumpRouter(tester, signedIn(roles: ['Doctor'], mustChangePassword: true));
       expect(find.text('Temporary password'), findsOneWidget);
+    });
+
+    testWidgets('doctor lands on the doctor shell: assigned requests', (tester) async {
+      await pumpRouter(tester, signedIn(roles: ['Doctor']));
+      expect(find.text('Assigned requests'), findsOneWidget);
+      for (final tab in ['Requests', 'Reports', 'More']) {
+        expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)), findsOneWidget);
+      }
     });
 
     testWidgets('admin lands on the admin shell: Home, Attention, Activity, More', (tester) async {

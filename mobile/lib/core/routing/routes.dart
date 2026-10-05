@@ -47,6 +47,9 @@ class AppRoutes {
   static const doctorReports = '/doctor/reports';
   static const doctorMore = '/doctor/more';
   static const doctorHospitalDonations = '/doctor/hospital-donations';
+  static String doctorReport(String acceptanceId) => '/doctor/reports/$acceptanceId';
+  static String doctorRequestDonors(String requestId) => '/doctor/requests/$requestId/donors';
+  static String hospitalRequestDonors(String requestId) => '/hospital/requests/$requestId/donors';
 
   // Admin (Step 4: Mayureshan)
   static const adminHome = '/admin';

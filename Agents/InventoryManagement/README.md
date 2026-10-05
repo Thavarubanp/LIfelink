@@ -62,7 +62,7 @@ through the Supervisor, so turning the loop on would produce duplicate alerts.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `INTERNAL_SERVICE_API_KEY` | `LifeLink-Internal-Agent-Key-2026` | Must match the backend and the other agents. Local-development default only; shared and production environments must override it (see the root README) |
+| `INTERNAL_SERVICE_API_KEY` | Required secret | Must match the backend's `InternalService__ApiKey` and the other agents; never commit or document its value |
 | `SCHEDULER_ENABLED` | `false` | Legacy polling loop |
 | `SCHEDULE_INTERVAL_MINUTES` | `30` | Legacy polling interval |
 | `BACKEND_API_URL`, `INVENTORY_ENDPOINT`, `NOTIFICATION_ENDPOINT`, `REQUEST_TIMEOUT` | see `.env.example` | Legacy workflow only |

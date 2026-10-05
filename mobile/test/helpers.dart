@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -120,3 +122,17 @@ class FakeAttention extends AdminAttentionController {
   @override
   Future<void> refresh() async {}
 }
+
+/// A screening agent report (lifelink.screening.v2) as ReportJson, for the Step 3 tests.
+String reportJson({List<Map<String, dynamic>> flags = const []}) => jsonEncode({
+      'risk_level': flags.any((f) => f['severity'] == 'defer') ? 'HIGH' : 'LOW',
+      'recommendation': 'Requires Doctor Review',
+      'summary': 'Donor answered all questions.',
+      'governance': 'The AI never approves or rejects donors.',
+      'flags': flags,
+      'sections': [
+        {'index': 1, 'title': 'Personal details', 'confidential': false, 'items': [{'question_id': 'P_DOB', 'question': 'Date of birth', 'answer': '1960-01-01'}]},
+        {'index': 2, 'title': 'Health', 'confidential': false, 'items': [{'question_id': 'H_WEIGHT', 'question': 'Weight', 'answer': '70 kg'}]},
+        {'index': 7, 'title': 'Confidential', 'confidential': true, 'items': []},
+      ],
+    });
