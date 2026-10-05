@@ -22,6 +22,7 @@ class Transfer {
     required this.packetTrackingNumbers,
     required this.requestedAt,
     required this.approvedAt,
+    this.createdAt,
     required this.isSuspended,
     required this.suspensionReason,
   });
@@ -42,6 +43,7 @@ class Transfer {
         packetTrackingNumbers: stringList(j['packetTrackingNumbers']),
         requestedAt: parseDate(j['requestedAt']),
         approvedAt: parseDate(j['approvedAt']),
+        createdAt: parseDate(j['createdAt']),
         isSuspended: boolOf(j['isSuspended']),
         suspensionReason: j['suspensionReason']?.toString(),
       );
@@ -61,6 +63,7 @@ class Transfer {
   final List<String> packetTrackingNumbers;
   final DateTime? requestedAt;
   final DateTime? approvedAt;
+  final DateTime? createdAt;
   final bool isSuspended;
   final String? suspensionReason;
 

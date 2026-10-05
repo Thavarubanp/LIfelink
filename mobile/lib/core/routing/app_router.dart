@@ -15,6 +15,7 @@ import '../../features/home/stub_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../auth/auth_controller.dart';
+import '../../features/admin/directory/directory.dart' show myActivityScreen;
 import 'admin_routes.dart';
 import 'hospital_routes.dart';
 import 'routes.dart';
@@ -46,6 +47,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: AppRoutes.governanceStatus, builder: (_, _) => const GovernanceStatusScreen()),
       GoRoute(path: AppRoutes.notifications, builder: (_, _) => const NotificationsScreen()),
       GoRoute(path: AppRoutes.profile, builder: (_, _) => const ProfileScreen()),
+      GoRoute(path: AppRoutes.myActivity, builder: (_, _) => myActivityScreen()),
 
       // Hospital staff (Step 1)
       ...hospitalRoutes(),

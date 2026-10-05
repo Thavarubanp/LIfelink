@@ -61,6 +61,12 @@ class MoreScreen extends ConsumerWidget {
                       onTap: () => context.push(e.path),
                     ),
                   ListTile(
+                    leading: const Icon(Icons.history, color: AppColors.red600),
+                    title: const Text('My activity'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.myActivity),
+                  ),
+                  ListTile(
                     leading: const UnreadBadge(child: Icon(Icons.notifications_outlined, color: AppColors.red600)),
                     title: const Text('Notifications'),
                     trailing: const Icon(Icons.chevron_right),

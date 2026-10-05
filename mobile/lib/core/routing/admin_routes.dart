@@ -5,11 +5,12 @@ import '../../features/admin/admin_home_screen.dart';
 import '../../features/admin/appeals/admin_appeals.dart';
 import '../../features/admin/attention_controller.dart';
 import '../../features/admin/complaints/admin_complaints.dart';
+import '../../features/admin/directory/directory.dart';
+import '../../features/admin/oversight/admin_activity_screen.dart';
 import '../../features/admin/registrations/registration_detail_screen.dart';
 import '../../features/admin/registrations/registrations_screen.dart';
 import '../../features/home/more_screen.dart';
 import '../../features/home/role_shell.dart';
-import '../../features/home/stub_screen.dart';
 import 'app_router.dart';
 import 'routes.dart';
 
@@ -25,15 +26,58 @@ List<RouteBase> adminRoutes() => [
         branches: [
           (AppRoutes.adminHome, const AdminHomeScreen()),
           (AppRoutes.adminAttention, const AttentionScreen()),
-          (AppRoutes.adminActivity, _part('Activity log', 5)),
+          (AppRoutes.adminActivity, const AdminActivityScreen()),
           (
             AppRoutes.adminMore,
             const MoreScreen(entries: [
               MoreEntry('Hospital registrations', Icons.domain_add_outlined, AppRoutes.adminRegistrations),
               MoreEntry('Appeals', Icons.gavel_outlined, AppRoutes.adminAppeals),
               MoreEntry('Complaints', Icons.report_outlined, AppRoutes.adminComplaints),
+              MoreEntry('Users', Icons.people_outline, AppRoutes.adminUsers),
+              MoreEntry('Hospitals', Icons.local_hospital_outlined, AppRoutes.adminHospitals),
               MoreEntry('Donor features', Icons.bloodtype_outlined, AppRoutes.donorRequests),
             ]),
+          ),
+        ],
+        builders: {
+          AppRoutes.adminActivity: (state) => AdminActivityScreen(initialTab: state.uri.queryParameters['tab']),
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.adminUsers,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const AdminUsersScreen(),
+        routes: [
+          GoRoute(
+            path: ':userId',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, state) => AdminUserProfileScreen(userId: state.pathParameters['userId']!),
+            routes: [
+              GoRoute(
+                path: 'activity',
+                parentNavigatorKey: rootNavigatorKey,
+                builder: (_, state) => userActivityScreen(state.pathParameters['userId']!),
+              ),
+            ],
+          ),
+        ],
+      ),
+      GoRoute(
+        path: AppRoutes.adminHospitals,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const AdminHospitalsScreen(),
+        routes: [
+          GoRoute(
+            path: ':hospitalId',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, state) => AdminHospitalProfileScreen(hospitalId: state.pathParameters['hospitalId']!),
+            routes: [
+              GoRoute(
+                path: 'activity',
+                parentNavigatorKey: rootNavigatorKey,
+                builder: (_, state) => hospitalActivityScreen(state.pathParameters['hospitalId']!),
+              ),
+            ],
           ),
         ],
       ),
@@ -74,7 +118,3 @@ List<RouteBase> adminRoutes() => [
         ],
       ),
     ];
-
-/// Step 4 screens not built yet in this part (replaced part by part).
-Widget _part(String title, int part) =>
-    StubScreen(title: title, step: 4, owner: 'Mayureshan P', description: '$title arrives in Step 4, part $part.');

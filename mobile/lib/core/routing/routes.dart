@@ -15,6 +15,7 @@ class AppRoutes {
   static const governanceStatus = '/governance/status';
   static const notifications = '/notifications';
   static const profile = '/profile';
+  static const myActivity = '/activity';
 
   // Hospital staff (Step 1: Thavaruban; verify/doctors: Step 3)
   static const hospitalHome = '/hospital';
@@ -52,6 +53,8 @@ class AppRoutes {
   static const adminAppeals = '/admin/appeals';
   static const adminComplaints = '/admin/complaints';
   static const adminActivity = '/admin/activity';
+  static const adminUsers = '/admin/users';
+  static const adminHospitals = '/admin/hospitals';
 
   static const publicPaths = {login, register, forgotPassword};
 
