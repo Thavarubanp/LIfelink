@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
+using LifeLink.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeLink.Services.Notification
@@ -38,6 +39,18 @@ namespace LifeLink.Services.Notification
             doctorId == null
                 ? Task.FromResult<Guid?>(null)
                 : context.Doctors.Where(d => d.DoctorId == doctorId && d.DeletedAt == null).Select(d => d.UserId).FirstOrDefaultAsync();
+
+        /// <summary>Login of a doctor who is currently able to act in the supplied hospital workflow.</summary>
+        public static Task<Guid?> EligibleDoctorUserIdAsync(AppDbContext context, Guid? doctorId, Guid? hospitalId = null) =>
+            doctorId == null
+                ? Task.FromResult<Guid?>(null)
+                : context.Doctors
+                    .Where(d => d.DoctorId == doctorId && (!hospitalId.HasValue || d.HospitalId == hospitalId.Value) &&
+                                d.IsActive && !d.MustChangePassword && d.DeletedAt == null && d.UserId != null &&
+                                context.Users.Any(u => u.UserId == d.UserId.Value && u.AccountStatus == AccountStatus.Active &&
+                                                       !u.IsSuspended && !u.IsPermanentlyBlocked))
+                    .Select(d => d.UserId)
+                    .FirstOrDefaultAsync();
 
         public static string ShortId(Guid id) => id.ToString()[..8];
     }

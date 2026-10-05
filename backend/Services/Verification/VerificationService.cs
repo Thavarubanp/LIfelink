@@ -72,6 +72,13 @@ namespace LifeLink.Services.Verification
 
             await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "BloodRequest.Verified", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
                 $"Verified blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}, {request.UnitsRequired} unit(s)) and assigned Dr. {doctor.FirstName} {doctor.LastName}.");
+            var doctorUserId = await NotificationFactory.EligibleDoctorUserIdAsync(_context, doctor.DoctorId, hospitalId);
+            if (doctorUserId.HasValue)
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForUser(doctorUserId.Value, "Doctor", "BloodRequestReviewAssigned",
+                    "Blood Request Ready for Review",
+                    $"Blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}, {request.UnitsRequired} unit(s)) has been assigned to you for clinical review."));
+            }
             await _context.SaveChangesAsync();
 
             return MapVerification(verification, doctor);
@@ -109,6 +116,12 @@ namespace LifeLink.Services.Verification
 
             await ActivityLogger.AddForHospitalAsync(_context, hospitalId, "BloodRequest.RejectedByHospital", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
                 $"Rejected blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}): {message}");
+            if (!await IsHospitalCreatedRequestAsync(request))
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForUser(request.PatientUserId, "User", "BloodRequestRejected",
+                    "Blood Request Rejected",
+                    $"Your blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was rejected by the hospital. Reason: {message}"));
+            }
             await _context.SaveChangesAsync();
         }
 
@@ -213,6 +226,12 @@ namespace LifeLink.Services.Verification
 
             await ActivityLogger.AddAsync(_context, doctorUserId, "BloodRequest.RejectedByDoctor", ActivityLogger.Types.BloodRequest, request.BloodRequestId,
                 $"Rejected blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}): {message}", doctor.HospitalId);
+            if (!await IsHospitalCreatedRequestAsync(request))
+            {
+                await _context.Notifications.AddAsync(NotificationFactory.ForUser(request.PatientUserId, "User", "BloodRequestRejected",
+                    "Blood Request Not Approved",
+                    $"Your blood request #{NotificationFactory.ShortId(request.BloodRequestId)} was not approved by the doctor. Reason: {message}"));
+            }
             await _context.SaveChangesAsync();
 
             return MapVerification(verification, doctor);
@@ -280,6 +299,9 @@ namespace LifeLink.Services.Verification
 
             return message;
         }
+
+        private Task<bool> IsHospitalCreatedRequestAsync(BloodRequest request) =>
+            _context.UserRoles.AnyAsync(ur => ur.UserId == request.PatientUserId && ur.Role.Name == "HospitalStaff");
 
         private static BloodRequestVerificationResponseDto MapVerification(BloodRequestVerification verification, Doctor? doctor)
         {

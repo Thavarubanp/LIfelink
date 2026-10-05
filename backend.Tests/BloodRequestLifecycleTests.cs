@@ -91,9 +91,12 @@ namespace LifeLink.Tests
             var s = await SeedAsync();
             var verification = CreateVerificationService(s.Context);
             var request = await AddRequestAsync(s.Context, s.Patient.UserId, s.Hospital.HospitalId);
+            await s.Context.Users.AddAsync(new User { UserId = s.Doctor.UserId!.Value, FirstName = s.Doctor.FirstName, LastName = s.Doctor.LastName, Email = s.Doctor.Email });
+            await s.Context.SaveChangesAsync();
 
             await verification.VerifyBloodRequestAsync(request.BloodRequestId, s.Hospital.HospitalId, s.Doctor.DoctorId);
             Assert.Equal(BloodRequestStatus.Verified, (await s.Context.BloodRequests.FindAsync(request.BloodRequestId))!.Status);
+            Assert.Single(s.Context.Notifications.Where(n => n.UserId == s.Doctor.UserId && n.NotificationType == "BloodRequestReviewAssigned"));
 
             var assigned = await new BloodRequestService(s.Context).GetAssignedRequestsAsync(s.Doctor.UserId!.Value);
             var dto = Assert.Single(assigned);
@@ -149,6 +152,20 @@ namespace LifeLink.Tests
             var updated = await s.Context.BloodRequests.FindAsync(request.BloodRequestId);
             Assert.Equal(BloodRequestStatus.Rejected, updated!.Status);
             Assert.Equal("Incomplete patient details", updated.RejectionReason);
+            var notification = Assert.Single(s.Context.Notifications.Where(n => n.UserId == s.Patient.UserId));
+            Assert.Contains("Incomplete patient details", notification.Message);
+        }
+
+        [Fact]
+        public async Task Hospital_Created_Request_Rejection_Does_Not_Self_Notify()
+        {
+            var s = await SeedAsync();
+            var request = await AddRequestAsync(s.Context, s.HospitalStaff.UserId, s.Hospital.HospitalId);
+
+            await CreateVerificationService(s.Context).RejectBloodRequestByHospitalAsync(
+                request.BloodRequestId, s.Hospital.HospitalId, "Not needed");
+
+            Assert.DoesNotContain(s.Context.Notifications, n => n.UserId == s.HospitalStaff.UserId || n.HospitalId == s.Hospital.HospitalId);
         }
 
         [Fact]
@@ -165,6 +182,8 @@ namespace LifeLink.Tests
             var updated = await s.Context.BloodRequests.FindAsync(request.BloodRequestId);
             Assert.Equal(BloodRequestStatus.Rejected, updated!.Status);
             Assert.Equal("Not medically required", updated.RejectionReason);
+            var notification = Assert.Single(s.Context.Notifications.Where(n => n.UserId == s.Patient.UserId));
+            Assert.Contains("Not medically required", notification.Message);
         }
 
         [Fact]

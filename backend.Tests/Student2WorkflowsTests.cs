@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using LifeLink.Data;
@@ -6,16 +7,19 @@ using LifeLink.DTOs.Doctors;
 using LifeLink.DTOs.Hospitals;
 using LifeLink.DTOs.Matching;
 using LifeLink.DTOs.Verification;
+using LifeLink.DTOs.Planning;
 using LifeLink.Entities;
 using LifeLink.Services.Doctors;
 using LifeLink.Services.Hospitals;
 using LifeLink.Services.Matching;
 using LifeLink.Services.Notification;
+using LifeLink.Services.Planning;
 using LifeLink.Services.Verification;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Net.Http;
+using Moq;
 using Xunit;
 
 namespace LifeLink.Tests
@@ -128,6 +132,39 @@ namespace LifeLink.Tests
             var config = new ConfigurationBuilder().Build();
             var logger = NullLogger<NotificationAgentService>.Instance;
             return new NotificationAgentService(context, new HttpClient(), config, logger);
+        }
+
+        [Fact]
+        public async Task High_Healthy_Agent_Path_Persists_Eligible_Donor_But_No_Hospital_Alert()
+        {
+            var context = GetInMemoryDbContext();
+            var hospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Origin", IsVerified = true };
+            var doctorLogin = new User { UserId = Guid.NewGuid(), FirstName = "Doc", LastName = "Tor", Email = "doc@test" };
+            var doctor = new Doctor { DoctorId = Guid.NewGuid(), UserId = doctorLogin.UserId, HospitalId = hospital.HospitalId,
+                FirstName = "Doc", LastName = "Tor", Email = doctorLogin.Email, MustChangePassword = false };
+            var donor = new User { UserId = Guid.NewGuid(), FirstName = "Exact", LastName = "Donor", Email = "donor@test", BloodGroup = "A+" };
+            await context.Hospitals.AddAsync(hospital);
+            await context.Users.AddRangeAsync(doctorLogin, donor);
+            await context.Doctors.AddAsync(doctor);
+            await context.SaveChangesAsync();
+            var requestId = await SeedVerifiedRequestAsync(context, hospital.HospitalId, doctor.DoctorId, "A+", "High");
+
+            var planning = new Mock<IPlanningAgentService>();
+            planning.Setup(p => p.DispatchPlanAsync(It.IsAny<PlanRequestDto>())).ReturnsAsync(new PlanResponseDto
+            {
+                Success = true,
+                Notifications = new List<AgentNotificationDto>
+                {
+                    new() { RecipientType = "Donor", RecipientId = donor.UserId.ToString(), NotificationType = "EligibleDonorAlert", Title = "Help", Message = "Help" },
+                    new() { RecipientType = "Hospital", RecipientId = Guid.NewGuid().ToString(), NotificationType = "UrgentHospitalAlert", Title = "Forged", Message = "Forged" }
+                }
+            });
+
+            await new VerificationService(context, CreateNotificationService(context), planning.Object)
+                .ApproveBloodRequestAsync(requestId, doctorLogin.UserId, null);
+
+            Assert.Single(context.Notifications.Where(n => n.UserId == donor.UserId && n.NotificationType == "EligibleDonorAlert"));
+            Assert.DoesNotContain(context.Notifications, n => n.NotificationType == "UrgentHospitalAlert");
         }
 
         [Theory]

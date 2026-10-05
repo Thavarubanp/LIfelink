@@ -10,7 +10,6 @@ from models.recommendation import Recommendation
 from services.inventory_service import InventoryService
 from services.matching_service import MatchingService
 from services.recommendation_service import RecommendationService
-from services.notification_service import NotificationService
 
 logger = logging.getLogger("inventory_management.workflow")
 
@@ -96,23 +95,6 @@ async def generate_recommendations_node(state: InventoryState) -> Dict[str, Any]
         return {"recommendations": []}
 
 
-# Node 6: Send Notifications
-async def send_notifications_node(state: InventoryState) -> Dict[str, Any]:
-    """Dispatch recommendations to backend notification endpoints."""
-    logger.info("WORKFLOW_NODE_6_START: Executing send_notifications_node...")
-    try:
-        raw_recommendations = state.get("recommendations", [])
-        recommendations = [Recommendation.model_validate(r) for r in raw_recommendations]
-
-        notification_service = NotificationService()
-        success = await notification_service.send_all_recommendations(recommendations)
-        logger.info(f"WORKFLOW_NODE_6_SUCCESS: Recommendation notification dispatch completed. Status = {success}")
-        return {"notifications_sent": success}
-    except Exception as e:
-        logger.error(f"WORKFLOW_NODE_6_ERROR: Error in send_notifications_node: {str(e)}", exc_info=True)
-        return {"notifications_sent": False}
-
-
 def build_workflow() -> Any:
     """Construct and compile the LangGraph workflow StateGraph."""
     logger.info("WORKFLOW_BUILD: Constructing LangGraph StateGraph...")
@@ -124,7 +106,6 @@ def build_workflow() -> Any:
     workflow.add_node("detect_surpluses", detect_surpluses_node)
     workflow.add_node("match_facilities", match_facilities_node)
     workflow.add_node("generate_recommendations", generate_recommendations_node)
-    workflow.add_node("send_notifications", send_notifications_node)
 
     # Add linear edges
     workflow.add_edge(START, "fetch_inventory")
@@ -132,8 +113,7 @@ def build_workflow() -> Any:
     workflow.add_edge("detect_shortages", "detect_surpluses")
     workflow.add_edge("detect_surpluses", "match_facilities")
     workflow.add_edge("match_facilities", "generate_recommendations")
-    workflow.add_edge("generate_recommendations", "send_notifications")
-    workflow.add_edge("send_notifications", END)
+    workflow.add_edge("generate_recommendations", END)
 
     compiled_graph = workflow.compile()
     logger.info("WORKFLOW_BUILD: LangGraph StateGraph compiled successfully.")

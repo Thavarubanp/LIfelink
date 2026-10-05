@@ -443,12 +443,9 @@ namespace LifeLink.Services.Notification
             var notification = await _context.Notifications.FindAsync(notificationId);
             if (notification == null) return false;
 
-            if (!isAdmin)
-            {
-                bool matchesUser = userId.HasValue && notification.UserId == userId.Value;
-                bool matchesHospital = hospitalId.HasValue && notification.HospitalId == hospitalId.Value;
-                if (!matchesUser && !matchesHospital) return false;
-            }
+            bool matchesUser = userId.HasValue && notification.UserId == userId.Value;
+            bool matchesHospital = hospitalId.HasValue && notification.HospitalId == hospitalId.Value;
+            if (!matchesUser && !matchesHospital) return false;
 
             notification.IsRead = true;
             await _context.SaveChangesAsync();
@@ -476,24 +473,21 @@ namespace LifeLink.Services.Notification
         public async Task<int> MarkAllNotificationsReadAsync(Guid? userId, Guid? hospitalId = null, bool isAdmin = false)
         {
             var query = _context.Notifications.Where(n => !n.IsRead && n.DismissedAt == null);
-            if (!isAdmin)
+            if (userId.HasValue && hospitalId.HasValue)
             {
-                if (userId.HasValue && hospitalId.HasValue)
-                {
-                    query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
-                }
-                else if (userId.HasValue)
-                {
-                    query = query.Where(n => n.UserId == userId.Value);
-                }
-                else if (hospitalId.HasValue)
-                {
-                    query = query.Where(n => n.HospitalId == hospitalId.Value);
-                }
-                else
-                {
-                    return 0;
-                }
+                query = query.Where(n => n.UserId == userId.Value || n.HospitalId == hospitalId.Value);
+            }
+            else if (userId.HasValue)
+            {
+                query = query.Where(n => n.UserId == userId.Value);
+            }
+            else if (hospitalId.HasValue)
+            {
+                query = query.Where(n => n.HospitalId == hospitalId.Value);
+            }
+            else
+            {
+                return 0;
             }
 
             var unreadNotifications = await query.ToListAsync();

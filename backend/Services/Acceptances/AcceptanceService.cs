@@ -441,7 +441,7 @@ namespace LifeLink.Services.Acceptances
 
             var request = await RequireRequestAsync(acceptance.BloodRequestId);
             SuspensionGuard.EnsureNotSuspended(request);
-            await NotifyAssignedDoctorOrHospitalAsync(request, latest.DoctorId, "ScreeningReportSuperseded", "Screening Report Being Updated",
+            await NotifyEligibleDoctorOrHospitalAsync(request, latest.DoctorId, "ScreeningReportSuperseded", "Screening Report Being Updated",
                 $"The donor is updating their screening answers for request #{NotificationFactory.ShortId(request.BloodRequestId)}. A new report version will follow.");
 
             await ActivityLogger.AddAsync(_context, donorUserId, "Screening.Reopened", ActivityLogger.Types.Screening, acceptance.AcceptanceId,
@@ -672,6 +672,7 @@ namespace LifeLink.Services.Acceptances
             request.UpdatedAt = now;
 
             var closedCount = await CompleteIfFulfilledAsync(request);
+            await NotifyExternalCreatorOfDonationProgressAsync(request, createdByHospital);
 
             await ActivityLogger.AddAsync(_context, actorUserId, "Donation.Recorded", ActivityLogger.Types.Donation, request.BloodRequestId,
                 $"Recorded {selected.Count} donation(s) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.FulfilledUnits}/{request.UnitsRequired} donated).", request.HospitalId);
@@ -908,6 +909,7 @@ namespace LifeLink.Services.Acceptances
             request.FulfilledUnits += packets.Count;
             request.UpdatedAt = now;
             await CompleteIfFulfilledAsync(request);
+            await NotifyExternalCreatorOfDonationProgressAsync(request, createdByHospital);
 
             var note = string.IsNullOrWhiteSpace(notes) ? string.Empty : $" Notes: {notes.Trim()}";
             await _context.Notifications.AddAsync(NotificationFactory.ForHospital(acceptance.DonorHospitalId!.Value, "HospitalDonationApproved",
@@ -1186,7 +1188,7 @@ namespace LifeLink.Services.Acceptances
             await _context.DonorVerifications.AddAsync(report);
             acceptance.Status = AcceptanceStatus.ScreeningCompleted;
 
-            await NotifyAssignedDoctorOrHospitalAsync(request, assignedDoctorId, "ScreeningReportSubmitted", "Donor Screening Report Ready",
+            await NotifyEligibleDoctorOrHospitalAsync(request, assignedDoctorId, "ScreeningReportSubmitted", "Donor Screening Report Ready",
                 $"A donor screening report (version {report.ReportVersion}) for blood request #{NotificationFactory.ShortId(request.BloodRequestId)} ({request.BloodGroup}) is waiting for your review.");
 
             await ActivityLogger.AddAsync(_context, acceptance.DonorUserId, "Screening.Submitted", ActivityLogger.Types.Screening, report.DonorVerificationId,
@@ -1247,6 +1249,27 @@ namespace LifeLink.Services.Acceptances
             await _context.Notifications.AddAsync(doctorUserId.HasValue
                 ? NotificationFactory.ForUser(doctorUserId.Value, "Doctor", type, title, message)
                 : NotificationFactory.ForHospital(request.HospitalId, type, title, message));
+        }
+
+        private async Task NotifyEligibleDoctorOrHospitalAsync(BloodRequest request, Guid? doctorId, string type, string title, string message)
+        {
+            var doctorUserId = await NotificationFactory.EligibleDoctorUserIdAsync(_context, doctorId, request.HospitalId);
+            await _context.Notifications.AddAsync(doctorUserId.HasValue
+                ? NotificationFactory.ForUser(doctorUserId.Value, "Doctor", type, title, message)
+                : NotificationFactory.ForHospital(request.HospitalId, type, title, message));
+        }
+
+        private async Task NotifyExternalCreatorOfDonationProgressAsync(BloodRequest request, bool createdByHospital)
+        {
+            if (createdByHospital) return;
+
+            var completed = request.Status == BloodRequestStatus.Completed;
+            await _context.Notifications.AddAsync(NotificationFactory.ForUser(request.PatientUserId, "User",
+                completed ? "BloodRequestCompleted" : "DonationProgress",
+                completed ? "Blood Request Fulfilled" : "Blood Request Donation Progress",
+                completed
+                    ? $"Your blood request #{NotificationFactory.ShortId(request.BloodRequestId)} has been fulfilled ({request.FulfilledUnits}/{request.UnitsRequired} unit(s))."
+                    : $"A successful donation was recorded for your blood request #{NotificationFactory.ShortId(request.BloodRequestId)}. Progress: {request.FulfilledUnits}/{request.UnitsRequired} unit(s)."));
         }
 
         private async Task NotifyRequestStaffAsync(BloodRequest request, string type, string title, string message)

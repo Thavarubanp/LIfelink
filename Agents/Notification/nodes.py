@@ -29,9 +29,10 @@ def alert_groups(target_blood_group: str) -> List[str]:
     return [target_blood_group]
 
 
-# Only Critical requests send alerts (owner's decision D11); Normal and High requests alert nobody (donors find them
-# in the public list).
-URGENT_PRIORITIES = ["CRITICAL"]
+# High and Critical requests proactively alert the exact-group donor candidates supplied by the backend.
+# Only Critical may also alert the backend-supplied hospital candidates.
+DONOR_ALERT_PRIORITIES = ["HIGH", "CRITICAL"]
+HOSPITAL_ALERT_PRIORITIES = ["CRITICAL"]
 
 def get_llm():
     api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
@@ -48,7 +49,7 @@ def get_llm():
 def check_priority_node(state: NotificationAgentState) -> Dict[str, Any]:
     """Node 1: Evaluates request priority and sets urgency flag."""
     priority = (state.get("priority") or "Normal").strip().upper()
-    is_urgent = priority in URGENT_PRIORITIES
+    is_urgent = priority in DONOR_ALERT_PRIORITIES
     logger.info(f"CheckPriorityNode: Request {state.get('request_id')} Priority={priority}, IsUrgent={is_urgent}")
     return {"is_urgent": is_urgent}
 
@@ -97,7 +98,7 @@ def find_eligible_donors_node(state: NotificationAgentState) -> Dict[str, Any]:
     candidates = state.get("candidate_donors") or []
 
     if not state.get("is_urgent"):
-        logger.info("FindEligibleDonorsNode: request %s is not Critical; no alerts are sent.", state.get("request_id"))
+        logger.info("FindEligibleDonorsNode: request %s is not High or Critical; no alerts are sent.", state.get("request_id"))
         return {"eligible_donors": []}
     eligible = [donor for donor in candidates if is_eligible_donor(donor, alert_groups(target_blood_group))]
 
@@ -230,8 +231,8 @@ def generate_notifications_node(state: NotificationAgentState) -> Dict[str, Any]
 
     notifications: List[Dict[str, Any]] = []
 
-    if priority not in URGENT_PRIORITIES:
-        # Normal and High priority: nobody is alerted (the creator, hospital and doctor get their usual status notifications)
+    if priority not in DONOR_ALERT_PRIORITIES:
+        # Normal priority has no proactive donor or hospital broadcast.
         return {"notifications": []}
 
     # 1. Donor Notifications (eligible donors of the exact group)
@@ -248,7 +249,7 @@ def generate_notifications_node(state: NotificationAgentState) -> Dict[str, Any]
         })
 
     # 2. Hospital Notifications (the hospitals the backend found holding the exact group)
-    if priority in URGENT_PRIORITIES:
+    if priority in HOSPITAL_ALERT_PRIORITIES:
         hospital_copy = generate_copy_for_role("HospitalStaff")
         for hid in verified_hospital_ids:
             notifications.append({

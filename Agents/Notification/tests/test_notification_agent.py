@@ -48,10 +48,13 @@ def test_process_request_only_alerts_eligible_donors_and_urgent_hospitals():
     hospitals = [n["recipient_id"] for n in res["notifications"] if n["recipient_type"] == "Hospital"]
     assert donors == ["d-ok"] and hospitals == ["h-1"]
 
-    # Normal and High priority: nobody is alerted (only Critical requests alert, D11)
-    for priority in ("Normal", "High"):
-        quiet = client.post("/process-request", headers=KEY, json={**body, "priority": priority}).json()
-        assert quiet["notifications"] == [] and quiet["eligible_donors_count"] == 0, priority
+    high = client.post("/process-request", headers=KEY, json={**body, "priority": "High"}).json()
+    assert high["eligible_donors_count"] == 1
+    assert [n["recipient_id"] for n in high["notifications"]] == ["d-ok"]
+    assert all(n["recipient_type"] == "Donor" for n in high["notifications"])
+
+    normal = client.post("/process-request", headers=KEY, json={**body, "priority": "Normal"}).json()
+    assert normal["notifications"] == [] and normal["eligible_donors_count"] == 0
 
 
 def test_hospital_alerts_are_composed_per_hospital():

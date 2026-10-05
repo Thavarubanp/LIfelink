@@ -105,20 +105,32 @@ namespace LifeLink.Services.Inventory
                 }
             });
 
-            var allowedHospitals = hospitalIds.ToHashSet();
+            // Backend rules establish the authorization tuple for each alert. Agent output may improve wording,
+            // but it cannot change the alert kind/context or select another monitored hospital.
+            var authorizedAlerts = BuildRuleBasedAlerts(stock, requests).ToList();
+            var authorizedKeys = authorizedAlerts.Select(AlertAuthorizationKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var usedAgents = plan != null && plan.Success;
             if (!usedAgents)
             {
                 _logger.LogInformation("Supervisor unavailable for InventoryCheck; sending rule-based inventory alerts.");
             }
-            var alerts = usedAgents ? plan!.Notifications : BuildRuleBasedAlerts(stock, requests).ToList();
-            var saved = await _notificationAgent.PersistAgentNotificationsDetailedAsync(alerts, new HashSet<Guid>(), allowedHospitals);
+            var alerts = usedAgents
+                ? plan!.Notifications.Where(a => authorizedKeys.Contains(AlertAuthorizationKey(a))).ToList()
+                : authorizedAlerts;
+            var authorizedHospitals = authorizedAlerts
+                .Select(a => Guid.TryParse(a.RecipientId, out var id) ? id : Guid.Empty)
+                .Where(id => id != Guid.Empty)
+                .ToHashSet();
+            var saved = await _notificationAgent.PersistAgentNotificationsDetailedAsync(alerts, new HashSet<Guid>(), authorizedHospitals);
             return new InventoryCheckResult(saved.AddedOf(ShortageType, ShortageHelpType), saved.AddedOf(ExpiringType), saved.SkippedDuplicates, usedAgents);
         }
 
         public static string ShortageKey(string group) => $"{ShortageType}:{group}";
         public static string HelpKey(string group, Guid lowHospitalId) => $"{ShortageHelpType}:{group}:{lowHospitalId}";
         public static string ExpiringKey(string group) => $"{ExpiringType}:{group}";
+
+        private static string AlertAuthorizationKey(AgentNotificationDto alert) =>
+            $"{alert.RecipientType}|{alert.RecipientId}|{alert.NotificationType}|{alert.DedupeKey}";
 
         private static string Units(int n) => n == 1 ? "1 unit" : $"{n} units";
 
