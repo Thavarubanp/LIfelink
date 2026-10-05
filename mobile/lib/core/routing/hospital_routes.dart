@@ -4,6 +4,11 @@ import 'package:go_router/go_router.dart';
 import '../../features/home/more_screen.dart';
 import '../../features/home/role_shell.dart';
 import '../../features/home/stub_screen.dart';
+import '../../features/inventory/hospital_home_screen.dart';
+import '../../features/inventory/inventory_screen.dart';
+import '../../features/inventory/packet_detail_screen.dart';
+import '../../features/inventory/packet_forms.dart';
+import '../../features/inventory/scan_packet_screen.dart';
 import 'app_router.dart';
 import 'routes.dart';
 
@@ -17,8 +22,8 @@ List<RouteBase> hospitalRoutes() => [
           ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
         ],
         branches: [
-          (AppRoutes.hospitalHome, _part('Hospital home', 2)),
-          (AppRoutes.hospitalInventory, _part('Blood inventory', 2)),
+          (AppRoutes.hospitalHome, const HospitalHomeScreen()),
+          (AppRoutes.hospitalInventory, const InventoryScreen(actions: _packetActions)),
           (AppRoutes.hospitalTransfers, _part('Transfers', 4)),
           (
             AppRoutes.hospitalMore,
@@ -36,10 +41,14 @@ List<RouteBase> hospitalRoutes() => [
             ]),
           ),
         ],
+        builders: {
+          AppRoutes.hospitalInventory: (state) =>
+              InventoryScreen(initialGroup: state.uri.queryParameters['group'], actions: _packetActions),
+        },
       ),
       GoRoute(path: AppRoutes.hospitalEmergencies, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Emergencies', 4)),
       GoRoute(path: AppRoutes.hospitalDonate, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Donate blood', 4)),
-      GoRoute(path: AppRoutes.hospitalScan, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Scan packet', 3)),
+      GoRoute(path: AppRoutes.hospitalScan, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => const ScanPacketScreen()),
       GoRoute(
         path: AppRoutes.hospitalRecommendations,
         parentNavigatorKey: rootNavigatorKey,
@@ -48,7 +57,7 @@ List<RouteBase> hospitalRoutes() => [
       GoRoute(
         path: '/hospital/packets/:packetId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _part('Packet', 3),
+        builder: (_, state) => PacketDetailScreen(packetId: state.pathParameters['packetId']!),
       ),
       GoRoute(
         path: AppRoutes.hospitalVerifyRequests,
@@ -67,3 +76,6 @@ List<RouteBase> hospitalRoutes() => [
 /// Step 1 screens not built yet in this part (replaced part by part).
 Widget _part(String title, int part) =>
     StubScreen(title: title, step: 1, owner: 'Thavaruban P', description: '$title arrives in Step 1, part $part.');
+
+/// Add / issue / edit packets on the Inventory screen.
+const _packetActions = PacketActions(addPackets: showAddPacketsSheet, issue: showIssueSheet, edit: showEditPacketSheet);

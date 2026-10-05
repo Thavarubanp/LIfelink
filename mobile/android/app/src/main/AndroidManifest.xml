@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- API calls (the release build talks to the HTTPS API only) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Scan packet QR codes; the app also works without a camera (type the tracking number) -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="LifeLink"
         android:name="${applicationName}"

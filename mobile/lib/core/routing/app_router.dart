@@ -133,15 +133,26 @@ Widget _step4(String title, String description) => StubScreen(title: title, step
 GoRoute _stubRoute(String path, Widget screen) => GoRoute(path: path, builder: (_, _) => screen);
 
 /// A role's bottom-navigation shell: one branch (with its own navigation stack) per tab.
-StatefulShellRoute _shell({required List<ShellTab> tabs, required List<(String, Widget)> branches}) =>
+/// [builders] replaces a branch's fixed screen when it needs the route state (e.g. query parameters).
+StatefulShellRoute _shell({
+  required List<ShellTab> tabs,
+  required List<(String, Widget)> branches,
+  Map<String, Widget Function(GoRouterState state)> builders = const {},
+}) =>
     StatefulShellRoute.indexedStack(
       builder: (context, state, shell) => RoleShell(shell: shell, tabs: tabs),
       branches: [
         for (final (path, screen) in branches)
-          StatefulShellBranch(routes: [GoRoute(path: path, builder: (_, _) => screen)]),
+          StatefulShellBranch(
+            routes: [GoRoute(path: path, builder: (_, state) => builders[path]?.call(state) ?? screen)],
+          ),
       ],
     );
 
 /// Shared by hospital_routes.dart.
-StatefulShellRoute roleShell({required List<ShellTab> tabs, required List<(String, Widget)> branches}) =>
-    _shell(tabs: tabs, branches: branches);
+StatefulShellRoute roleShell({
+  required List<ShellTab> tabs,
+  required List<(String, Widget)> branches,
+  Map<String, Widget Function(GoRouterState state)> builders = const {},
+}) =>
+    _shell(tabs: tabs, branches: branches, builders: builders);
