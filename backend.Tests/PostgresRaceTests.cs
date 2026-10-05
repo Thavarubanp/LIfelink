@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -161,6 +162,44 @@ namespace LifeLink.Tests
             Assert.Equal(AcceptanceStatus.Cancelled, (await check.Acceptances.AsNoTracking().SingleAsync(a => a.AcceptanceId == acceptance.AcceptanceId)).Status);
             Assert.Equal(VerificationStatus.Closed, (await check.DonorVerifications.AsNoTracking().SingleAsync(v => v.DonorVerificationId == report.DonorVerificationId)).Status);
             Assert.Equal(0, (await check.BloodRequests.AsNoTracking().SingleAsync(b => b.BloodRequestId == request.BloodRequestId)).ReservedUnits);
+        }
+
+        [PostgresFact]
+        public async Task Finalization_Winning_Over_Withdrawal_Rolls_Back_The_Losing_Notification_And_Cleanup()
+        {
+            await using var scope = await OpenAsync();
+            var r = await SeedAsync(scope.NewContext());
+            var request = NewRequest(r);
+            request.UnitsRequired = 1;
+            request.ReservedUnits = 1;
+            var acceptance = new Acceptance
+            {
+                AcceptanceId = Guid.NewGuid(), BloodRequestId = request.BloodRequestId,
+                DonorUserId = r.Donor.UserId, Status = AcceptanceStatus.Verified, AcceptedAt = DateTime.UtcNow
+            };
+            var setup = scope.NewContext();
+            setup.BloodRequests.Add(request);
+            setup.Acceptances.Add(acceptance);
+            await setup.SaveChangesAsync();
+
+            var withdrawalSide = scope.NewContext();
+            await withdrawalSide.Acceptances.FindAsync(acceptance.AcceptanceId);
+            await withdrawalSide.BloodRequests.FindAsync(request.BloodRequestId);
+
+            await Acceptances(scope.NewContext()).FinalizeDonorSelectionAsync(request.BloodRequestId,
+                new List<Guid> { acceptance.AcceptanceId }, r.Doctor.UserId!.Value,
+                testedBloodGroups: new Dictionary<Guid, string> { [acceptance.AcceptanceId] = "O+" });
+
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+                Acceptances(withdrawalSide).CancelAcceptanceAsync(acceptance.AcceptanceId, r.Donor.UserId));
+
+            var check = scope.NewContext();
+            Assert.Equal(AcceptanceStatus.Matched, (await check.Acceptances.AsNoTracking().SingleAsync(a => a.AcceptanceId == acceptance.AcceptanceId)).Status);
+            var savedRequest = await check.BloodRequests.AsNoTracking().SingleAsync(b => b.BloodRequestId == request.BloodRequestId);
+            Assert.Equal(0, savedRequest.ReservedUnits);
+            Assert.Equal(1, savedRequest.FulfilledUnits);
+            Assert.Single(check.RequestFulfillmentHistories.Where(h => h.AcceptanceId == acceptance.AcceptanceId));
+            Assert.DoesNotContain(check.Notifications, n => n.NotificationType == "DonorWithdrew");
         }
 
         [PostgresFact]

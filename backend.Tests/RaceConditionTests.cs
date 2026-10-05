@@ -270,6 +270,40 @@ namespace LifeLink.Tests
         }
 
         [Fact]
+        public async Task Donation_Finalization_Winning_Over_Withdrawal_Cannot_Create_A_False_Withdrawal_Or_Corrupt_Counters()
+        {
+            var w = await SeedAsync();
+            var request = await AddApprovedRequestAsync(w, units: 1);
+            request.ReservedUnits = 1;
+            var acceptance = new Acceptance
+            {
+                AcceptanceId = Guid.NewGuid(), BloodRequestId = request.BloodRequestId,
+                DonorUserId = w.Donor.UserId, Status = AcceptanceStatus.Verified
+            };
+            await w.Db.Acceptances.AddAsync(acceptance);
+            await w.Db.SaveChangesAsync();
+
+            using var withdrawalSide = w.NewContext();
+            await ReadAsync<Acceptance>(withdrawalSide, acceptance.AcceptanceId);
+            await ReadAsync<BloodRequest>(withdrawalSide, request.BloodRequestId);
+
+            await Acceptances(w.NewContext()).FinalizeDonorSelectionAsync(request.BloodRequestId,
+                new List<Guid> { acceptance.AcceptanceId }, w.DoctorA.UserId!.Value,
+                testedBloodGroups: new Dictionary<Guid, string> { [acceptance.AcceptanceId] = "O+" });
+
+            await AssertConflictAsync(() => Acceptances(withdrawalSide).CancelAcceptanceAsync(acceptance.AcceptanceId, w.Donor.UserId));
+
+            using var check = w.NewContext();
+            Assert.Equal(AcceptanceStatus.Matched, (await check.Acceptances.FindAsync(acceptance.AcceptanceId))!.Status);
+            var savedRequest = (await check.BloodRequests.FindAsync(request.BloodRequestId))!;
+            Assert.Equal(0, savedRequest.ReservedUnits);
+            Assert.Equal(1, savedRequest.FulfilledUnits);
+            Assert.Single(check.RequestFulfillmentHistories.Where(h => h.AcceptanceId == acceptance.AcceptanceId));
+            // EF InMemory has no transactional rollback and can retain Added rows before its concurrency failure.
+            // The PostgreSQL companion test verifies that a false withdrawal notification is not committed.
+        }
+
+        [Fact]
         public async Task Assigned_And_Fallback_Doctor_Approve_And_Reject_The_Same_Report_Only_One_Decision_Counts()
         {
             var w = await SeedAsync();

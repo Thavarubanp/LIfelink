@@ -54,6 +54,9 @@ namespace LifeLink.Tests
             var assigned = NewDoctor(hospital, "Assigned");
             var fallback = NewDoctor(hospital, "Fallback");
             var outsider = NewDoctor(other, "Outsider");
+            var assignedLogin = new User { UserId = assigned.UserId!.Value, FirstName = "Assigned", LastName = "MD", Email = assigned.Email };
+            var fallbackLogin = new User { UserId = fallback.UserId!.Value, FirstName = "Fallback", LastName = "MD", Email = fallback.Email };
+            var outsiderLogin = new User { UserId = outsider.UserId!.Value, FirstName = "Outsider", LastName = "MD", Email = outsider.Email };
             var patient = new User { UserId = Guid.NewGuid(), FirstName = "Pat", LastName = "Ient", Email = "p@x.org" };
             var request = new BloodRequest
             {
@@ -63,7 +66,7 @@ namespace LifeLink.Tests
 
             await db.Hospitals.AddRangeAsync(hospital, other);
             await db.Doctors.AddRangeAsync(assigned, fallback, outsider);
-            await db.Users.AddAsync(patient);
+            await db.Users.AddRangeAsync(patient, assignedLogin, fallbackLogin, outsiderLogin);
             await db.BloodRequests.AddAsync(request);
             await db.BloodRequestVerifications.AddAsync(new BloodRequestVerification { BloodRequestId = request.BloodRequestId, DoctorId = assigned.DoctorId, Status = VerificationStatus.Approved });
             await db.SaveChangesAsync();

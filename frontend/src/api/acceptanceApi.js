@@ -11,6 +11,12 @@ export const acceptanceApi = {
     return response.data;
   },
 
+  // Narrow governance exception: only active participation owned by the suspended donor is returned.
+  getMyActiveWithdrawals: async () => {
+    const response = await client.get('/Acceptances/my-active-withdrawals');
+    return response.data;
+  },
+
   getAcceptanceById: async (id) => {
     const response = await client.get(`/Acceptances/${id}`);
     return response.data;
@@ -18,6 +24,11 @@ export const acceptanceApi = {
 
   cancelAcceptance: async (id) => {
     const response = await client.put(`/Acceptances/${id}/cancel`);
+    return response.data;
+  },
+
+  withdrawWhileSuspended: async (id) => {
+    const response = await client.put(`/Acceptances/${id}/suspended-withdraw`);
     return response.data;
   },
 

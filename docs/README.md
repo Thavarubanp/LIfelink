@@ -67,7 +67,7 @@ The request pipeline applies global exception handling, CORS, internal-service a
 - Each login creates `UserSessions`; `sid` is placed in the token. Logout or inactivity ends the session.
 - `X-LifeLink-Activity: 1` records user activity. Background polling omits it. The configured warning precedes the idle timeout.
 - `X-Session-Ended` distinguishes idle and explicit/other ended sessions.
-- Suspended accounts are restricted to permitted auth heartbeat/logout, governance status, and appeal routes. Doctors of a suspended hospital have read-only governance access.
+- Suspended accounts are restricted to permitted auth heartbeat/logout, governance status, and appeal routes. A suspended plain donor may also use the governance page's narrow exception to view and withdraw only their own active donation participation. Doctors of a suspended hospital have read-only governance access.
 - Internal middleware converts a valid `X-Internal-Key` into an `InternalAgent` principal.
 
 ### API endpoints

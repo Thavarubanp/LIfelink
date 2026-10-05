@@ -126,6 +126,25 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
+        /// Narrow governance exception: a suspended plain donor can see only their own active participation records so
+        /// they can end an existing clinical commitment. It does not expose closed history or enable any new workflow.
+        /// </summary>
+        [HttpGet("my-active-withdrawals")]
+        [Authorize(Roles = "User")]
+        [AllowSuspendedAccess]
+        public async Task<IActionResult> GetMyActiveWithdrawals()
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue || userId.Value == Guid.Empty) return Unauthorized();
+            if (!_currentUserService.Roles.Contains("User") || _currentUserService.Roles.Any(r => r is "Admin" or "HospitalStaff" or "Doctor"))
+            {
+                return Forbid();
+            }
+            var active = new[] { "Accepted", "ScreeningPending", "ScreeningCompleted", "Verified" };
+            return Ok((await _acceptanceService.GetMyAcceptancesAsync(userId.Value)).Where(a => active.Contains(a.Status)));
+        }
+
+        /// <summary>
         /// Returns an acceptance to its donor, the request hospital's doctors and staff, the Admin or the screening agent.
         /// </summary>
         [HttpGet("{id:guid}")]
@@ -146,6 +165,7 @@ namespace LifeLink.Controllers
         /// Donor withdraws. After a doctor's approval the reserved donation slot becomes available again.
         /// </summary>
         [HttpPut("{id:guid}/cancel")]
+        [Authorize(Roles = "User,HospitalStaff")]
         [ProducesResponseType(typeof(AcceptanceResponseDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -155,6 +175,11 @@ namespace LifeLink.Controllers
             if (!userId.HasValue || userId.Value == Guid.Empty)
             {
                 return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+
+            if (_currentUserService.Roles.Contains("Admin") || _currentUserService.Roles.Contains("Doctor"))
+            {
+                return Forbid();
             }
 
             if (_currentUserService.Roles.Contains("HospitalStaff"))
@@ -167,6 +192,36 @@ namespace LifeLink.Controllers
             {
                 var result = await _acceptanceService.CancelAcceptanceAsync(id, userId.Value);
                 return Ok(result);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { message = ex.Message });
+            }
+            catch (InvalidOperationException ex) when (ex is not ConflictException)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        /// <summary>Narrow governance exception allowing a suspended donor to withdraw only their own active acceptance.</summary>
+        [HttpPut("{id:guid}/suspended-withdraw")]
+        [Authorize(Roles = "User")]
+        [AllowSuspendedAccess]
+        public async Task<IActionResult> WithdrawWhileSuspended(Guid id)
+        {
+            var userId = _currentUserService.UserId;
+            if (!userId.HasValue || userId.Value == Guid.Empty)
+            {
+                return Unauthorized(new { message = "User identity could not be retrieved from token." });
+            }
+            if (!_currentUserService.Roles.Contains("User") || _currentUserService.Roles.Any(r => r is "Admin" or "HospitalStaff" or "Doctor"))
+            {
+                return Forbid();
+            }
+
+            try
+            {
+                return Ok(await _acceptanceService.CancelAcceptanceAsync(id, userId.Value));
             }
             catch (KeyNotFoundException ex)
             {
