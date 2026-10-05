@@ -13,6 +13,7 @@ class AppRoutes {
   static const changePassword = '/change-password';
   static const waitingApproval = '/waiting-approval';
   static const governanceStatus = '/governance/status';
+  static const myAppeals = '/governance/appeals';
   static const notifications = '/notifications';
   static const profile = '/profile';
   static const myActivity = '/activity';

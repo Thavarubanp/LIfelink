@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/auth/auth_controller.dart';
+import '../../core/config/constants.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common.dart';
@@ -59,6 +60,13 @@ class MoreScreen extends ConsumerWidget {
                       subtitle: e.subtitle == null ? null : Text(e.subtitle!),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(e.path),
+                    ),
+                  if (user != null && !user.hasRole(Roles.admin))
+                    ListTile(
+                      leading: const Icon(Icons.gavel_outlined, color: AppColors.red600),
+                      title: const Text('Account status and appeals'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => context.push(AppRoutes.governanceStatus),
                     ),
                   ListTile(
                     leading: const Icon(Icons.history, color: AppColors.red600),

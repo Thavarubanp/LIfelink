@@ -45,6 +45,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: AppRoutes.changePassword, builder: (_, _) => const ChangePasswordScreen()),
       GoRoute(path: AppRoutes.waitingApproval, builder: (_, _) => const WaitingApprovalScreen()),
       GoRoute(path: AppRoutes.governanceStatus, builder: (_, _) => const GovernanceStatusScreen()),
+      GoRoute(path: AppRoutes.myAppeals, builder: (_, _) => const MyAppealsScreen()),
       GoRoute(path: AppRoutes.notifications, builder: (_, _) => const NotificationsScreen()),
       GoRoute(path: AppRoutes.profile, builder: (_, _) => const ProfileScreen()),
       GoRoute(path: AppRoutes.myActivity, builder: (_, _) => myActivityScreen()),

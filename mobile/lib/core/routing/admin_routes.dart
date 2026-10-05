@@ -5,6 +5,7 @@ import '../../features/admin/admin_home_screen.dart';
 import '../../features/admin/appeals/admin_appeals.dart';
 import '../../features/admin/attention_controller.dart';
 import '../../features/admin/complaints/admin_complaints.dart';
+import '../../features/admin/directory/admin_actions.dart';
 import '../../features/admin/directory/directory.dart';
 import '../../features/admin/oversight/admin_activity_screen.dart';
 import '../../features/admin/registrations/registration_detail_screen.dart';
@@ -51,7 +52,7 @@ List<RouteBase> adminRoutes() => [
           GoRoute(
             path: ':userId',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => AdminUserProfileScreen(userId: state.pathParameters['userId']!),
+            builder: (_, state) => AdminUserProfileScreen(userId: state.pathParameters['userId']!, actions: userAdminActions),
             routes: [
               GoRoute(
                 path: 'activity',
@@ -70,7 +71,7 @@ List<RouteBase> adminRoutes() => [
           GoRoute(
             path: ':hospitalId',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => AdminHospitalProfileScreen(hospitalId: state.pathParameters['hospitalId']!),
+            builder: (_, state) => AdminHospitalProfileScreen(hospitalId: state.pathParameters['hospitalId']!, actions: hospitalAdminActions),
             routes: [
               GoRoute(
                 path: 'activity',
