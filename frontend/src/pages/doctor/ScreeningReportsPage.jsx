@@ -5,6 +5,7 @@ import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { formatDisplayDate } from '../../utils/dateUtils';
+import { ROLE_ATTENTION_UPDATED_EVENT } from '../../context/useRoleAttention';
 import { useSearchParams } from 'react-router-dom';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -112,7 +113,10 @@ export const ScreeningReportsPage = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
-  const reload = () => setReloadKey((k) => k + 1);
+  const reload = () => {
+    window.dispatchEvent(new Event(ROLE_ATTENTION_UPDATED_EVENT));
+    setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     const fetchReports = async () => {

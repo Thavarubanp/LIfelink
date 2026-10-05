@@ -69,6 +69,7 @@ builder.Services.AddScoped<IPasswordResetService, PasswordResetService>();
 builder.Services.AddScoped<IEmailService, MailKitEmailService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddScoped<RoleAttentionService>();
 
 // Idle timeout: server-side sessions (Session:IdleTimeoutMinutes, Session:WarningMinutes)
 builder.Services.AddSingleton(SessionSettings.FromConfiguration(builder.Configuration));

@@ -62,6 +62,8 @@ export const HospitalDashboard = () => {
 
   const totalStockUnits = inventory.reduce((acc, curr) => acc + (curr.unitsAvailable || 0), 0);
   const lowStock = inventory.filter((item) => item.isLowStock);
+  const expiringSoonUnits = inventory.reduce((sum, item) => sum + (item.expiringSoonUnits || 0), 0);
+  const activeEmergencies = emergencies.filter((item) => item.status === 'Pending' || item.status === 'Approved');
 
   return (
     <div className="space-y-6 pb-20">
@@ -96,22 +98,24 @@ export const HospitalDashboard = () => {
         <button type="button" className={clickableCard} onClick={() => setDialog('emergencies')} aria-label="Show critical emergencies">
           <span className="text-xs font-semibold text-slate-500 flex items-center justify-between">Critical Emergencies <ChevronRight className="w-3.5 h-3.5" /></span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
-            {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : emergencies.length}
+            {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : activeEmergencies.length}
           </div>
-          <p className="text-[11px] text-rose-500 mt-1">Active priority broadcasts - view details</p>
+          <p className="text-[11px] text-rose-500 mt-1">Pending or approved critical broadcasts - view details</p>
         </button>
         <button type="button" className={clickableCard} onClick={() => setDialog('lowStock')} aria-label="Show low stock blood groups">
-          <span className="text-xs font-semibold text-slate-500 flex items-center justify-between">Low Stock Alerts <ChevronRight className="w-3.5 h-3.5" /></span>
+          <span className="text-xs font-semibold text-slate-500 flex items-center justify-between">My Hospital Low Stock Alerts <ChevronRight className="w-3.5 h-3.5" /></span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
             {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : lowStock.length}
           </div>
           <p className="text-[11px] text-amber-500 mt-1">Below minimum threshold - view details</p>
         </button>
-        <div className={cardClass}>
-          <span className="text-xs font-semibold text-slate-500">Inventory Status</span>
-          <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">{inventory.length > 0 ? 'Active' : 'No Data'}</div>
-          <p className="text-[11px] text-blue-500 mt-1">Live database synchronized</p>
-        </div>
+        <Link to="/hospital/inventory" className={clickableCard} aria-label="Open inventory to review expiring blood packets">
+          <span className="text-xs font-semibold text-slate-500 flex items-center justify-between">Expiring Soon <ChevronRight className="w-3.5 h-3.5" /></span>
+          <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
+            {loading ? <Loader2 className="w-5 h-5 animate-spin text-slate-400" /> : `${expiringSoonUnits} Units`}
+          </div>
+          <p className="text-[11px] text-blue-500 mt-1">Available packets inside my hospital's expiry alert window</p>
+        </Link>
       </div>
 
       <InventoryAnalysisStatus onRunComplete={() => setReloadKey((k) => k + 1)} />
@@ -169,15 +173,15 @@ export const HospitalDashboard = () => {
 
       {dialog === 'emergencies' && (
         <DetailDialog
-          title={`Critical emergencies (${emergencies.length})`}
+          title={`Active critical emergencies (${activeEmergencies.length})`}
           onClose={() => setDialog(null)}
           footer={<Link to="/hospital/emergency" className="inline-flex text-xs font-semibold text-red-600 hover:underline">Open the Emergency Center →</Link>}
         >
-          {emergencies.length === 0 ? (
+          {activeEmergencies.length === 0 ? (
             <p className="text-xs text-slate-500">There are no active critical emergencies.</p>
           ) : (
             <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-              {emergencies.map((e) => (
+              {activeEmergencies.map((e) => (
                 <li key={e.emergencyRequestId} className="py-2.5 text-xs space-y-0.5">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-slate-900 dark:text-slate-100">{e.hospitalName}</span>
@@ -196,11 +200,11 @@ export const HospitalDashboard = () => {
 
       {dialog === 'lowStock' && (
         <DetailDialog
-          title={`Low stock (${lowStock.length})`}
+          title={`My hospital low stock (${lowStock.length})`}
           onClose={() => setDialog(null)}
           footer={<Link to="/hospital/inventory" className="inline-flex text-xs font-semibold text-red-600 hover:underline">Open Inventory →</Link>}
         >
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">A blood group is low when its available units are below its minimum threshold.</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400">Only my hospital's inventory is shown. A blood group is low when its available units are below its minimum threshold.</p>
           {lowStock.length === 0 ? (
             <p className="text-xs text-slate-500">No blood group is below its threshold.</p>
           ) : (

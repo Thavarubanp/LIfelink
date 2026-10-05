@@ -17,3 +17,4 @@ export { default as profileApi } from './profileApi';
 export { default as assistantApi } from './assistantApi';
 export { default as screeningApi } from './screeningApi';
 export { default as activityApi } from './activityApi';
+export { default as attentionApi } from './attentionApi';
