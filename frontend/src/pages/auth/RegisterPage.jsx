@@ -151,7 +151,7 @@ export const RegisterPage = () => {
                 required
                 value={formData.firstName}
                 onChange={handleChange}
-                placeholder="John"
+                placeholder="Enter your first name"
                 className={`w-full px-3.5 py-2.5 bg-slate-800/80 border rounded-xl text-white focus:outline-none transition-colors ${getFieldBorderClass(
                   'firstName',
                   isFirstNameValid
@@ -169,7 +169,7 @@ export const RegisterPage = () => {
                 required
                 value={formData.lastName}
                 onChange={handleChange}
-                placeholder="Doe"
+                placeholder="Enter your last name"
                 className={`w-full px-3.5 py-2.5 bg-slate-800/80 border rounded-xl text-white focus:outline-none transition-colors ${getFieldBorderClass(
                   'lastName',
                   isLastNameValid
@@ -189,7 +189,7 @@ export const RegisterPage = () => {
               required
               value={formData.email}
               onChange={handleChange}
-              placeholder="john.doe@example.com"
+              placeholder="Enter your email address"
               className={`w-full px-3.5 py-2.5 bg-slate-800/80 border rounded-xl text-white focus:outline-none transition-colors ${getFieldBorderClass(
                 'email',
                 isEmailValid
@@ -211,7 +211,7 @@ export const RegisterPage = () => {
               required
               value={formData.password}
               onChange={handleChange}
-              placeholder="••••••••"
+              placeholder="Create a password"
               className={`w-full px-3.5 py-2.5 bg-slate-800/80 border rounded-xl text-white focus:outline-none transition-colors ${getFieldBorderClass(
                 'password',
                 isPasswordValid
@@ -235,7 +235,7 @@ export const RegisterPage = () => {
                 name="phoneNumber"
                 value={formData.phoneNumber}
                 onChange={handleChange}
-                placeholder="0771234567"
+                placeholder="Enter your phone number"
                 className={`w-full px-3.5 py-2.5 bg-slate-800/80 border rounded-xl text-white focus:outline-none transition-colors ${getFieldBorderClass(
                   'phoneNumber',
                   isPhoneValid
@@ -278,7 +278,7 @@ export const RegisterPage = () => {
               name="address"
               value={formData.address}
               onChange={handleChange}
-              placeholder="123 Health Ave, Suite 400"
+              placeholder="Enter your address"
               className={`w-full px-3.5 py-2.5 bg-slate-800/80 border rounded-xl text-white focus:outline-none transition-colors ${getFieldBorderClass(
                 'address',
                 isAddressValid

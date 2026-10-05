@@ -6,6 +6,13 @@ export const getUserRoles = (user) => {
   return roles.length > 0 ? roles : ['User'];
 };
 
+// Donation is reserved for a plain donor/patient account. Privileged interactive
+// roles may still view public requests, but must never enter the acceptance flow.
+export const isDonorAccount = (user) => {
+  const roles = getUserRoles(user);
+  return roles.includes('User') && !roles.some((role) => ['Admin', 'HospitalStaff', 'Doctor'].includes(role));
+};
+
 export const HOSPITAL_WAITING_PATH = '/hospital/waiting-approval';
 
 // Hospital staff whose hospital registration is not Approved (Pending, Rejected, AwaitingAdminReview, or unknown)

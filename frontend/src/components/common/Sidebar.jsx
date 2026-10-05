@@ -1,4 +1,3 @@
-import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -11,7 +10,6 @@ import {
   ArrowLeftRight,
   ShieldCheck,
   FileText,
-  Users,
   AlertTriangle,
   UserCheck,
   HeartHandshake,
@@ -43,7 +41,7 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
         { label: 'Complaints Hub', path: '/admin/complaints', icon: AlertTriangle, badge: 'pendingComplaints', badgeTitle: 'complaints waiting for a reply' },
         { label: 'Suspension Appeals', path: '/admin/appeals', icon: FileText, badge: 'pendingAppeals', badgeTitle: 'appeals waiting for a reply' },
         { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
-        { label: 'Donate Blood', path: '/donor/requests', icon: Droplet }
+        { label: 'View Blood Requests', path: '/donor/requests', icon: Droplet }
       ];
     }
 

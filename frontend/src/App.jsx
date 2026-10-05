@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -143,7 +143,7 @@ export function App() {
               <Route
                 path="/donor/dashboard"
                 element={
-                  <ProtectedRoute allowedRoles={['User']}>
+                  <ProtectedRoute allowedRoles={['User']} excludedRoles={['Admin', 'HospitalStaff', 'Doctor']}>
                     <DonorDashboard />
                   </ProtectedRoute>
                 }
@@ -160,11 +160,18 @@ export function App() {
               />
               <Route path="/donor/requests/:id" element={<RequestDetailPage />} />
               <Route path="/donor/my-requests" element={<Navigate to="/donor/requests/create" replace />} />
-              <Route path="/donor/acceptances" element={<MyAcceptancesPage />} />
+              <Route
+                path="/donor/acceptances"
+                element={
+                  <ProtectedRoute allowedRoles={['User']} excludedRoles={['Admin', 'HospitalStaff', 'Doctor']}>
+                    <MyAcceptancesPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/donor/acceptances/:id/screening"
                 element={
-                  <ProtectedRoute allowedRoles={['User']}>
+                  <ProtectedRoute allowedRoles={['User']} excludedRoles={['Admin', 'HospitalStaff', 'Doctor']}>
                     <ScreeningInterviewPage />
                   </ProtectedRoute>
                 }

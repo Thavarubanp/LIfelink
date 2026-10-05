@@ -1,30 +1,69 @@
-import React, { useState, useEffect } from 'react';
-import { bloodRequestApi } from '../../api';
+import { useState, useEffect } from 'react';
+import { bloodRequestApi, acceptanceApi } from '../../api';
 import { DataTable } from '../../components/common/DataTable';
 import { Badge } from '../../components/common/Badge';
+import { useAuth } from '../../context/AuthContext';
+import { isDonorAccount as isPlainDonor } from '../../utils/roleUtils';
 import { Link } from 'react-router-dom';
-import { Filter, ArrowRight } from 'lucide-react';
+import { Filter, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
 
 export const AvailableRequestsPage = () => {
   const [requests, setRequests] = useState([]);
   const [selectedBloodGroup, setSelectedBloodGroup] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [acceptancesLoading, setAcceptancesLoading] = useState(true);
+  const [acceptanceCheckFailed, setAcceptanceCheckFailed] = useState(false);
+  const [acceptedRequestIds, setAcceptedRequestIds] = useState(() => new Set());
+  const { user } = useAuth();
+  const donorAccount = isPlainDonor(user);
 
   useEffect(() => {
+    let active = true;
+
+    if (!donorAccount) {
+      return () => { active = false; };
+    }
+
+    acceptanceApi.getMyAcceptances()
+      .then((data) => {
+        if (!active) return;
+        const ids = (Array.isArray(data) ? data : [])
+          .filter((acceptance) => acceptance.status !== 'Cancelled')
+          .map((acceptance) => acceptance.bloodRequestId);
+        setAcceptedRequestIds(new Set(ids));
+      })
+      .catch((err) => {
+        if (active) {
+          console.error('Failed to fetch current user acceptances:', err);
+          setAcceptanceCheckFailed(true);
+        }
+      })
+      .finally(() => {
+        if (active) setAcceptancesLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [donorAccount, user?.userId]);
+
+  useEffect(() => {
+    let active = true;
     const fetchRequests = async () => {
-      setLoading(true);
+      setRequestsLoading(true);
       try {
         const data = await bloodRequestApi.getPublicRequests(selectedBloodGroup || null);
-        setRequests(Array.isArray(data) ? data : []);
+        if (active) setRequests(Array.isArray(data) ? data : []);
       } catch (err) {
-        console.error('Failed to fetch public requests:', err);
+        if (active) console.error('Failed to fetch public requests:', err);
       } finally {
-        setLoading(false);
+        if (active) setRequestsLoading(false);
       }
     };
 
     fetchRequests();
+    return () => { active = false; };
   }, [selectedBloodGroup]);
+
+  const loading = requestsLoading || (donorAccount && acceptancesLoading);
 
   const bloodGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -73,15 +112,44 @@ export const AvailableRequestsPage = () => {
       header: 'Action',
       accessor: 'bloodRequestId',
       sortable: false,
-      cell: (row) => (
-        <Link
-          to={`/donor/requests/${row.bloodRequestId || row.id}`}
-          className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg shadow-sm"
-        >
-          <span>View & Donate</span>
-          <ArrowRight className="w-3.5 h-3.5" />
-        </Link>
-      )
+      cell: (row) => {
+        const requestId = row.bloodRequestId || row.id;
+        const alreadyAccepted = donorAccount && acceptedRequestIds.has(requestId);
+
+        if (alreadyAccepted) {
+          return (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Already Accepted
+              </span>
+              <Link to={`/donor/requests/${requestId}`} className="text-xs font-semibold text-slate-600 hover:underline dark:text-slate-300">
+                View Details
+              </Link>
+            </div>
+          );
+        }
+
+        if (donorAccount && acceptanceCheckFailed) {
+          return (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Acceptance status unavailable</span>
+              <Link to={`/donor/requests/${requestId}`} className="text-xs font-semibold text-slate-600 hover:underline dark:text-slate-300">
+                View Details
+              </Link>
+            </div>
+          );
+        }
+
+        return (
+          <Link
+            to={`/donor/requests/${requestId}`}
+            className={`inline-flex items-center gap-1 px-3 py-1.5 text-white font-semibold text-xs rounded-lg shadow-sm ${donorAccount ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500'}`}
+          >
+            <span>{donorAccount ? 'View & Donate' : 'View Details'}</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        );
+      }
     }
   ];
 
@@ -125,12 +193,19 @@ export const AvailableRequestsPage = () => {
       </div>
 
       {/* Data Table */}
-      <DataTable
-        columns={columns}
-        data={requests}
-        searchPlaceholder="Search hospital, blood group, reason..."
-        emptyMessage="No available blood requests matching filter."
-      />
+      {loading ? (
+        <div className="ll-card flex min-h-48 items-center justify-center gap-2 p-8 text-sm text-slate-500 dark:text-slate-400" role="status">
+          <Loader2 className="h-5 w-5 animate-spin text-red-600" />
+          Loading available blood requests...
+        </div>
+      ) : (
+        <DataTable
+          columns={columns}
+          data={requests}
+          searchPlaceholder="Search hospital, blood group, reason..."
+          emptyMessage="No available blood requests matching filter."
+        />
+      )}
     </div>
   );
 };
