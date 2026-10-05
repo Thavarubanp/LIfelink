@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { bloodRequestApi, acceptanceApi, profileApi } from '../../api';
 import { Badge, RequestStatusBadge } from '../../components/common/Badge';
 import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingProgress';
 import { useNotification } from '../../context/NotificationContext';
-import { getUserRoles } from '../../utils/roleUtils';
+import { isDonorAccount as isPlainDonor } from '../../utils/roleUtils';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { MapPin, Heart, Loader2, Lock } from 'lucide-react';
 
@@ -14,9 +14,11 @@ const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 export const RequestDetailPage = () => {
   const { id } = useParams();
   const { user } = useAuth();
-  const isDonorAccount = getUserRoles(user).includes('User') && !getUserRoles(user).some((r) => ['Admin', 'HospitalStaff', 'Doctor'].includes(r));
+  const isDonorAccount = isPlainDonor(user);
   const [request, setRequest] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [existingAcceptance, setExistingAcceptance] = useState(null);
+  const [acceptanceCheckFailed, setAcceptanceCheckFailed] = useState(false);
   const [bloodGroup, setBloodGroup] = useState('');
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(false);
@@ -28,12 +30,25 @@ export const RequestDetailPage = () => {
   useEffect(() => {
     const fetchDetail = async () => {
       try {
-        const [data, me] = await Promise.all([
+        setAcceptanceCheckFailed(false);
+        const [data, me, myAcceptances] = await Promise.all([
           bloodRequestApi.getRequestById(id),
-          isDonorAccount && user?.userId ? profileApi.getUserProfile(user.userId).catch(() => null) : Promise.resolve(null)
+          isDonorAccount && user?.userId ? profileApi.getUserProfile(user.userId).catch(() => null) : Promise.resolve(null),
+          isDonorAccount
+            ? acceptanceApi.getMyAcceptances().catch((err) => {
+                console.error('Failed to verify existing acceptance:', err);
+                setAcceptanceCheckFailed(true);
+                return [];
+              })
+            : Promise.resolve([])
         ]);
         setRequest(data);
         setProfile(me);
+        setExistingAcceptance(
+          (Array.isArray(myAcceptances) ? myAcceptances : []).find(
+            (acceptance) => acceptance.bloodRequestId === id && acceptance.status !== 'Cancelled'
+          ) || null
+        );
         if (me?.bloodGroup) setBloodGroup(me.bloodGroup);
       } catch (err) {
         console.error('Failed to fetch request detail:', err);
@@ -82,7 +97,11 @@ export const RequestDetailPage = () => {
   }
 
   const remaining = Math.max(0, request.unitsRequired - request.fulfilledUnits);
-  const blockedReason = request.status !== 'Approved'
+  const blockedReason = existingAcceptance
+    ? 'You have already accepted this blood request. Follow its progress from My Acceptances.'
+    : acceptanceCheckFailed
+      ? 'LifeLink could not verify your acceptance history. Try again before starting a donation.'
+      : request.status !== 'Approved'
     ? `This request is ${request.status.toLowerCase()} and is not accepting donors.`
     : !request.isAcceptingDonors
       ? 'All remaining donation slots are reserved by approved donors. New acceptances are paused until a slot is released.'
@@ -113,7 +132,18 @@ export const RequestDetailPage = () => {
           {isDonorAccount && (
             <div className="flex flex-col items-stretch md:items-end gap-2 shrink-0">
               {blockedReason ? (
-                <p className="text-xs text-slate-500 max-w-xs flex items-start gap-1.5"><Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {blockedReason}</p>
+                <div className="max-w-xs space-y-2">
+                  <p className="text-xs text-slate-500 flex items-start gap-1.5"><Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {blockedReason}</p>
+                  {existingAcceptance && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/donor/acceptances')}
+                      className="w-full rounded-xl bg-emerald-50 px-4 py-2 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
+                    >
+                      Already Accepted — View My Acceptances
+                    </button>
+                  )}
+                </div>
               ) : (
                 <>
                   <label className="text-[11px] font-semibold text-slate-500">
@@ -165,14 +195,16 @@ export const RequestDetailPage = () => {
         </div>
       </div>
 
-      <SmartMatchingProgress status={request.status || 'VERIFIED'} />
+      {isDonorAccount && <SmartMatchingProgress status={request.status || 'VERIFIED'} />}
 
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
         <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Clinical Context & Requirements</h3>
         <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{request.reason}</p>
-        <p className="text-[11px] text-slate-400 mt-3">
-          After accepting, you complete a health screening interview with the LifeLink assistant. The hospital's doctor reviews your answers and decides whether you can donate.
-        </p>
+        {isDonorAccount && (
+          <p className="text-[11px] text-slate-400 mt-3">
+            After accepting, you complete a health screening interview with the LifeLink assistant. The hospital's doctor reviews your answers and decides whether you can donate.
+          </p>
+        )}
       </div>
     </div>
   );

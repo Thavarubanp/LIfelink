@@ -1,11 +1,10 @@
-import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getUserRoles, getDashboardPath, isUnapprovedHospitalStaff, HOSPITAL_WAITING_PATH } from '../../utils/roleUtils';
 import { Loader2 } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 
-export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = false }) => {
+export const ProtectedRoute = ({ children, allowedRoles = [], excludedRoles = [], allowSuspended = false }) => {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -37,6 +36,10 @@ export const ProtectedRoute = ({ children, allowedRoles = [], allowSuspended = f
   // Doctor first-login enforcement: redirect to change-password page if flag is set.
   // Allow the change-password page itself to avoid an infinite redirect loop.
   const userRoles = getUserRoles(user);
+  if (excludedRoles.some((role) => userRoles.includes(role))) {
+    return <Navigate to={getDashboardPath(user)} replace />;
+  }
+
   if (
     userRoles.includes('Doctor') &&
     user.mustChangePassword === true &&

@@ -263,11 +263,7 @@ export const RegisterHospitalPage = () => {
                     maxLength={200}
                     value={formData.name}
                     onChange={handleChange}
-                    placeholder={
-                      isGovHospital
-                        ? 'e.g. National Hospital Colombo or Teaching Hospital Jaffna'
-                        : 'e.g. Lanka Hospitals PLC or Asiri Surgical Hospital'
-                    }
+                    placeholder="Enter hospital or facility name"
                     className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition-colors ${getFieldBorderClass(
                       'name',
                       isNameValid
@@ -301,7 +297,7 @@ export const RegisterHospitalPage = () => {
                     maxLength={100}
                     value={formData.registrationNumber}
                     onChange={handleChange}
-                    placeholder={isGovHospital ? 'e.g. HIN-SL-10492 or GOV-COL-001' : 'e.g. PHSRC/PH/1234'}
+                    placeholder={isGovHospital ? 'Enter MOH/HIN registration number' : 'Enter PHSRC registration number'}
                     className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border rounded-xl text-white font-mono placeholder-slate-500 focus:outline-none transition-colors ${getFieldBorderClass(
                       'registrationNumber',
                       isRegistrationNumberValid
@@ -345,7 +341,7 @@ export const RegisterHospitalPage = () => {
                       maxLength={50}
                       value={formData.contactNumber}
                       onChange={handleChange}
-                      placeholder="0112691111"
+                      placeholder="Enter hospital phone number"
                       className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition-colors ${getFieldBorderClass(
                         'contactNumber',
                         isContactNumberValid
@@ -383,7 +379,7 @@ export const RegisterHospitalPage = () => {
                       maxLength={200}
                       value={formData.email}
                       onChange={handleChange}
-                      placeholder={isGovHospital ? 'info@nhsl.health.gov.lk' : 'admissions@lankahospitals.com'}
+                      placeholder="Enter hospital email address"
                       className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition-colors ${getFieldBorderClass(
                         'email',
                         isEmailValid
@@ -412,7 +408,7 @@ export const RegisterHospitalPage = () => {
                     required
                     value={formData.password}
                     onChange={handleChange}
-                    placeholder="••••••••"
+                    placeholder="Create a hospital account password"
                     className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition-colors ${getFieldBorderClass(
                       'password',
                       isPasswordValid
@@ -443,11 +439,7 @@ export const RegisterHospitalPage = () => {
                     maxLength={500}
                     value={formData.address}
                     onChange={handleChange}
-                    placeholder={
-                      isGovHospital
-                        ? 'Regent Street, Colombo 08, Sri Lanka'
-                        : '578 Elvitigala Mawatha, Colombo 05, Sri Lanka'
-                    }
+                    placeholder="Enter hospital address"
                     className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border rounded-xl text-white placeholder-slate-500 focus:outline-none transition-colors ${getFieldBorderClass(
                       'address',
                       isAddressValid
@@ -472,7 +464,7 @@ export const RegisterHospitalPage = () => {
                     maxLength={100}
                     value={formData.city}
                     onChange={handleChange}
-                    placeholder="e.g. Colombo, Kandy, Galle, or Central District"
+                    placeholder="Enter city, region, or district"
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-800/80 border border-slate-700/80 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
                   />
                 </div>
@@ -495,7 +487,7 @@ export const RegisterHospitalPage = () => {
                       maxLength={200}
                       value={formData.contactPersonName}
                       onChange={handleChange}
-                      placeholder="e.g. Dr. K. Silva / Administrator"
+                      placeholder="Enter authorized person's name"
                       className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-slate-500 focus:outline-none text-xs ${getFieldBorderClass(
                         'contactPersonName',
                         isContactPersonNameValid
@@ -517,7 +509,7 @@ export const RegisterHospitalPage = () => {
                       maxLength={10}
                       value={formData.contactPersonPhone}
                       onChange={handleChange}
-                      placeholder="e.g. 0771234567"
+                      placeholder="Enter authorized person's phone number"
                       className={`w-full px-3 py-2 bg-slate-800 border rounded-lg text-white placeholder-slate-500 focus:outline-none text-xs ${getFieldBorderClass(
                         'contactPersonPhone',
                         isContactPersonPhoneValid
