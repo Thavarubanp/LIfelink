@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/admin/appeals/admin_appeals.dart';
 import '../../features/admin/attention_controller.dart';
+import '../../features/admin/complaints/admin_complaints.dart';
 import '../../features/admin/registrations/registration_detail_screen.dart';
 import '../../features/admin/registrations/registrations_screen.dart';
 import '../../features/home/more_screen.dart';
@@ -60,7 +61,18 @@ List<RouteBase> adminRoutes() => [
           ),
         ],
       ),
-      GoRoute(path: AppRoutes.adminComplaints, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Complaints', 4)),
+      GoRoute(
+        path: AppRoutes.adminComplaints,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const AdminComplaintsScreen(),
+        routes: [
+          GoRoute(
+            path: ':complaintId',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, state) => AdminComplaintDetailScreen(complaintId: state.pathParameters['complaintId']!),
+          ),
+        ],
+      ),
     ];
 
 /// Step 4 screens not built yet in this part (replaced part by part).
