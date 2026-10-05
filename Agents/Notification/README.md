@@ -68,7 +68,7 @@ Example `/process-request` body (the backend builds this in `DonorCandidate.ToAg
 |---|---|---|
 | `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) | empty | Optional; enables Gemini ranking and wording |
 | `MODEL_NAME` | `gemini-3.5-flash-lite` | |
-| `INTERNAL_SERVICE_API_KEY` | `LifeLink-Internal-Agent-Key-2026` | Must match the backend and the other agents. Local-development default only; shared and production environments must override it (see the root README) |
+| `INTERNAL_SERVICE_API_KEY` | Required secret | Must match the backend's `InternalService__ApiKey` and the other agents; never commit or document its value |
 | `HOST` / `PORT` | `127.0.0.1` / `8000` | Loopback only |
 
 ## Run
