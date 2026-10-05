@@ -1248,7 +1248,7 @@ A native Android app in `mobile/` (package `lifelink_mobile`) for the user-facin
 | 1 | Thavaruban P | Shared foundation; hospital home, inventory, packets with QR, scan, transfers, emergencies, donate blood, inventory analysis and recommendations | Done |
 | 2 | Vidya R | Donor/patient requests, accept, screening interview, my donations, complaints, appeals | Route stubs |
 | 3 | Ahamed MSA | Doctor approvals and screening reports; hospital verify requests and doctors | Route stubs |
-| 4 | Mayureshan P | Governance status and appeals, admin messages, activity log, admin actions | Route stubs |
+| 4 | Mayureshan P | Admin home and badges, hospital registrations, appeals, complaints, activity log with suspend/lift, user and hospital directories, messages, suspend/reinstate, governance and appeals for every role, phone notifications | Done |
 
 The stubs are real routes on their final paths (`lib/core/routing/routes.dart`), so later steps only replace the screen widget.
 
@@ -1261,7 +1261,11 @@ The stubs are real routes on their final paths (`lib/core/routing/routes.dart`),
 | HTTP | `dio` 5.11.1 | Interceptors for the token, the idle-timeout activity header, the idempotency key and 401 handling; timeouts; mockable in tests. |
 | Token storage | `flutter_secure_storage` 11.2.0 | The JWT is kept in Android Keystore-backed storage, never in plain preferences. |
 | Device feature | `mobile_scanner` 7.4.2 + `qr_flutter` 4.1.0 | Scan a packet's QR code with the camera to open its details and history; each packet shows its own QR code. |
-| Other | `intl` (dates, Sri Lanka time UTC+5:30), `shared_preferences` (theme choice only) | |
+| Attachments | `file_picker` 13.1.0, `image_picker` 1.2.3 | Attach PDF/Word/image files or a camera photo to registration decisions, complaint and appeal messages, with the web's limits (data URL, 2 MB, PDF/DOC/DOCX/PNG/JPG) checked before sending. |
+| Opening files | `open_filex` 4.7.0, `path_provider` 2.1.6 | Images show inline; PDFs and Word files are written to the app's temporary folder and opened in the phone's viewer. |
+| Phone notifications | `flutter_local_notifications` 21.0.0 | Shows new LifeLink notifications (admin messages, alerts, decisions) and the admin's new attention items as phone notifications; tapping one opens the matching screen. Newer versions conflict with `file_picker`'s Linux dependency. |
+| Background polling | `workmanager` 0.10.10 | Android WorkManager runs a periodic task (about every 15 minutes, the Android minimum) while the app is closed. No push service and no backend change. |
+| Other | `intl` (dates, Sri Lanka time UTC+5:30), `shared_preferences` (theme choice and the notification "last seen" marker) | |
 | Tests | `flutter_test`, `mocktail`, `http_mock_adapter` | |
 
 ### Structure
@@ -1273,8 +1277,11 @@ mobile/lib/
   core/routing    paths, role guard (resolveRedirect), GoRouter, hospital routes
   core/theme      light/dark theme with the web colours
   core/widgets    loading / empty / error views, badges, search, filter chips, dialogs, "show more" list
-  features/       auth, home (role shells, More, stubs), profile, notifications, governance,
-                  inventory (home, groups, packets, QR, scan), transfers, emergencies, donate, analysis
+  core/attachments  pick / validate / show / open attachments (data URLs, 2 MB)
+  core/notifications  phone notifications: new-item rules, poll, WorkManager task, permission
+  features/       auth, home (role shells, More, stubs), profile, notifications, governance (status, appeals),
+                  inventory (home, groups, packets, QR, scan), transfers, emergencies, donate, analysis,
+                  admin (home, registrations, appeals, complaints, oversight, directory, actions), activity
 mobile/test/      unit, widget, navigation and mocked-HTTP integration tests
 ```
 
@@ -1284,6 +1291,21 @@ mobile/test/      unit, widget, navigation and mocked-HTTP integration tests
 - **Guards, in the web order:** signed out → sign in; suspended → governance status; unapproved hospital → waiting screen; doctor with a temporary password → change password; wrong role → own home.
 - **Idle timeout:** user actions send `X-LifeLink-Activity: 1` (at most every 15 s), background refreshes never do. Touches send a heartbeat (at most every 30 s). A warning with "Stay signed in" appears one minute before the API's idle limit, and the check runs again when the app returns from the background.
 - **Errors:** a 409 shows the API's message and reloads the screen; network failures and timeouts have their own messages; every screen has loading, empty and error-with-retry states.
+
+### Administration and governance (Step 4)
+
+| Screen | API (same as the web) | Rules kept from the web |
+|---|---|---|
+| Admin home, Attention tab, badges | `GET /Admin/dashboard`, `GET /Admin/attention-counts` (every 30 s, background) | "99+" above 99; refreshed after each admin action |
+| Hospital registrations | `GET /Admin/hospitals`, `PUT …/approve` / `…/reject`, `POST …/comments` | Reject only while pending or awaiting review (reason 3–500); comment 3–1000; the newest conversation entry is sent (`lastSeenEntryId`); 409 reloads |
+| Appeals | `GET /Admin/appeals?status=`, `PUT /Admin/appeals/{id}/reply\|approve\|reject\|close\|permanently-block` | Response 5–2000; reject only once (`canReject`); block behind a confirm; closed threads read-only |
+| Complaints | `GET /Admin/complaints[/{id}]`, `PUT …/review` | Status and target filters incl. "General question"; reply only when it is the admin's turn; activity reports read-only |
+| Activity log | `GET /Admin/blood-requests`, `GET /transfers`, `PUT /Admin/attention/{area}/seen`, `PUT …/suspend\|lift` | "New" since last opened; suspend open items only, reason required (max 500) |
+| Users / hospitals | `GET /Admin/users`, `GET /Admin/hospitals`, `…/activity-log`, `POST /Admin/messages`, `PUT …/suspend\|reinstate` | Message subject 3–120, body 5–2000; suspend donor/patient accounts and approved hospitals only (reason 3–500, optional end date); Block and Promote stay on the web |
+| Account status and appeals (every role) | `GET /governance/status`, `POST /Appeals`, `POST /Appeals/{id}/reply`, `GET /Appeals/my` | Appeal 10–2000; reply when it is your turn; doctors of a suspended hospital read only |
+| My activity (every role) | `GET /activity-logs/my` | Server-side pages of 10, type and Sri Lanka date filters |
+
+**Phone notifications.** After sign-in the app explains and asks for the Android 13+ notification permission once (it can be allowed later from Profile). While the app is open it polls every 30 seconds; when it is closed, WorkManager polls about every 15 minutes. Each poll reads the saved token from secure storage and calls `GET /api/notifications/my` (and `GET /api/Admin/attention-counts` for the admin) without the activity header, so it never extends the session. A "last seen" marker means nothing is shown twice, and the first poll after sign-in shows nothing old. A 401 (session ended) stops the background task until the next sign-in, and signing out cancels it.
 
 ### Run on a phone (USB)
 
@@ -1313,7 +1335,10 @@ The release APK needs the deployed API URL (including `/api`).
 | Permission | Why |
 |---|---|
 | `INTERNET` | API calls. |
-| `CAMERA` | Scan packet QR codes; the camera is optional (`required="false"`), so the tracking number can also be typed. |
+| `CAMERA` | Scan packet QR codes and take photos to attach; the camera is optional (`required="false"`). A refusal shows how to allow it or to type / attach a file instead. |
+| `POST_NOTIFICATIONS` | Phone notifications (Android 13+ asks the user; a refusal leaves the in-app notifications working). |
+
+Android 11+ package visibility: `<queries>` for `ACTION_VIEW` (open attachments in viewer apps) and `IMAGE_CAPTURE` (camera photos). Core library desugaring is enabled for `flutter_local_notifications`.
 
 Plain HTTP is allowed only in debug builds and only for `127.0.0.1` and `10.0.2.2` (`android/app/src/debug/res/xml/network_security_config.xml`). Release builds use HTTPS only.
 
@@ -1325,4 +1350,4 @@ flutter analyze
 flutter test
 ```
 
-The tests cover: the API client headers and error mapping; the auth repository and controller; the low-stock rule, collected-date and tracking-number rules; formatting; the route guards (unit and router tests); the login, register, inventory, add-packets and analysis-panel widgets; and repositories against a mocked HTTP layer. `.github/workflows/flutter-ci.yml` runs `flutter analyze` and `flutter test` on pushes and pull requests to `main` and `development` that change `mobile/`.
+The tests cover: the API client headers and error mapping; the auth repository and controller; the low-stock rule, collected-date and tracking-number rules; formatting; the route guards (unit and router tests); the login, register, inventory, add-packets and analysis-panel widgets; and repositories against a mocked HTTP layer. Step 4 adds tests for the attention badges, registration / appeal / complaint / oversight / directory rules, attachments, the activity-log query, the notification "new item" rules and the background poll (no activity header, stop on 401), widget tests for the admin home, registration detail, appeal detail, complaint filters, admin message and governance screens, and an admin shell router test (102 tests). `.github/workflows/flutter-ci.yml` runs `flutter analyze` and `flutter test` on pushes and pull requests to `main` and `development` that change `mobile/`.

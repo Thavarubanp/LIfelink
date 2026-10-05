@@ -10,6 +10,8 @@ import 'package:lifelink_mobile/core/auth/session_activity.dart';
 import 'package:lifelink_mobile/core/auth/token_storage.dart';
 import 'package:lifelink_mobile/core/providers.dart';
 import 'package:lifelink_mobile/core/theme/app_theme.dart';
+import 'package:lifelink_mobile/features/admin/admin_repository.dart';
+import 'package:lifelink_mobile/features/admin/attention_controller.dart';
 import 'package:lifelink_mobile/features/notifications/notifications_repository.dart';
 
 const testBaseUrl = 'http://test.local/api';
@@ -106,3 +108,15 @@ Widget testApp(Widget child, {List<Override> overrides = const []}) => ProviderS
       retry: (_, _) => null,
       child: MaterialApp(theme: AppTheme.light(), home: child),
     );
+
+/// Fixed attention counts (no polling).
+class FakeAttention extends AdminAttentionController {
+  FakeAttention([this.value = const AdminAttention(pendingRegistrations: 2, pendingAppeals: 1, pendingComplaints: 3, newBloodRequests: 4)]);
+  final AdminAttention value;
+
+  @override
+  AdminAttention? build() => value;
+
+  @override
+  Future<void> refresh() async {}
+}

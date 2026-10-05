@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../core/theme/app_theme.dart';
 
 import '../../core/widgets/common.dart';
 import '../notifications/unread_badge.dart';
 
 /// One bottom-navigation tab of a role's shell.
 class ShellTab {
-  const ShellTab(this.label, this.icon, this.selectedIcon, {this.showUnread = false});
+  const ShellTab(this.label, this.icon, this.selectedIcon, {this.showUnread = false, this.badge});
 
   final String label;
   final IconData icon;
@@ -14,6 +18,9 @@ class ShellTab {
 
   /// Shows the unread notification count on this tab (the "More" tab, which lists Notifications).
   final bool showUnread;
+
+  /// Another count to show on this tab (e.g. the admin's attention counts).
+  final ProviderListenable<int>? badge;
 }
 
 /// The role's main frame: bottom navigation on phones, a navigation rail on tablets.
@@ -27,6 +34,7 @@ class RoleShell extends StatelessWidget {
 
   Widget _icon(ShellTab tab, bool selected) {
     final icon = Icon(selected ? tab.selectedIcon : tab.icon);
+    if (tab.badge != null) return _CountBadge(count: tab.badge!, child: icon);
     return tab.showUnread ? UnreadBadge(child: icon) : icon;
   }
 
@@ -63,5 +71,18 @@ class RoleShell extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _CountBadge extends ConsumerWidget {
+  const _CountBadge({required this.count, required this.child});
+
+  final ProviderListenable<int> count;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final n = ref.watch(count);
+    return Badge(isLabelVisible: n > 0, backgroundColor: AppColors.red600, label: Text(n > 99 ? '99+' : '$n'), child: child);
   }
 }

@@ -214,7 +214,8 @@ class SectionCard extends StatelessWidget {
                   children: [
                     if (icon != null) ...[Icon(icon, size: 18, color: AppColors.red600), const SizedBox(width: 8)],
                     Expanded(child: Text(title!, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-                    ?trailing,
+                    // A long badge or button shrinks instead of overflowing on narrow phones
+                    if (trailing != null) Flexible(child: trailing!),
                   ],
                 ),
                 const SizedBox(height: 12),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/auth/idle_session.dart';
+import 'core/notifications/phone_notifications_guard.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
@@ -19,7 +20,7 @@ class LifeLinkApp extends ConsumerWidget {
       darkTheme: AppTheme.dark(),
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
-      builder: (context, child) => IdleSessionGuard(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => PhoneNotificationsGuard(child: IdleSessionGuard(child: child ?? const SizedBox.shrink())),
     );
   }
 }
