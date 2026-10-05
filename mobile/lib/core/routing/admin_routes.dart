@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_home_screen.dart';
+import '../../features/admin/appeals/admin_appeals.dart';
 import '../../features/admin/attention_controller.dart';
 import '../../features/admin/registrations/registration_detail_screen.dart';
 import '../../features/admin/registrations/registrations_screen.dart';
@@ -47,7 +48,18 @@ List<RouteBase> adminRoutes() => [
           ),
         ],
       ),
-      GoRoute(path: AppRoutes.adminAppeals, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Appeals', 3)),
+      GoRoute(
+        path: AppRoutes.adminAppeals,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const AdminAppealsScreen(),
+        routes: [
+          GoRoute(
+            path: ':appealId',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, state) => AdminAppealDetailScreen(appealId: state.pathParameters['appealId']!),
+          ),
+        ],
+      ),
       GoRoute(path: AppRoutes.adminComplaints, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Complaints', 4)),
     ];
 
