@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { adminApi, profileApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
@@ -6,6 +6,7 @@ import { useNotification } from '../../context/NotificationContext';
 import ComplaintActivityTimeline from '../../components/complaints/ComplaintActivityTimeline';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
 import { isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import {
   MessageSquare,
   AlertTriangle,
@@ -377,11 +378,7 @@ export const AdminComplaintsPage = () => {
 
                       <span className="text-[11px] text-slate-400">
                         Logged:{' '}
-                        {new Date(c.createdAt).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })}
+                        {formatDisplayDate(c.createdAt)}
                       </span>
                     </div>
                   </div>
@@ -483,7 +480,7 @@ export const AdminComplaintsPage = () => {
                         </p>
                         {c.resolvedAt && (
                           <p className="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 pt-1">
-                            Recorded on {new Date(c.resolvedAt).toLocaleString()}
+                            Recorded on {formatDisplayDate(c.resolvedAt)}
                           </p>
                         )}
                       </div>
@@ -509,7 +506,7 @@ export const AdminComplaintsPage = () => {
                                   {report.title}
                                 </span>
                                 <span className="text-[10px] text-slate-400 font-mono">
-                                  {new Date(report.submittedAt).toLocaleDateString()}
+                                  {formatDisplayDate(report.submittedAt)}
                                 </span>
                               </div>
                               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -647,13 +644,7 @@ export const AdminComplaintsPage = () => {
                 {/* Doctor specifics if available */}
                 <div className="text-[11px] text-slate-400 pt-1">
                   Registered:{' '}
-                  {creatorModal.data.createdAt
-                    ? new Date(creatorModal.data.createdAt).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric'
-                      })
-                    : 'N/A'}
+                  {formatDisplayDate(creatorModal.data.createdAt, 'N/A')}
                 </div>
               </div>
             ) : null}

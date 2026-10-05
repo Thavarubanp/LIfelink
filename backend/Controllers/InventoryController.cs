@@ -33,6 +33,13 @@ namespace LifeLink.Controllers
 
         private Task<Guid?> CallerHospitalIdAsync() => CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
 
+        private bool IsHospitalStaffOnly => _currentUserService.Roles.Contains("HospitalStaff")
+            && !_currentUserService.Roles.Contains("Admin")
+            && !_currentUserService.Roles.Contains("InternalAgent");
+
+        private IActionResult ForbiddenInventory() =>
+            StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("You can only view your own hospital's inventory."));
+
         private async Task<bool> OwnsInventoryAsync(Guid inventoryId)
         {
             var hospitalId = await CallerHospitalIdAsync();
@@ -77,14 +84,24 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Retrieves all blood inventory records across hospitals.
+        /// HospitalStaff receive only their authenticated hospital's inventory; Admin/InternalAgent receive all hospitals.
         /// </summary>
         [HttpGet]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetAllInventory()
         {
-            var result = await _inventoryService.GetAllInventoryAsync();
-            return Ok(ApiResponse<IEnumerable<InventoryResponseDto>>.Ok(result, "All inventories retrieved successfully."));
+            IEnumerable<InventoryResponseDto> result;
+            if (IsHospitalStaffOnly)
+            {
+                var hospitalId = await CallerHospitalIdAsync();
+                if (hospitalId == null) return ForbiddenInventory();
+                result = await _inventoryService.GetHospitalInventoryAsync(hospitalId.Value);
+            }
+            else
+            {
+                result = await _inventoryService.GetAllInventoryAsync();
+            }
+            return Ok(ApiResponse<IEnumerable<InventoryResponseDto>>.Ok(result, "Inventories retrieved successfully."));
         }
 
         /// <summary>
@@ -122,35 +139,56 @@ namespace LifeLink.Controllers
             Ok(ApiResponse<InventoryAnalysisStatusDto>.Ok(await analysis.GetStatusAsync(), "Inventory analysis status."));
 
         /// <summary>
-        /// Retrieves low-stock blood inventory records (units available &lt; minimum threshold, the single rule in InventoryRules).
+        /// Retrieves low-stock records (the authenticated hospital only for HospitalStaff).
         /// </summary>
         [HttpGet("low-stock")]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetLowStockInventory()
         {
-            var result = await _inventoryService.GetLowStockInventoryAsync();
+            IEnumerable<InventoryResponseDto> result;
+            if (IsHospitalStaffOnly)
+            {
+                var hospitalId = await CallerHospitalIdAsync();
+                if (hospitalId == null) return ForbiddenInventory();
+                result = (await _inventoryService.GetHospitalInventoryAsync(hospitalId.Value)).Where(i => i.IsLowStock);
+            }
+            else
+            {
+                result = await _inventoryService.GetLowStockInventoryAsync();
+            }
             return Ok(ApiResponse<IEnumerable<InventoryResponseDto>>.Ok(result, "Low stock inventories retrieved successfully."));
         }
 
         /// <summary>
-        /// Retrieves surplus blood inventory records (units available >= 80% maximum capacity).
+        /// Retrieves surplus records (the authenticated hospital only for HospitalStaff).
         /// </summary>
         [HttpGet("surplus")]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetSurplusInventory()
         {
-            var result = await _inventoryService.GetSurplusInventoryAsync();
+            IEnumerable<InventoryResponseDto> result;
+            if (IsHospitalStaffOnly)
+            {
+                var hospitalId = await CallerHospitalIdAsync();
+                if (hospitalId == null) return ForbiddenInventory();
+                result = (await _inventoryService.GetHospitalInventoryAsync(hospitalId.Value)).Where(i => i.IsSurplus);
+            }
+            else
+            {
+                result = await _inventoryService.GetSurplusInventoryAsync();
+            }
             return Ok(ApiResponse<IEnumerable<InventoryResponseDto>>.Ok(result, "Surplus inventories retrieved successfully."));
         }
 
         /// <summary>
-        /// Retrieves a specific blood inventory record by ID.
+        /// Retrieves a specific record; HospitalStaff may retrieve only their own hospital's record.
         /// </summary>
         [HttpGet("{id:guid}")]
         [ProducesResponseType(typeof(ApiResponse<InventoryResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> GetInventoryById(Guid id)
         {
+            if (IsHospitalStaffOnly && !await OwnsInventoryAsync(id)) return ForbiddenInventory();
             var result = await _inventoryService.GetInventoryByIdAsync(id);
             if (result == null)
             {
@@ -161,12 +199,13 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Retrieves transaction audit history for a specific blood inventory record.
+        /// Retrieves transaction history; HospitalStaff may retrieve only their own hospital's record.
         /// </summary>
         [HttpGet("{id:guid}/transactions")]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryTransactionResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetInventoryTransactions(Guid id)
         {
+            if (IsHospitalStaffOnly && !await OwnsInventoryAsync(id)) return ForbiddenInventory();
             var result = await _inventoryService.GetInventoryTransactionsAsync(id);
             return Ok(ApiResponse<IEnumerable<InventoryTransactionResponseDto>>.Ok(result, "Inventory transactions retrieved successfully."));
         }
@@ -334,12 +373,18 @@ namespace LifeLink.Controllers
         }
 
         /// <summary>
-        /// Retrieves all blood inventory records for a specific hospital.
+        /// Retrieves a hospital snapshot; HospitalStaff may request only their authenticated hospital.
         /// </summary>
         [HttpGet("hospital/{hospitalId:guid}")]
         [ProducesResponseType(typeof(ApiResponse<IEnumerable<InventoryResponseDto>>), StatusCodes.Status200OK)]
         public async Task<IActionResult> GetHospitalInventory(Guid hospitalId)
         {
+            if (IsHospitalStaffOnly)
+            {
+                var ownHospitalId = await CallerHospitalIdAsync();
+                if (ownHospitalId == null || ownHospitalId.Value != hospitalId) return ForbiddenInventory();
+                hospitalId = ownHospitalId.Value;
+            }
             var result = await _inventoryService.GetHospitalInventoryAsync(hospitalId);
             return Ok(ApiResponse<IEnumerable<InventoryResponseDto>>.Ok(result, "Hospital inventory retrieved successfully."));
         }

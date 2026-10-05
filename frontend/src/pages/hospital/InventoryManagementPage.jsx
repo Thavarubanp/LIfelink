@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, ChevronDown, ChevronRight, Droplet, History, Loader2, PackagePlus, Pencil, Plus, Search, Send, Settings, SlidersHorizontal, X } from 'lucide-react';
 import { inventoryApi, profileApi } from '../../api';
@@ -8,10 +8,11 @@ import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { newIdempotencyKey } from '../../session/sessionActivity';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const PACKET_STATUS_VARIANT = { Available: 'success', Reserved: 'info', Issued: 'default', Donated: 'primary', Expired: 'warning' };
-const fmtDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
+const fmtDate = (value) => formatDisplayDate(value, '-');
 const unwrap = (res) => res?.data || (Array.isArray(res) ? res : []);
 // Local calendar date (yyyy-mm-dd); the server treats "today" as the Sri Lanka date
 const localToday = () => new Date().toLocaleDateString('en-CA');
@@ -165,11 +166,11 @@ export const InventoryManagementPage = () => {
     }
     if (dialog.type === 'issue') {
       if (form.packetIds.length === 0) {
-        setFormError('Select at least one packet to issue.');
+        setFormError('Select at least one packet to remove from available stock.');
         return;
       }
       if (!form.auditNotes.trim()) {
-        setFormError('A reason is required when issuing blood.');
+        setFormError('A reason is required when removing blood from available stock.');
         return;
       }
     }
@@ -196,7 +197,7 @@ export const InventoryManagementPage = () => {
           issuePacketIds: form.packetIds,
           auditNotes: form.auditNotes.trim()
         });
-        addToast({ title: 'Blood issued', message: `${form.packetIds.length} ${dialog.row.bloodGroup} packet(s) issued.`, type: 'success' });
+        addToast({ title: 'Blood removed from available stock', message: `${form.packetIds.length} ${dialog.row.bloodGroup} packet(s) removed from available stock.`, type: 'success' });
       } else if (dialog.type === 'addPackets') {
         const res = await inventoryApi.createPackets({
           bloodGroup: form.bloodGroup,
@@ -284,7 +285,7 @@ export const InventoryManagementPage = () => {
                     <button type="button" onClick={() => openEditPacket(p)} className={smallButton}><Pencil className="w-3 h-3" /> Edit</button>
                   )}
                   {p.status === 'Available' && (
-                    <button type="button" onClick={() => openIssue(row, [p.packetId])} className={smallButton}><Send className="w-3 h-3" /> Issue</button>
+                    <button type="button" onClick={() => openIssue(row, [p.packetId])} className={smallButton}><Send className="w-3 h-3" /> Remove</button>
                   )}
                   <button type="button" onClick={() => openHistory(p)} className={smallButton}><History className="w-3 h-3" /> History</button>
                 </span>
@@ -310,7 +311,7 @@ export const InventoryManagementPage = () => {
   const dialogTitle = {
     category: 'Add blood group category',
     thresholds: `${dialog?.row?.bloodGroup}: thresholds`,
-    issue: `Issue ${dialog?.row?.bloodGroup} blood`,
+    issue: `Remove ${dialog?.row?.bloodGroup} blood from available stock`,
     addPackets: 'Add blood packets',
     editPacket: `Edit packet ${dialog?.packet?.trackingNumber}`
   }[dialog?.type];
@@ -321,7 +322,7 @@ export const InventoryManagementPage = () => {
       <div>
         <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Blood Inventory</h1>
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          Every unit is a 440 ml packet with its own tracking number. Add collected blood as packets and issue blood by choosing the packets.
+          Every unit is a 440 ml packet with its own tracking number. Add collected blood as packets and remove blood from available stock by choosing exact packets.
         </p>
       </div>
 
@@ -408,7 +409,7 @@ export const InventoryManagementPage = () => {
                         {row.expiringSoonUnits > 0 ? ` - ${row.expiringSoonUnits} expiring within ${row.expiryAlertDays}d` : ''}
                       </span>
                       <button type="button" onClick={() => openThresholds(row)} className={smallButton}><SlidersHorizontal className="w-3 h-3" /> Thresholds</button>
-                      <button type="button" disabled={row.unitsAvailable === 0} onClick={() => openIssue(row)} className={smallButton}><Send className="w-3 h-3" /> Issue</button>
+                      <button type="button" disabled={row.unitsAvailable === 0} onClick={() => openIssue(row)} className={smallButton}><Send className="w-3 h-3" /> Remove</button>
                     </div>
                   </div>
                   {isOpen && <div className="px-4 pb-4 pt-1 bg-slate-50/60 dark:bg-slate-950/30">{renderPackets(row)}</div>}
@@ -477,9 +478,9 @@ export const InventoryManagementPage = () => {
 
             {dialog.type === 'issue' && (
               <>
-                <p className="text-slate-500">Choose the packets to issue. They leave your available stock and stay in the packet history as Issued.</p>
+                <p className="text-slate-500">Choose the packets to remove from available stock. They remain in packet history with status Issued.</p>
                 <PacketPicker bloodGroup={(groupRow(dialog.row.bloodGroup) || dialog.row).bloodGroup} selected={form.packetIds} onChange={(ids) => setForm({ ...form, packetIds: ids })} />
-                <input placeholder="Reason, for example: issued to theatre for patient care" value={form.auditNotes}
+                <input placeholder="Reason for removing these packets from available stock" value={form.auditNotes}
                   onChange={(e) => setForm({ ...form, auditNotes: e.target.value })} maxLength={500} className={inputClass} />
               </>
             )}
@@ -491,7 +492,7 @@ export const InventoryManagementPage = () => {
             <div className="flex gap-2 pt-2">
               <button type="button" onClick={() => setDialog(null)} className="w-1/2 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold">Cancel</button>
               <button type="submit" disabled={saving} className="w-1/2 py-2.5 bg-red-600 text-white rounded-xl font-semibold disabled:opacity-50">
-                {saving ? 'Saving...' : dialog.type === 'issue' ? `Issue ${form.packetIds.length || ''} packet(s)` : 'Save'}
+                {saving ? 'Saving...' : dialog.type === 'issue' ? `Remove ${form.packetIds.length || ''} packet(s)` : 'Save'}
               </button>
             </div>
           </form>
@@ -521,7 +522,7 @@ export const InventoryManagementPage = () => {
                   <div className="absolute -left-6 top-0.5 w-5 h-5 rounded-full border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900" />
                   <div className="font-semibold text-slate-800 dark:text-slate-100">{t.transactionType.replaceAll('_', ' ')}</div>
                   <div className="text-slate-500">{t.notes}</div>
-                  <div className="text-[10px] text-slate-400">{new Date(t.createdAt).toLocaleString()}</div>
+                  <div className="text-[10px] text-slate-400">{formatDisplayDate(t.createdAt)}</div>
                 </div>
               ))}
             </div>

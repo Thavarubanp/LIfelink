@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { adminApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { isConflictError } from '../../utils/errorUtils';
 import AppealThread from '../../components/complaints/AppealThread';
 import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import {
-  ShieldAlert, ShieldX, CheckCircle2, XCircle, Clock,
+  ShieldX, CheckCircle2, XCircle, Clock,
   MessageSquare, Loader2, ChevronDown, ChevronUp, User, Building2, Lock
 } from 'lucide-react';
 
@@ -24,7 +25,7 @@ const StatusBadge = ({ status }) => {
   );
 };
 
-const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '—';
+const fmt = (iso) => formatDisplayDate(iso);
 
 const ReviewModal = ({ appeal, actionType, onClose, onConfirm }) => {
   const [response, setResponse] = useState('');
@@ -104,7 +105,7 @@ export const AdminAppealsPage = () => {
     try {
       const res = await adminApi.getAppeals(filter === 'ALL' ? null : filter);
       setAppeals(res.data || []);
-    } catch (err) {
+    } catch {
       addToast({ title: 'Error', message: 'Failed to load appeals.', type: 'error' });
     } finally {
       setLoading(false);

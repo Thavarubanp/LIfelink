@@ -29,11 +29,17 @@ npm run preview
 | `src/components/` | Shared layout, tables, dialogs, workflow, assistant, screening, and notification UI |
 | `src/context/` | Authentication, toast notifications, theme, and admin-attention state |
 | `src/session/` | Cross-tab session activity and idempotency-key helpers |
-| `src/utils/` | Role, error, and file utilities |
+| `src/utils/` | Role, error, file, and display-date utilities |
 
 Routes live in `src/App.jsx`. `ProtectedRoute` sends unauthenticated users to login, suspended accounts to governance, unapproved hospitals to the waiting page, doctors with a temporary password to password change, and wrong-role users to their own dashboard.
 
 `AuthContext` owns the authenticated user. The API client attaches the JWT, uses `X-LifeLink-Activity` only for user activity, handles ended sessions, and supports `Idempotency-Key` for protected create operations. `NotificationContext` provides toasts; theme state follows the system initially and can be changed for the current session.
+
+All user-visible web dates use `DD/MM/YYYY` and do not display a time. API values, HTML date inputs, filtering, sorting, comparisons, and payload serialization keep their required technical formats.
+
+## Doctor dashboard and screening queue
+
+The Doctor Dashboard derives its three screening cards from the latest `/donor-verification` report per acceptance. Screened Donors opens `/doctor/screenings?view=all`, Pending Reviews opens `?view=review`, and Approved, Awaiting Donation opens `?view=awaiting`. The first count represents screening cases per acceptance, not guaranteed unique people. The Screening Queue keeps the selected view in the URL so direct links and browser back/forward navigation restore the corresponding records.
 
 ## Donor dashboard and public requests
 

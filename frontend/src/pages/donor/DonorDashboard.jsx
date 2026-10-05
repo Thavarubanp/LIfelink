@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Badge } from '../../components/common/Badge';
 import { Droplet, Heart, ArrowRight, ShieldCheck, Loader2, CheckCircle2, XCircle, Ban, ClipboardList } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const ACTIVE_ACCEPTANCE_STATUSES = new Set(['Accepted', 'ScreeningPending', 'ScreeningCompleted', 'Verified']);
 const OPEN_REQUEST_STATUSES = new Set(['Pending', 'Verified', 'Approved']);
@@ -109,7 +110,7 @@ export const DonorDashboard = () => {
               <Badge variant={canDonate ? 'success' : 'warning'}>{canDonate ? 'Ready to Donate' : '120-day interval'}</Badge>
             </div>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {canDonate ? 'At least 120 days since your last recorded donation.' : `You can donate again from ${nextEligible.toLocaleDateString()}.`}
+              {canDonate ? 'At least 120 days since your last recorded donation.' : `You can donate again from ${formatDisplayDate(nextEligible)}.`}
               {profile?.bloodGroup ? ` Blood group: ${profile.bloodGroup}.` : ' Blood group not set.'}
             </p>
           </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { bloodRequestApi, doctorApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
@@ -6,6 +6,7 @@ import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { DataTable } from '../../components/common/DataTable';
 import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { UserCheck, XCircle, X, Loader2, RefreshCw, Stethoscope, AlertCircle } from 'lucide-react';
+import { ROLE_ATTENTION_UPDATED_EVENT } from '../../context/useRoleAttention';
 
 /**
  * Hospital Staff: every blood request sent to this hospital.
@@ -46,6 +47,7 @@ export const VerifyBloodRequestsPage = () => {
   }, [reloadKey]);
 
   const reload = () => {
+    window.dispatchEvent(new Event(ROLE_ATTENTION_UPDATED_EVENT));
     setLoading(true);
     setReloadKey((k) => k + 1);
   };

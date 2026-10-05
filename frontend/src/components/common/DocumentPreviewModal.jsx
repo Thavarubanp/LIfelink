@@ -1,4 +1,3 @@
-import React from 'react';
 import { X, Download, FileText } from 'lucide-react';
 import { hasFileContent } from '../../utils/fileUtils';
 

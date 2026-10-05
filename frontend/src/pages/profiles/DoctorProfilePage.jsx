@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Stethoscope,
   Building2,
-  Mail,
   Phone,
   Calendar,
   ShieldCheck,
@@ -17,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import profileApi from '../../api/profileApi';
 import EditProfileModal from '../../components/common/EditProfileModal';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const DOCTOR_EDIT_FIELDS = [
   { name: 'firstName', label: 'First Name' },
@@ -168,7 +168,7 @@ export const DoctorProfilePage = () => {
             <div>
               <span className="text-slate-400 text-[10px] uppercase font-semibold">Credentialed Since</span>
               <div className="font-bold text-slate-900 dark:text-slate-100">
-                {profile.createdAt ? new Date(profile.createdAt).toLocaleDateString([], { month: 'long', year: 'numeric', day: 'numeric' }) : 'N/A'}
+                {formatDisplayDate(profile.createdAt, 'N/A')}
               </div>
             </div>
           </div>

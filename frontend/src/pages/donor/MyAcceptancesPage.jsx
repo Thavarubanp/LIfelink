@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, CheckCircle2, FileText, Loader2, LogOut, PencilLine, Stethoscope, XCircle } from 'lucide-react';
 import { acceptanceApi } from '../../api';
@@ -6,6 +6,7 @@ import { Badge, SuspendedBadge } from '../../components/common/Badge';
 import { ScreeningAnswersForm } from '../../components/screening/ScreeningAnswersForm';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const STATUS = {
   Accepted: { label: 'Screening not started', variant: 'info', next: 'Start your health screening interview.' },
@@ -18,7 +19,7 @@ const STATUS = {
 };
 const ACTIVE = ['Accepted', 'ScreeningPending', 'ScreeningCompleted', 'Verified'];
 
-const fmt = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
+const fmt = (value) => formatDisplayDate(value, '');
 
 const DecisionHistory = ({ history }) => {
   if (!history?.length) return null;

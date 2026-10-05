@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, User, BookOpen, Compass, UserCircle, Stethoscope, ExternalLink, ArrowRight, Loader2 } from 'lucide-react';
 

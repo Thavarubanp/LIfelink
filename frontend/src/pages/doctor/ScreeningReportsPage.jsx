@@ -1,13 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, FileText, Loader2, Lock, Undo2, X, XCircle } from 'lucide-react';
 import { acceptanceApi, bloodRequestApi, screeningApi } from '../../api';
 import { Badge } from '../../components/common/Badge';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
+import { ROLE_ATTENTION_UPDATED_EVENT } from '../../context/useRoleAttention';
+import { useSearchParams } from 'react-router-dom';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const RISK_VARIANT = { HIGH: 'danger', MEDIUM: 'warning', LOW: 'success' };
-const fmt = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
 const parseReport = (json) => {
   try {
     return json ? JSON.parse(json) : null;
@@ -26,7 +28,7 @@ const ReportViewer = ({ versions, onClose }) => {
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Screening report - {selected.donorName}</h3>
             <p className="text-[11px] text-slate-500">
-              Request #{String(selected.bloodRequestId).substring(0, 8)} ({selected.requestBloodGroup}){selected.requestStatus === 'Deleted' ? ' - request deleted by its creator' : ''} - version {selected.reportVersion}, submitted {fmt(selected.createdAt)}
+              Request #{String(selected.bloodRequestId).substring(0, 8)} ({selected.requestBloodGroup}){selected.requestStatus === 'Deleted' ? ' - request deleted by its creator' : ''} - version {selected.reportVersion}, submitted {formatDisplayDate(selected.createdAt)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-4 h-4" /></button>
@@ -89,7 +91,7 @@ const ReportViewer = ({ versions, onClose }) => {
           {selected.status !== 'Pending' && (
             <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700">
               <span className="font-semibold">Decision:</span> {selected.status}
-              {selected.decidedByName && ` by Dr. ${selected.decidedByName}`} {selected.verifiedAt && `on ${fmt(selected.verifiedAt)}`}
+              {selected.decidedByName && ` by Dr. ${selected.decidedByName}`} {selected.verifiedAt && `on ${formatDisplayDate(selected.verifiedAt)}`}
               {selected.notes && <p className="mt-1 text-slate-600 dark:text-slate-300">{selected.notes}</p>}
             </div>
           )}
@@ -101,9 +103,9 @@ const ReportViewer = ({ versions, onClose }) => {
 
 export const ScreeningReportsPage = () => {
   const { addToast } = useNotification();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('review');
   const [viewing, setViewing] = useState(null);
   const [dialog, setDialog] = useState(null); // { type: 'approve' | 'reject' | 'record' | 'release', report }
   const [text, setText] = useState('');
@@ -111,7 +113,10 @@ export const ScreeningReportsPage = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const [reloadKey, setReloadKey] = useState(0);
-  const reload = () => setReloadKey((k) => k + 1);
+  const reload = () => {
+    window.dispatchEvent(new Event(ROLE_ATTENTION_UPDATED_EVENT));
+    setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -147,7 +152,9 @@ export const ScreeningReportsPage = () => {
       || new Date(a.latest.createdAt) - new Date(b.latest.createdAt));
   const awaiting = rows.filter((r) => r.latest.acceptanceStatus === 'Verified');
   const history = rows.filter((r) => !review.includes(r) && !awaiting.includes(r));
-  const visible = tab === 'review' ? review : tab === 'awaiting' ? awaiting : history;
+  const requestedView = searchParams.get('view');
+  const tab = ['all', 'review', 'awaiting', 'history'].includes(requestedView) ? requestedView : 'review';
+  const visible = tab === 'all' ? rows : tab === 'review' ? review : tab === 'awaiting' ? awaiting : history;
 
   const openDialog = (type, report) => {
     setDialog({ type, report });
@@ -188,6 +195,7 @@ export const ScreeningReportsPage = () => {
   };
 
   const tabs = [
+    { key: 'all', label: 'All screening cases', count: rows.length },
     { key: 'review', label: 'Waiting for review', count: review.length },
     { key: 'awaiting', label: 'Approved - awaiting donation', count: awaiting.length },
     { key: 'history', label: 'History', count: history.length }
@@ -204,7 +212,7 @@ export const ScreeningReportsPage = () => {
 
       <div className="flex flex-wrap gap-2">
         {tabs.map((t) => (
-          <button key={t.key} type="button" onClick={() => setTab(t.key)}
+          <button key={t.key} type="button" onClick={() => setSearchParams({ view: t.key })}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === t.key ? 'bg-red-600 text-white shadow-sm' : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300'}`}>
             {t.label} ({t.count})
           </button>
@@ -235,7 +243,7 @@ export const ScreeningReportsPage = () => {
                 </p>
                 {tab === 'history' && (
                   <p className="text-[11px] text-slate-500">
-                    {latest.status}{latest.decidedByName ? ` by Dr. ${latest.decidedByName}` : ''}{latest.verifiedAt ? ` on ${fmt(latest.verifiedAt)}` : ''} - donor status {latest.acceptanceStatus}
+                    {latest.status}{latest.decidedByName ? ` by Dr. ${latest.decidedByName}` : ''}{latest.verifiedAt ? ` on ${formatDisplayDate(latest.verifiedAt)}` : ''} - donor status {latest.acceptanceStatus}
                     {latest.notes ? ` - ${latest.notes}` : ''}
                   </p>
                 )}

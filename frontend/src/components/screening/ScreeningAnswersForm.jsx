@@ -4,8 +4,9 @@ import { acceptanceApi } from '../../api';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { ScreeningParts } from './ScreeningParts';
 import { CONFIRM_ID, collectAnswers, toInputValue } from './screeningValues';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
-const fmt = (value) => (value ? new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+const fmt = (value) => formatDisplayDate(value, '');
 
 const initialValues = (questionnaire, answers) => {
   const values = {};

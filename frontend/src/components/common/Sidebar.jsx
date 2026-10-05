@@ -18,19 +18,23 @@ import {
 } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 import { useAdminAttention, badgeText } from '../../context/useAdminAttention';
+import { useRoleAttention } from '../../context/useRoleAttention';
 
 export const Sidebar = ({ mobileOpen = false, onClose }) => {
   const { user } = useAuth();
   const { pathname } = useLocation();
   const userRoles = user?.roles ? (Array.isArray(user.roles) ? user.roles : [user.roles]) : ['User'];
   const isAdmin = userRoles.includes('Admin');
+  const usesRoleAttention = !isAdmin && (userRoles.includes('HospitalStaff') || userRoles.includes('Doctor'));
   // Admin badges: new requests/transfers (Activity log) and items waiting for the admin
   const attention = useAdminAttention(isAdmin);
+  const roleAttention = useRoleAttention(usesRoleAttention);
   const badgeFor = (key) => {
     if (!attention || !key) return null;
     if (key === 'activity') return badgeText((attention.newBloodRequests || 0) + (attention.newTransfers || 0));
     return badgeText(attention[key]);
   };
+  const roleBadgeFor = (key) => badgeText(roleAttention?.[key]);
 
   const getNavItems = () => {
     if (userRoles.includes('Admin')) {
@@ -51,8 +55,8 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
         { label: 'Blood Inventory', path: '/hospital/inventory', icon: Droplet },
         { label: 'Emergency Center', path: '/hospital/emergency', icon: Zap },
         { label: 'Create Blood Request', path: '/donor/requests/create', icon: ClipboardList },
-        { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck },
-        { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight },
+        { label: 'Verify Blood Requests', path: '/hospital/requests/verify', icon: UserCheck, roleBadge: 'pendingHospitalVerifications', badgeTitle: 'requests waiting for hospital verification' },
+        { label: 'Inter-Hospital Transfers', path: '/hospital/transfers', icon: ArrowLeftRight, roleBadge: 'pendingTransferResponses', badgeTitle: 'transfers waiting for your hospital response' },
         { label: 'Donate Blood', path: '/hospital/donate', icon: HeartHandshake },
         { label: 'Doctor Management', path: '/hospital/doctors', icon: Stethoscope },
         { label: 'Complaints', path: '/donor/complaints', icon: AlertTriangle },
@@ -64,7 +68,7 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
     if (userRoles.includes('Doctor')) {
       return [
         { label: 'Doctor Dashboard', path: '/doctor/dashboard', icon: LayoutDashboard },
-        { label: 'Screening Queue', path: '/doctor/screenings', icon: Stethoscope }
+        { label: 'Screening Queue', path: '/doctor/screenings', icon: Stethoscope, roleBadge: 'pendingScreeningReviews', badgeTitle: 'screening reports waiting for review' }
       ];
     }
 
@@ -126,13 +130,13 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="flex-1">{item.label}</span>
-              {badgeFor(item.badge) && (
+              {(badgeFor(item.badge) || roleBadgeFor(item.roleBadge)) && (
                 <span
                   className="ml-auto inline-flex min-w-[1.25rem] h-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white"
-                  title={`${badgeFor(item.badge)} ${item.badgeTitle}`}
-                  aria-label={`${badgeFor(item.badge)} ${item.badgeTitle}`}
+                  title={`${badgeFor(item.badge) || roleBadgeFor(item.roleBadge)} ${item.badgeTitle}`}
+                  aria-label={`${badgeFor(item.badge) || roleBadgeFor(item.roleBadge)} ${item.badgeTitle}`}
                 >
-                  {badgeFor(item.badge)}
+                  {badgeFor(item.badge) || roleBadgeFor(item.roleBadge)}
                 </span>
               )}
             </Link>

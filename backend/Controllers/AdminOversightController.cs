@@ -103,7 +103,8 @@ namespace LifeLink.Controllers
             {
                 return NotFound(ApiResponse<object>.Fail("User not found."));
             }
-            return Ok(await ActivityLogQueries.PageAsync(ActivityLogQueries.ForUser(_context, id), query, viewerIsAdmin: true));
+            var viewer = new ActivityLogViewerContext(AdminId, new HashSet<string> { "Admin" }, null);
+            return Ok(await ActivityLogQueries.PageAsync(_context, ActivityLogQueries.ForUser(_context, id), query, viewer));
         }
 
         /// <summary>A hospital's full activity log (its staff, its doctors, admin actions on it), paged and filtered.</summary>
@@ -116,7 +117,8 @@ namespace LifeLink.Controllers
             {
                 return NotFound(ApiResponse<object>.Fail("Hospital not found."));
             }
-            return Ok(await ActivityLogQueries.PageAsync(ActivityLogQueries.ForHospital(_context, id), query, viewerIsAdmin: true));
+            var viewer = new ActivityLogViewerContext(AdminId, new HashSet<string> { "Admin" }, null);
+            return Ok(await ActivityLogQueries.PageAsync(_context, ActivityLogQueries.ForHospital(_context, id), query, viewer));
         }
 
         /// <summary>Every blood request (users', hospitals' and the Admin's, any status including deleted), newest first. Read-only.</summary>

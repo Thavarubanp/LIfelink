@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Loader2, Send, AlertCircle, MessageSquare, Paperclip } from 'lucide-react';
 import { getApiErrorMessage } from '../../utils/errorUtils';
 import { readFileAsAttachment } from '../../utils/fileUtils';

@@ -71,7 +71,9 @@ namespace LifeLink.Tests
             new(w.Db, new AdminNotificationService(w.Db, new Mock<IEmailService>().Object, NullLogger<AdminNotificationService>.Instance));
 
         private static Task<ActivityLogPageDto> Page(World w, IQueryable<ActivityLog> scope, ActivityLogQueryDto? q = null, bool admin = true) =>
-            ActivityLogQueries.PageAsync(scope, q ?? new ActivityLogQueryDto(), admin);
+            ActivityLogQueries.PageAsync(w.Db, scope, q ?? new ActivityLogQueryDto(),
+                new ActivityLogViewerContext(admin ? w.Admin.UserId : w.Patient.UserId,
+                    new HashSet<string> { admin ? "Admin" : "User" }, null));
 
         // ---------- Recording ----------
 
@@ -179,6 +181,127 @@ namespace LifeLink.Tests
         }
 
         // ---------- Filters and paging ----------
+
+        [Fact]
+        public async Task User_Enrichment_Is_Limited_To_Their_Authorized_Request_And_Acceptance_Rows()
+        {
+            var w = await SeedAsync();
+            var request = await new BloodRequestService(w.Db).CreateRequestAsync(w.Patient.UserId, Request(w, "A+"));
+            var acceptance = new Acceptance
+            {
+                AcceptanceId = Guid.NewGuid(), BloodRequestId = request.BloodRequestId,
+                DonorUserId = w.Patient.UserId, Status = AcceptanceStatus.Accepted
+            };
+            w.Db.Acceptances.Add(acceptance);
+            await ActivityLogger.AddAsync(w.Db, w.Patient.UserId, "Donation.Accepted", ActivityLogger.Types.Donation,
+                acceptance.AcceptanceId, "Accepted a request.");
+
+            var other = new User { UserId = Guid.NewGuid(), FirstName = "Other", LastName = "User", Email = "other@example.test" };
+            w.Db.Users.Add(other);
+            w.Db.UserRoles.Add(new UserRole { UserId = other.UserId, RoleId = 1 });
+            await ActivityLogger.AddAsync(w.Db, other.UserId, "BloodRequest.Created", ActivityLogger.Types.BloodRequest,
+                Guid.NewGuid(), "Other user's request.");
+            await w.Db.SaveChangesAsync();
+
+            var viewer = new ActivityLogViewerContext(w.Patient.UserId, new HashSet<string> { "User" }, null);
+            var page = await ActivityLogQueries.PageAsync(w.Db, ActivityLogQueries.ForUser(w.Db, w.Patient.UserId),
+                new ActivityLogQueryDto(), viewer);
+
+            Assert.Equal(2, page.Total);
+            var requestRow = page.Items.Single(i => i.Action == "BloodRequest.Created");
+            Assert.Equal(request.BloodRequestId, requestRow.BloodRequestId);
+            Assert.Equal("A+", requestRow.BloodGroup);
+            Assert.Equal(w.Hospital.Name, requestRow.HospitalName);
+            var acceptanceRow = page.Items.Single(i => i.Action == "Donation.Accepted");
+            Assert.Equal(acceptance.AcceptanceId, acceptanceRow.AcceptanceId);
+            Assert.Equal(request.BloodRequestId, acceptanceRow.BloodRequestId);
+            Assert.DoesNotContain(page.Items, i => i.Summary == "Other user's request.");
+        }
+
+        [Fact]
+        public async Task Complaint_And_Appeal_Expose_Only_Record_References()
+        {
+            var w = await SeedAsync();
+            await ActivityLogger.AddAsync(w.Db, w.Patient.UserId, "Complaint.Filed", ActivityLogger.Types.Complaint,
+                Guid.NewGuid(), "Complaint summary.");
+            await ActivityLogger.AddAsync(w.Db, w.Patient.UserId, "Appeal.Submitted", ActivityLogger.Types.Appeal,
+                Guid.NewGuid(), "Appeal summary.");
+            await w.Db.SaveChangesAsync();
+
+            var viewer = new ActivityLogViewerContext(w.Patient.UserId, new HashSet<string> { "User" }, null);
+            var page = await ActivityLogQueries.PageAsync(w.Db, ActivityLogQueries.ForUser(w.Db, w.Patient.UserId),
+                new ActivityLogQueryDto(), viewer);
+
+            Assert.All(page.Items, item =>
+            {
+                Assert.NotNull(item.RecordReference);
+                Assert.Null(item.BloodRequestId);
+                Assert.Null(item.AcceptanceId);
+                Assert.Null(item.HospitalName);
+                Assert.Null(item.BloodGroup);
+            });
+        }
+
+        [Fact]
+        public async Task Hospital_Transfer_And_Packet_Enrichment_Requires_Hospital_Participation()
+        {
+            var w = await SeedAsync();
+            var otherHospital = new Hospital { HospitalId = Guid.NewGuid(), Name = "Hospital B", Email = "b@example.test", IsVerified = true, ApprovalStatus = ApprovalStatus.Approved };
+            var transfer = new HospitalTransferRequest
+            {
+                TransferRequestId = Guid.NewGuid(), SenderHospitalId = w.Hospital.HospitalId,
+                ReceiverHospitalId = otherHospital.HospitalId, BloodGroup = "O-", UnitsRequested = 1,
+                Status = "Pending", TransferType = TransferTypes.Request
+            };
+            var packet = new BloodPacket
+            {
+                PacketId = Guid.NewGuid(), TrackingNumber = "PKT-00009999", HospitalId = w.Hospital.HospitalId,
+                CreatedByHospitalId = w.Hospital.HospitalId, BloodGroup = "O-", CollectionDate = DateTime.UtcNow,
+                ExpiryDate = DateTime.UtcNow.AddDays(20), Status = BloodPacketStatus.Available, Source = BloodPacketSource.Manual
+            };
+            w.Db.Hospitals.Add(otherHospital);
+            w.Db.HospitalTransferRequests.Add(transfer);
+            w.Db.BloodPackets.Add(packet);
+            await ActivityLogger.AddForHospitalAsync(w.Db, w.Hospital.HospitalId, "Transfer.RequestCreated",
+                ActivityLogger.Types.Transfer, transfer.TransferRequestId, "Created transfer.");
+            await ActivityLogger.AddForHospitalAsync(w.Db, w.Hospital.HospitalId, "Inventory.PacketEdited",
+                ActivityLogger.Types.Inventory, packet.PacketId, "Edited packet.");
+            await w.Db.SaveChangesAsync();
+
+            var viewer = new ActivityLogViewerContext(w.Staff.UserId, new HashSet<string> { "HospitalStaff" }, w.Hospital.HospitalId);
+            var page = await ActivityLogQueries.PageAsync(w.Db, ActivityLogQueries.ForHospital(w.Db, w.Hospital.HospitalId),
+                new ActivityLogQueryDto(), viewer);
+            var transferRow = page.Items.Single(i => i.Action == "Transfer.RequestCreated");
+            Assert.Equal(w.Hospital.Name, transferRow.TransferSourceHospitalName);
+            Assert.Equal(otherHospital.Name, transferRow.TransferDestinationHospitalName);
+            Assert.Equal("PKT-00009999", page.Items.Single(i => i.Action == "Inventory.PacketEdited").PacketTrackingNumber);
+
+            var unrelatedViewer = new ActivityLogViewerContext(w.Staff.UserId, new HashSet<string> { "HospitalStaff" }, Guid.NewGuid());
+            await ActivityLogEnrichment.EnrichAsync(w.Db, new[] { new ActivityLogEntryDto { Action = "Transfer.RequestCreated", EntityId = transfer.TransferRequestId } }, unrelatedViewer);
+            var unrelatedPacket = new ActivityLogEntryDto { Action = "Inventory.PacketEdited", EntityId = packet.PacketId };
+            await ActivityLogEnrichment.EnrichAsync(w.Db, new[] { unrelatedPacket }, unrelatedViewer);
+            Assert.Null(unrelatedPacket.PacketTrackingNumber);
+        }
+
+        [Fact]
+        public async Task Doctor_Scope_Is_Not_Expanded_And_Unknown_Or_Missing_Entities_Degrade_To_Null()
+        {
+            var w = await SeedAsync();
+            await ActivityLogger.AddForHospitalAsync(w.Db, w.Hospital.HospitalId, "Inventory.PacketsAdded",
+                ActivityLogger.Types.Inventory, null, "Hospital-only activity.");
+            await ActivityLogger.AddAsync(w.Db, w.DoctorLogin.UserId, "Future.Unknown", ActivityLogger.Types.Account,
+                Guid.NewGuid(), "Unknown action.");
+            await ActivityLogger.AddAsync(w.Db, w.DoctorLogin.UserId, "BloodRequest.Created", ActivityLogger.Types.BloodRequest,
+                Guid.NewGuid(), "Missing request.");
+            await w.Db.SaveChangesAsync();
+
+            var viewer = new ActivityLogViewerContext(w.DoctorLogin.UserId, new HashSet<string> { "Doctor" }, w.Hospital.HospitalId);
+            var page = await ActivityLogQueries.PageAsync(w.Db, ActivityLogQueries.ForUser(w.Db, w.DoctorLogin.UserId),
+                new ActivityLogQueryDto(), viewer);
+            Assert.Equal(2, page.Total);
+            Assert.DoesNotContain(page.Items, i => i.Action == "Inventory.PacketsAdded");
+            Assert.All(page.Items, i => Assert.Null(i.RecordReference));
+        }
 
         [Fact]
         public async Task Filter_By_Type_And_Sri_Lanka_Date_Range_With_Paging()

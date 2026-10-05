@@ -3,13 +3,12 @@ import { Activity, Clock, Loader2, Play } from 'lucide-react';
 import { inventoryApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
 const POLL_MS = 15000;
 const unwrap = (res) => (res && res.data !== undefined && res.success !== undefined ? res.data : res?.data ?? res);
 
-// Sri Lanka time, e.g. "3 Oct 2026, 2:15 pm"
-const fmtSriLanka = (value) =>
-  new Date(value).toLocaleString('en-GB', { timeZone: 'Asia/Colombo', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+const fmtSriLanka = (value) => formatDisplayDate(value);
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 

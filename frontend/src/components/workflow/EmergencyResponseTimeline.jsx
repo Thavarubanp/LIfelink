@@ -1,4 +1,3 @@
-import React from 'react';
 import WorkflowTracker from './WorkflowTracker';
 
 export const EmergencyResponseTimeline = ({ status }) => {

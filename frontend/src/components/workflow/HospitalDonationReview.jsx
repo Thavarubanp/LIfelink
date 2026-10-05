@@ -3,8 +3,9 @@ import { CheckCircle2, HeartHandshake, Loader2, X, XCircle } from 'lucide-react'
 import { acceptanceApi, bloodRequestApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 
-const fmtDate = (value) => (value ? new Date(value).toLocaleDateString() : '-');
+const fmtDate = (value) => formatDisplayDate(value, '-');
 
 /**
  * Doctor: hospital donations offered to a blood request assigned to them. Each offer lists the packets the hospital

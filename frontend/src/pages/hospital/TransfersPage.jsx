@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CheckCircle2, Loader2, Send, Trash2, X, XCircle } from 'lucide-react';
 import { hospitalApi, inventoryApi, profileApi, transferApi } from '../../api';
 import { Badge, SuspendedBadge } from '../../components/common/Badge';
@@ -6,11 +6,13 @@ import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { newIdempotencyKey } from '../../session/sessionActivity';
+import { formatDisplayDate } from '../../utils/dateUtils';
+import { ROLE_ATTENTION_UPDATED_EVENT } from '../../context/useRoleAttention';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
-const STATUS_VARIANT = { Pending: 'warning', Completed: 'success', Rejected: 'primary', Cancelled: 'default' };
+const STATUS_VARIANT = { Pending: 'warning', Approved: 'success', Completed: 'success', Rejected: 'primary', Cancelled: 'default' };
 const unwrap = (res) => res?.data || (Array.isArray(res) ? res : []);
-const fmt = (value) => (value ? new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '');
+const fmt = (value) => formatDisplayDate(value, '');
 
 /**
  * Inter-Hospital Blood Transfer between approved hospitals: request blood from, or offer blood to, another
@@ -37,7 +39,10 @@ export const TransfersPage = () => {
   const [detail, setDetail] = useState(null);
 
   const [reloadKey, setReloadKey] = useState(0);
-  const reload = () => setReloadKey((k) => k + 1);
+  const reload = () => {
+    window.dispatchEvent(new Event(ROLE_ATTENTION_UPDATED_EVENT));
+    setReloadKey((k) => k + 1);
+  };
 
   useEffect(() => {
     const fetchTransfers = async () => {
@@ -45,7 +50,7 @@ export const TransfersPage = () => {
         const me = await profileApi.getMyProfile();
         const [hospitalRes, stockRes, transferRes] = await Promise.all([
           hospitalApi.getHospitals(true),
-          inventoryApi.getAllInventory().catch(() => []),
+          inventoryApi.getHospitalInventory(me.id).catch(() => []),
           transferApi.getAllTransferRequests()
         ]);
         setMyHospitalId(me.id);
@@ -209,19 +214,44 @@ export const TransfersPage = () => {
             const incomingToMe = counterpartOf(t) === myHospitalId;
             const other = t.senderHospitalId === myHospitalId ? t.receiverHospitalName : t.senderHospitalName;
             const sendsBlood = t.senderHospitalId === myHospitalId;
+            const initiatedByMe = t.createdByHospitalId === myHospitalId;
+            const finalDate = t.status === 'Completed' || t.status === 'Approved'
+              ? t.approvedAt
+              : t.status === 'Rejected'
+                ? t.rejectedAt
+                : t.status === 'Cancelled'
+                  ? t.updatedAt
+                  : null;
+            const finalDateLabel = t.status === 'Completed' || t.status === 'Approved'
+              ? 'Completed'
+              : t.status === 'Rejected'
+                ? 'Rejected'
+                : t.status === 'Cancelled'
+                  ? 'Last updated'
+                  : null;
             return (
               <div key={t.transferRequestId} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    {sendsBlood ? <ArrowUpRight className="w-4 h-4 text-rose-500" /> : <ArrowDownLeft className="w-4 h-4 text-emerald-500" />}
-                    <span className="font-bold text-slate-900 dark:text-slate-100">{t.unitsRequested} x {t.bloodGroup}</span>
-                    <span className="text-slate-500">{sendsBlood ? 'to' : 'from'} {other}</span>
+                    {initiatedByMe ? <ArrowUpRight className="w-4 h-4 text-rose-500" /> : <ArrowDownLeft className="w-4 h-4 text-emerald-500" />}
                     <Badge variant="default" size="sm">{t.transferType}</Badge>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">
+                      • {initiatedByMe ? 'To' : 'From'} {other}
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">{t.unitsRequested} x {t.bloodGroup}</span>
                     <Badge variant={STATUS_VARIANT[t.status] || 'default'} size="sm">{t.status}</Badge>
                     {t.isSuspended && <SuspendedBadge reason={t.suspensionReason} />}
                   </div>
                   {t.isSuspended && <p className="text-[11px] text-rose-600 dark:text-rose-400">Suspended by the administrator: it cannot be accepted, rejected or deleted until the suspension is lifted.</p>}
-                  <p className="text-[11px] text-slate-500">Created {fmt(t.requestedAt)}{t.notes ? ` - ${t.notes}` : ''}</p>
+                  <p className="text-[11px] text-slate-500">Created {fmt(t.requestedAt || t.createdAt)}</p>
+                  {tab === 'incoming' && t.transferType === 'Request' && (
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300">Response required: select and send the requested packets, or reject the request.</p>
+                  )}
+                  {tab === 'incoming' && t.transferType === 'Offer' && (
+                    <p className="text-[11px] text-slate-600 dark:text-slate-300">Response required: accept the held offered packets, or reject the offer.</p>
+                  )}
+                  {t.notes && <p className="text-[11px] text-slate-500"><span className="font-semibold">Notes:</span> {t.notes}</p>}
+                  {tab === 'history' && finalDate && <p className="text-[11px] text-slate-500">{finalDateLabel} {fmt(finalDate)}</p>}
                   {t.rejectionReason && <p className="text-[11px] text-rose-600"><span className="font-semibold">Rejection reason:</span> {t.rejectionReason}</p>}
                 </div>
                 <div className="flex flex-wrap gap-2 shrink-0">

@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { adminApi, doctorApi, hospitalApi } from '../../api';
 import { useNotification } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import { isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import { Badge } from '../../components/common/Badge';
 import {
   ShieldAlert,
@@ -11,14 +12,10 @@ import {
   Users,
   Stethoscope,
   AlertTriangle,
-  FileText,
   Loader2,
   Search,
   X,
-  ArrowLeft,
   ArrowRight,
-  Calendar,
-  AlertCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAdminAttention, badgeText } from '../../context/useAdminAttention';
@@ -548,7 +545,7 @@ export const AdminDashboard = () => {
                             )}
                           </td>
                           <td className="p-3 text-slate-500">
-                            {u.createdAt ? new Date(u.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                            {formatDisplayDate(u.createdAt)}
                           </td>
                           <td className="p-3 pr-4 text-right">
                             {/* Governance actions apply only to donor/patient accounts (never the Admin, doctors or hospital staff) */}

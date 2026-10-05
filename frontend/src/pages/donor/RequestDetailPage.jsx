@@ -7,6 +7,7 @@ import { SmartMatchingProgress } from '../../components/workflow/SmartMatchingPr
 import { useNotification } from '../../context/NotificationContext';
 import { isDonorAccount as isPlainDonor } from '../../utils/roleUtils';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
+import { formatDisplayDate } from '../../utils/dateUtils';
 import { MapPin, Heart, Loader2, Lock } from 'lucide-react';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -106,7 +107,7 @@ export const RequestDetailPage = () => {
     : !request.isAcceptingDonors
       ? 'All remaining donation slots are reserved by approved donors. New acceptances are paused until a slot is released.'
       : profile?.nextEligibleDonationDate && new Date(profile.nextEligibleDonationDate) > new Date()
-        ? `You can donate again from ${new Date(profile.nextEligibleDonationDate).toLocaleDateString()} (120 days after your last donation).`
+        ? `You can donate again from ${formatDisplayDate(profile.nextEligibleDonationDate)} (120 days after your last donation).`
         : null;
 
   return (
@@ -191,7 +192,7 @@ export const RequestDetailPage = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 pt-4 text-xs text-slate-500">
-          <RequestStatusBadge status={request.status} /> Created {new Date(request.createdAt).toLocaleDateString()} - open until {new Date(request.expiryDate).toLocaleDateString()}
+          <RequestStatusBadge status={request.status} /> Created {formatDisplayDate(request.createdAt)} - open until {formatDisplayDate(request.expiryDate)}
         </div>
       </div>
 
