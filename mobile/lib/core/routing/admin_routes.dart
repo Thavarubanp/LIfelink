@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_home_screen.dart';
 import '../../features/admin/attention_controller.dart';
+import '../../features/admin/registrations/registration_detail_screen.dart';
+import '../../features/admin/registrations/registrations_screen.dart';
 import '../../features/home/more_screen.dart';
 import '../../features/home/role_shell.dart';
 import '../../features/home/stub_screen.dart';
@@ -33,7 +35,18 @@ List<RouteBase> adminRoutes() => [
           ),
         ],
       ),
-      GoRoute(path: AppRoutes.adminRegistrations, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Hospital registrations', 2)),
+      GoRoute(
+        path: AppRoutes.adminRegistrations,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const RegistrationsScreen(),
+        routes: [
+          GoRoute(
+            path: ':hospitalId',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, state) => RegistrationDetailScreen(hospitalId: state.pathParameters['hospitalId']!),
+          ),
+        ],
+      ),
       GoRoute(path: AppRoutes.adminAppeals, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Appeals', 3)),
       GoRoute(path: AppRoutes.adminComplaints, parentNavigatorKey: rootNavigatorKey, builder: (_, _) => _part('Complaints', 4)),
     ];
