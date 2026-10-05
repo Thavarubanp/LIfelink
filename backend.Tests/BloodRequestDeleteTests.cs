@@ -220,6 +220,33 @@ namespace LifeLink.Tests
         }
 
         [Fact]
+        public async Task Partial_Fulfilment_Is_Preserved_While_Only_Active_Participation_Is_Closed_And_Notified()
+        {
+            var s = await SeedAsync();
+            var request = await AddRequestAsync(s, BloodRequestStatus.Approved, reserved: 0, fulfilled: 2);
+            request.UnitsRequired = 4;
+            await s.Context.SaveChangesAsync();
+            var completedA = await AddAcceptanceAsync(s, request, AcceptanceStatus.Matched);
+            var completedB = await AddAcceptanceAsync(s, request, AcceptanceStatus.Matched);
+            var active = await AddAcceptanceAsync(s, request, AcceptanceStatus.ScreeningCompleted, report: VerificationStatus.Pending);
+
+            await s.Service.DeleteRequestAsync(request.BloodRequestId, s.Patient.UserId);
+
+            var saved = await ReloadAsync(s, request);
+            Assert.Equal(BloodRequestStatus.Deleted, saved.Status);
+            Assert.Equal(2, saved.FulfilledUnits);
+            Assert.Equal(AcceptanceStatus.Matched, (await s.Context.Acceptances.FindAsync(completedA.AcceptanceId))!.Status);
+            Assert.Equal(AcceptanceStatus.Matched, (await s.Context.Acceptances.FindAsync(completedB.AcceptanceId))!.Status);
+            Assert.Equal(AcceptanceStatus.Cancelled, (await s.Context.Acceptances.FindAsync(active.AcceptanceId))!.Status);
+            Assert.Equal(VerificationStatus.Closed, (await s.Context.DonorVerifications.SingleAsync(v => v.AcceptanceId == active.AcceptanceId)).Status);
+            var deletionNotices = await s.Context.Notifications.Where(n => n.NotificationType == "BloodRequestDeleted").ToListAsync();
+            Assert.Contains(deletionNotices, n => n.UserId == active.DonorUserId);
+            Assert.DoesNotContain(deletionNotices, n => n.UserId == completedA.DonorUserId || n.UserId == completedB.DonorUserId);
+            Assert.Contains(deletionNotices, n => n.HospitalId == s.Hospital.HospitalId);
+            Assert.Contains(deletionNotices, n => n.UserId == s.DoctorLogin.UserId);
+        }
+
+        [Fact]
         public async Task Notifications_Go_To_The_Hospital_The_Doctor_And_The_Closed_Donors_And_Hospitals()
         {
             var s = await SeedAsync();

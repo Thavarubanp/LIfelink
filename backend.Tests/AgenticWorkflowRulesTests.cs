@@ -293,18 +293,19 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Expiry_Releases_Reservations_And_Frees_The_Donor()
+        public async Task Elapsed_Time_Does_Not_Close_A_Request_Or_Its_Reservation()
         {
             var w = await CreateWorldAsync(unitsRequired: 2);
             var acceptanceId = await ApprovedDonorAsync(w);
             w.Request.ExpiryDate = DateTime.UtcNow.AddMinutes(-1);
             await w.Db.SaveChangesAsync();
 
-            await new RequestExpiryService(w.Db, NullLogger<RequestExpiryService>.Instance).ProcessExpiredRequestsAsync();
+            var processed = await new RequestExpiryService(w.Db, NullLogger<RequestExpiryService>.Instance).ProcessExpiredRequestsAsync();
 
-            Assert.Equal(BloodRequestStatus.Rejected, w.Request.Status);
-            Assert.Equal(0, w.Request.ReservedUnits);
-            Assert.Equal(AcceptanceStatus.Cancelled, (await w.Db.Acceptances.FindAsync(acceptanceId))!.Status);
+            Assert.Equal(0, processed);
+            Assert.Equal(BloodRequestStatus.Approved, w.Request.Status);
+            Assert.Equal(1, w.Request.ReservedUnits);
+            Assert.Equal(AcceptanceStatus.Verified, (await w.Db.Acceptances.FindAsync(acceptanceId))!.Status);
         }
 
         [Fact]

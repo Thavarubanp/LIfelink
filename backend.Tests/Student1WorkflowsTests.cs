@@ -476,7 +476,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Public_Feed_Excludes_Expired_Requests()
+        public async Task Public_Feed_Includes_Old_Approved_Requests()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, _, _) = await SeedBaseDataAsync(context);
@@ -500,7 +500,7 @@ namespace LifeLink.Tests
             await context.SaveChangesAsync();
 
             var publicFeed = await service.GetPublicRequestsAsync();
-            Assert.DoesNotContain(publicFeed, r => r.BloodRequestId == expired.BloodRequestId);
+            Assert.Contains(publicFeed, r => r.BloodRequestId == expired.BloodRequestId);
         }
 
         [Fact]
@@ -667,7 +667,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Expired_Request_Cannot_Be_Accepted()
+        public async Task Old_Approved_Request_Can_Be_Accepted()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, donor1, _) = await SeedBaseDataAsync(context);
@@ -687,14 +687,13 @@ namespace LifeLink.Tests
             await context.BloodRequests.AddAsync(request);
             await context.SaveChangesAsync();
 
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                acceptanceService.AcceptRequestAsync(donor1.UserId, new CreateAcceptanceDto
+            var acceptance = await acceptanceService.AcceptRequestAsync(donor1.UserId, new CreateAcceptanceDto
                 {
                     BloodRequestId = request.BloodRequestId,
                     DonorBloodGroup = "A+"
-                }));
+                });
 
-            Assert.Contains("expired", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("Accepted", acceptance.Status);
         }
 
         [Fact]
@@ -1363,7 +1362,7 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public async Task Automatic_Request_Expiry_Service_Works()
+        public async Task Automatic_Request_Expiry_Service_Is_A_NoOp()
         {
             var context = GetInMemoryDbContext();
             var (hospital, _, patient, _, _) = await SeedBaseDataAsync(context);
@@ -1386,10 +1385,10 @@ namespace LifeLink.Tests
             await context.SaveChangesAsync();
 
             var processedCount = await expiryService.ProcessExpiredRequestsAsync();
-            Assert.Equal(1, processedCount);
+            Assert.Equal(0, processedCount);
 
             var updated = await context.BloodRequests.FindAsync(expiredReq.BloodRequestId);
-            Assert.Equal(BloodRequestStatus.Rejected, updated!.Status);
+            Assert.Equal(BloodRequestStatus.Approved, updated!.Status);
         }
 
         [Fact]

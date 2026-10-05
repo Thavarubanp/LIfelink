@@ -131,9 +131,9 @@ namespace LifeLink.Tests
         }
 
         [Theory]
-        [InlineData("Normal")]
-        [InlineData("High")]
-        public async Task Normal_Or_High_Priority_Approval_Sends_No_Alerts(string priority)
+        [InlineData("Normal", 0)]
+        [InlineData("High", 1)]
+        public async Task Approval_Uses_The_Priority_Donor_Alert_Matrix(string priority, int expectedDonorAlerts)
         {
             var context = GetInMemoryDbContext();
             var notificationService = CreateNotificationService(context);
@@ -161,9 +161,13 @@ namespace LifeLink.Tests
             Assert.Equal("Approved", result.Status);
             Assert.Equal(BloodRequestStatus.Approved, (await context.BloodRequests.FindAsync(requestId))!.Status);
 
-            // Owner's decisions (Phase 5, D11): Normal and High requests alert nobody; donors find them in the public list
             var notifications = await context.Notifications.ToListAsync();
-            Assert.DoesNotContain(notifications, n => n.NotificationType is "EligibleDonorAlert" or "UrgentHospitalAlert");
+            Assert.Equal(expectedDonorAlerts, notifications.Count(n => n.NotificationType == "EligibleDonorAlert"));
+            if (priority == "High")
+            {
+                Assert.Equal(donor1.UserId, Assert.Single(notifications, n => n.NotificationType == "EligibleDonorAlert").UserId);
+            }
+            Assert.DoesNotContain(notifications, n => n.NotificationType == "UrgentHospitalAlert");
         }
 
         [Fact]
@@ -197,10 +201,15 @@ namespace LifeLink.Tests
             await context.Users.AddRangeAsync(adminUser, donorUser, suspendedDonor, compatibleDonor, noGroup);
             await context.Hospitals.AddRangeAsync(requestingHospital, otherHospital1, otherHospital2, unverifiedHospital, suspendedHospital);
             await context.Doctors.AddAsync(doctor);
-            // Hospital 1 holds O- (alerted); hospital 2 holds only O+ (not alerted); the suspended hospital holds O- (not alerted)
+            // Hospital 1 has exact stock strictly above its threshold; hospital 2 has only O+; suspended is excluded.
             BloodPacket Packet(Hospital h, string group) => new() { HospitalId = h.HospitalId, CreatedByHospitalId = h.HospitalId, BloodGroup = group,
                 TrackingNumber = $"PKT-T{Guid.NewGuid():N}"[..12], CollectionDate = DateTime.UtcNow.AddDays(-1), ExpiryDate = DateTime.UtcNow.AddDays(30) };
-            await context.BloodPackets.AddRangeAsync(Packet(otherHospital1, "O-"), Packet(otherHospital2, "O+"), Packet(suspendedHospital, "O-"));
+            await context.BloodInventories.AddAsync(new BloodInventory
+            {
+                InventoryId = Guid.NewGuid(), HospitalId = otherHospital1.HospitalId, BloodGroup = "O-", MinimumThreshold = 3, UnitsAvailable = 4, MaximumCapacity = 20
+            });
+            await context.BloodPackets.AddRangeAsync(Packet(otherHospital1, "O-"), Packet(otherHospital1, "O-"),
+                Packet(otherHospital1, "O-"), Packet(otherHospital1, "O-"), Packet(otherHospital2, "O+"), Packet(suspendedHospital, "O-"));
             await context.SaveChangesAsync();
 
             var requestId = await SeedVerifiedRequestAsync(context, requestingHospital.HospitalId, doctor.DoctorId, "O-", "Critical");
@@ -210,12 +219,47 @@ namespace LifeLink.Tests
             Assert.Equal("Approved", result.Status);
 
             var notifications = await context.Notifications.ToListAsync();
-            // Donors: 1 (active, exact group O-); Hospitals: 1 (approved, not suspended, not the requester, holding O-)
+            // Donors: 1 exact-group eligible; Hospitals: 1 with four valid units above its threshold of three.
             Assert.Equal(2, notifications.Count);
             Assert.Equal(donorUser.UserId, Assert.Single(notifications, n => n.NotificationType == "EligibleDonorAlert").UserId);
             Assert.Equal(otherHospital1.HospitalId, Assert.Single(notifications, n => n.NotificationType == "UrgentHospitalAlert").HospitalId);
             Assert.DoesNotContain(notifications, n => n.HospitalId == suspendedHospital.HospitalId || n.HospitalId == unverifiedHospital.HospitalId);
             Assert.Empty(notifications.Where(n => n.RecipientRole == "Admin"));
+        }
+
+        [Theory]
+        [InlineData(2, false)]
+        [InlineData(3, false)]
+        [InlineData(4, true)]
+        public async Task Critical_Hospital_Eligibility_Requires_Valid_Exact_Stock_Strictly_Above_Threshold(int units, bool expected)
+        {
+            var context = GetInMemoryDbContext();
+            var requester = new Hospital { HospitalId = Guid.NewGuid(), Name = "Requester", IsVerified = true };
+            var candidate = new Hospital { HospitalId = Guid.NewGuid(), Name = "Candidate", IsVerified = true };
+            await context.Hospitals.AddRangeAsync(requester, candidate);
+            await context.BloodInventories.AddAsync(new BloodInventory
+            {
+                InventoryId = Guid.NewGuid(), HospitalId = candidate.HospitalId, BloodGroup = "A+", MinimumThreshold = 3,
+                UnitsAvailable = units, MaximumCapacity = 20
+            });
+            for (var i = 0; i < units; i++)
+            {
+                await context.BloodPackets.AddAsync(new BloodPacket
+                {
+                    HospitalId = candidate.HospitalId, CreatedByHospitalId = candidate.HospitalId, BloodGroup = "A+",
+                    TrackingNumber = $"PKT-{Guid.NewGuid():N}"[..12], CollectionDate = DateTime.UtcNow.AddDays(-1),
+                    ExpiryDate = DateTime.UtcNow.AddDays(30), Status = BloodPacketStatus.Available
+                });
+            }
+            // Neither an expired exact packet nor an available packet of another group may increase qualifying stock.
+            await context.BloodPackets.AddRangeAsync(
+                new BloodPacket { HospitalId = candidate.HospitalId, CreatedByHospitalId = candidate.HospitalId, BloodGroup = "A+", TrackingNumber = $"PKT-{Guid.NewGuid():N}"[..12], ExpiryDate = DateTime.UtcNow.AddMinutes(-1), Status = BloodPacketStatus.Available },
+                new BloodPacket { HospitalId = candidate.HospitalId, CreatedByHospitalId = candidate.HospitalId, BloodGroup = "O+", TrackingNumber = $"PKT-{Guid.NewGuid():N}"[..12], ExpiryDate = DateTime.UtcNow.AddDays(30), Status = BloodPacketStatus.Available });
+            await context.SaveChangesAsync();
+
+            var ids = await CreateNotificationService(context).GetAlertHospitalIdsAsync(requester.HospitalId, "A+");
+            Assert.Equal(expected, ids.Contains(candidate.HospitalId));
+            Assert.DoesNotContain(requester.HospitalId, ids);
         }
 
         [Fact]

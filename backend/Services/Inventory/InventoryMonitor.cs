@@ -71,7 +71,7 @@ namespace LifeLink.Services.Inventory
                 .Select(p => new { p.HospitalId, p.BloodGroup, p.ExpiryDate })
                 .ToListAsync();
             var openRequests = await _context.BloodRequests
-                .Where(r => r.Status == BloodRequestStatus.Approved && r.ExpiryDate > now && r.FulfilledUnits < r.UnitsRequired &&
+                .Where(r => r.Status == BloodRequestStatus.Approved && r.FulfilledUnits < r.UnitsRequired &&
                             r.AdminSuspendedAt == null && hospitalIds.Contains(r.HospitalId))
                 .Select(r => new { r.BloodRequestId, r.HospitalId, r.BloodGroup, Remaining = r.UnitsRequired - r.FulfilledUnits, r.Priority })
                 .ToListAsync();

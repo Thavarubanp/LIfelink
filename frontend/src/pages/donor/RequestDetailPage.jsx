@@ -74,7 +74,7 @@ export const RequestDetailPage = () => {
       navigate(`/donor/acceptances/${acceptance.acceptanceId}/screening`);
     } catch (err) {
       addToast({ title: 'Could not accept request', message: getApiErrorMessage(err), type: 'error' });
-      // The request changed at the same moment (cancelled, expired, filled): show its current state
+      // The request changed at the same moment (cancelled, deleted, filled): show its current state
       if (isConflictError(err)) setReloadKey((k) => k + 1);
     } finally {
       setAccepting(false);
@@ -192,7 +192,7 @@ export const RequestDetailPage = () => {
           </div>
         </div>
         <div className="flex items-center gap-2 pt-4 text-xs text-slate-500">
-          <RequestStatusBadge status={request.status} /> Created {formatDisplayDate(request.createdAt)} - open until {formatDisplayDate(request.expiryDate)}
+          <RequestStatusBadge status={request.status} /> Created {formatDisplayDate(request.createdAt)}
         </div>
       </div>
 

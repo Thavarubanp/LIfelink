@@ -206,11 +206,6 @@ namespace LifeLink.Services.Acceptances
                 throw new InvalidOperationException("Only approved blood requests can be accepted.");
             }
 
-            if (request.ExpiryDate <= DateTime.UtcNow)
-            {
-                throw new InvalidOperationException("Cannot accept an expired blood request.");
-            }
-
             if (await _context.Hospitals.AnyAsync(h => h.HospitalId == request.HospitalId && h.IsSuspended))
             {
                 throw new InvalidOperationException("The hospital for this request is suspended, so it cannot accept donors.");
@@ -761,11 +756,6 @@ namespace LifeLink.Services.Acceptances
                 throw new InvalidOperationException("Only approved blood requests can be accepted.");
             }
 
-            if (request.ExpiryDate <= DateTime.UtcNow)
-            {
-                throw new InvalidOperationException("Cannot accept an expired blood request.");
-            }
-
             if (await _context.Hospitals.AnyAsync(h => h.HospitalId == request.HospitalId && h.IsSuspended))
             {
                 throw new InvalidOperationException("The hospital for this request is suspended, so it cannot accept donations.");
@@ -863,11 +853,6 @@ namespace LifeLink.Services.Acceptances
             if (request.Status != BloodRequestStatus.Approved)
             {
                 throw new InvalidOperationException($"The blood request is {request.Status}, so donations can no longer be approved.");
-            }
-
-            if (request.ExpiryDate <= DateTime.UtcNow)
-            {
-                throw new InvalidOperationException("The blood request has expired.");
             }
 
             var packets = await InventoryLedger.GetHeldPacketsAsync(_context, acceptance.AcceptanceId);

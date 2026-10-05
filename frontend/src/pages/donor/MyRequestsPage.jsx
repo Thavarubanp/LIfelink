@@ -56,7 +56,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
 
   // Editable only by the patient who created it, while it is still Pending (mirrors the backend rule)
   // While the admin has it suspended only Delete stays available (owner's Q7)
-  const canEdit = (row) => !row.isSuspended && isPatient && row.status === 'Pending' && row.patientUserId === user?.userId && new Date(row.expiryDate) > new Date();
+  const canEdit = (row) => !row.isSuspended && isPatient && row.status === 'Pending' && row.patientUserId === user?.userId;
 
   const openEdit = (row) => {
     setEditTarget(row);
