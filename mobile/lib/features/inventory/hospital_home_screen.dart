@@ -8,7 +8,9 @@ import '../../core/utils/format.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
+import '../analysis/analysis_panel.dart';
 import '../emergencies/emergency_repository.dart';
+import '../notifications/notifications_repository.dart';
 import '../profile/profile_repository.dart';
 import 'inventory_models.dart';
 import 'inventory_repository.dart';
@@ -16,10 +18,7 @@ import 'inventory_repository.dart';
 /// Hospital home (the web dashboard): stock cards per blood group (tap: that group in Inventory), the critical
 /// emergencies and low-stock cards (tap: details), and the inventory analysis panel.
 class HospitalHomeScreen extends ConsumerWidget {
-  const HospitalHomeScreen({super.key, this.analysisPanel});
-
-  /// The inventory analysis panel (part 5 plugs it in here).
-  final Widget? analysisPanel;
+  const HospitalHomeScreen({super.key});
 
   Future<void> _refresh(WidgetRef ref) async {
     ref.invalidate(hospitalInventoryProvider);
@@ -61,7 +60,14 @@ class HospitalHomeScreen extends ConsumerWidget {
                   _actions(context),
                   const SizedBox(height: 16),
                   _kpis(context, inventory, emergencies),
-                  if (analysisPanel != null) ...[const SizedBox(height: 16), analysisPanel!],
+                  const SizedBox(height: 16),
+                  InventoryAnalysisPanel(
+                    onRunComplete: () {
+                      ref.invalidate(hospitalInventoryProvider);
+                      ref.invalidate(notificationsProvider);
+                      ref.read(unreadCountProvider.notifier).refresh();
+                    },
+                  ),
                   const SizedBox(height: 16),
                   SectionCard(
                     title: 'Stock by blood group',

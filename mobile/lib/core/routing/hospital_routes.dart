@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/analysis/recommendations_screen.dart';
 import '../../features/donate/donate_blood_screen.dart';
 import '../../features/emergencies/emergencies_screen.dart';
 import '../../features/home/more_screen.dart';
@@ -55,7 +56,7 @@ List<RouteBase> hospitalRoutes() => [
       GoRoute(
         path: AppRoutes.hospitalRecommendations,
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _part('Recommendations', 5),
+        builder: (_, _) => const RecommendationsScreen(),
       ),
       GoRoute(
         path: '/hospital/packets/:packetId',
@@ -75,10 +76,6 @@ List<RouteBase> hospitalRoutes() => [
             title: 'Doctors', step: 3, owner: 'Ahamed MSA', description: 'Add and manage your hospital\'s doctors.'),
       ),
     ];
-
-/// Step 1 screens not built yet in this part (replaced part by part).
-Widget _part(String title, int part) =>
-    StubScreen(title: title, step: 1, owner: 'Thavaruban P', description: '$title arrives in Step 1, part $part.');
 
 /// Add / issue / edit packets on the Inventory screen.
 const _packetActions = PacketActions(addPackets: showAddPacketsSheet, issue: showIssueSheet, edit: showEditPacketSheet);
