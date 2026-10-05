@@ -15,6 +15,7 @@ import '../../features/home/stub_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../auth/auth_controller.dart';
+import 'admin_routes.dart';
 import 'hospital_routes.dart';
 import 'routes.dart';
 
@@ -95,31 +96,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       _stubRoute(AppRoutes.doctorHospitalDonations, _step3('Hospital donations', 'Approve or reject hospital donations.')),
 
       // Admin (Step 4: Mayureshan)
-      _shell(
-        tabs: const [
-          ShellTab('Home', Icons.dashboard_outlined, Icons.dashboard),
-          ShellTab('Attention', Icons.flag_outlined, Icons.flag),
-          ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
-        ],
-        branches: [
-          (AppRoutes.adminHome, _step4('Admin dashboard', 'Statistics and items that need attention.')),
-          (AppRoutes.adminAttention, _step4('Needs attention', 'Pending registrations, appeals and complaints.')),
-          (
-            AppRoutes.adminMore,
-            const MoreScreen(entries: [
-              MoreEntry('Hospital registrations', Icons.domain_add_outlined, AppRoutes.adminRegistrations),
-              MoreEntry('Appeals', Icons.gavel_outlined, AppRoutes.adminAppeals),
-              MoreEntry('Complaints', Icons.report_outlined, AppRoutes.adminComplaints),
-              MoreEntry('Activity log', Icons.history, AppRoutes.adminActivity),
-              MoreEntry('Donor features', Icons.bloodtype_outlined, AppRoutes.donorRequests),
-            ]),
-          ),
-        ],
-      ),
-      _stubRoute(AppRoutes.adminRegistrations, _step4('Hospital registrations', 'Approve or return pending hospitals.')),
-      _stubRoute(AppRoutes.adminAppeals, _step4('Appeals', 'Reply to and decide appeals.')),
-      _stubRoute(AppRoutes.adminComplaints, _step4('Complaints', 'Reply to complaints.')),
-      _stubRoute(AppRoutes.adminActivity, _step4('Activity log', 'Everyone\'s activity, with filters.')),
+      ...adminRoutes(),
     ],
   );
   ref.onDispose(router.dispose);
@@ -128,7 +105,6 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 Widget _step2(String title, String description) => StubScreen(title: title, step: 2, owner: 'Vidya R', description: description);
 Widget _step3(String title, String description) => StubScreen(title: title, step: 3, owner: 'Ahamed MSA', description: description);
-Widget _step4(String title, String description) => StubScreen(title: title, step: 4, owner: 'Mayureshan P', description: description);
 
 GoRoute _stubRoute(String path, Widget screen) => GoRoute(path: path, builder: (_, _) => screen);
 
