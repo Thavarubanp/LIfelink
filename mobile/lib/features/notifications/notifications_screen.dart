@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/auth/auth_controller.dart';
+import '../../core/notifications/notification_rules.dart';
+import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/format.dart';
 import '../../core/widgets/common.dart';
@@ -9,7 +13,12 @@ import 'notifications_repository.dart';
 
 /// The caller's notifications: unread first highlighted, tap to read, swipe or menu to dismiss, read all.
 class NotificationsScreen extends ConsumerStatefulWidget {
-  const NotificationsScreen({super.key, this.title = 'Notifications', this.types, this.emptyMessage});
+  const NotificationsScreen({
+    super.key,
+    this.title = 'Notifications',
+    this.types,
+    this.emptyMessage,
+  });
 
   final String title;
 
@@ -18,7 +27,8 @@ class NotificationsScreen extends ConsumerStatefulWidget {
   final String? emptyMessage;
 
   @override
-  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
+  ConsumerState<NotificationsScreen> createState() =>
+      _NotificationsScreenState();
 }
 
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
@@ -29,7 +39,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     _readLocally.clear();
     _dismissed.clear();
     ref.invalidate(notificationsProvider);
-    await ref.read(notificationsProvider.future).catchError((_) => <AppNotification>[]);
+    await ref
+        .read(notificationsProvider.future)
+        .catchError((_) => <AppNotification>[]);
     await ref.read(unreadCountProvider.notifier).refresh();
   }
 
@@ -47,7 +59,12 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       }
     }
     if (!mounted) return;
-    await showModalBottomSheet<void>(
+    final route = routeForNotificationType(
+      n.type,
+      user: ref.read(authControllerProvider).user,
+    );
+    final navigate = route != AppRoutes.notifications;
+    final openRoute = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       builder: (ctx) => SafeArea(
@@ -57,17 +74,37 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(n.title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              Text(
+                n.title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 4),
-              Text('${Fmt.humanize(n.type)} · ${Fmt.sriLankaDateTime(n.createdAt)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+              Text(
+                '${Fmt.humanize(n.type)} · ${Fmt.sriLankaDateTime(n.createdAt)}',
+                style: const TextStyle(fontSize: 12, color: AppColors.slate500),
+              ),
               const SizedBox(height: 12),
               Text(n.message),
+              if (navigate) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Open related area'),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
       ),
     );
+    if (openRoute == true && mounted) context.push(route);
   }
 
   Future<void> _dismiss(AppNotification n) async {
@@ -87,7 +124,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     try {
       await ref.read(notificationsRepositoryProvider).markAllRead();
       await _refresh();
-      if (mounted) showSnack(context, 'All notifications marked as read.', type: SnackType.success);
+      if (mounted) {
+        showSnack(
+          context,
+          'All notifications marked as read.',
+          type: SnackType.success,
+        );
+      }
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
     }
@@ -101,7 +144,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         title: Text(widget.title),
         actions: [
           if (widget.types == null)
-            IconButton(tooltip: 'Mark all as read', icon: const Icon(Icons.done_all), onPressed: _readAll),
+            IconButton(
+              tooltip: 'Mark all as read',
+              icon: const Icon(Icons.done_all),
+              onPressed: _readAll,
+            ),
         ],
       ),
       body: RefreshableScroll(
@@ -112,7 +159,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           data: (all) {
             final list = all
                 .where((n) => !_dismissed.contains(n.id))
-                .where((n) => widget.types == null || widget.types!.contains(n.type))
+                .where(
+                  (n) => widget.types == null || widget.types!.contains(n.type),
+                )
                 .toList();
             if (list.isEmpty) {
               return EmptyView(
@@ -134,11 +183,21 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                           background: Container(
                             alignment: Alignment.centerRight,
                             padding: const EdgeInsets.only(right: 20),
-                            decoration: BoxDecoration(color: AppColors.rose600, borderRadius: BorderRadius.circular(16)),
-                            child: const Icon(Icons.delete_outline, color: Colors.white),
+                            decoration: BoxDecoration(
+                              color: AppColors.rose600,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.white,
+                            ),
                           ),
-                          confirmDismiss: (_) => confirmDialog(context,
-                              title: 'Dismiss notification', message: 'Remove "${n.title}" from your list?', confirmLabel: 'Dismiss'),
+                          confirmDismiss: (_) => confirmDialog(
+                            context,
+                            title: 'Dismiss notification',
+                            message: 'Remove "${n.title}" from your list?',
+                            confirmLabel: 'Dismiss',
+                          ),
                           onDismissed: (_) => _dismiss(n),
                           child: _NotificationTile(
                             n: n,
@@ -159,7 +218,11 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 }
 
 class _NotificationTile extends StatelessWidget {
-  const _NotificationTile({required this.n, required this.unread, required this.onTap});
+  const _NotificationTile({
+    required this.n,
+    required this.unread,
+    required this.onTap,
+  });
 
   final AppNotification n;
   final bool unread;
@@ -167,19 +230,24 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: ListTile(
-          onTap: onTap,
-          leading: Icon(
-            unread ? Icons.mark_email_unread_outlined : Icons.drafts_outlined,
-            color: unread ? AppColors.red600 : AppColors.slate400,
-          ),
-          title: Text(n.title, style: TextStyle(fontWeight: unread ? FontWeight.w700 : FontWeight.w500)),
-          subtitle: Text(
-            '${n.message}\n${Fmt.sriLankaDateTime(n.createdAt)}',
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-          ),
-          isThreeLine: true,
+    child: ListTile(
+      onTap: onTap,
+      leading: Icon(
+        unread ? Icons.mark_email_unread_outlined : Icons.drafts_outlined,
+        color: unread ? AppColors.red600 : AppColors.slate400,
+      ),
+      title: Text(
+        n.title,
+        style: TextStyle(
+          fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
         ),
-      );
+      ),
+      subtitle: Text(
+        '${n.message}\n${Fmt.sriLankaDateTime(n.createdAt)}',
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+      ),
+      isThreeLine: true,
+    ),
+  );
 }

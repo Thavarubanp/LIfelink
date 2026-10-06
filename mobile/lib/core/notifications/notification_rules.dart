@@ -1,8 +1,16 @@
 import '../routing/routes.dart';
+import '../auth/current_user.dart';
+import '../config/constants.dart';
 
 /// A notification as the poller sees it (from GET /notifications/my).
 class PolledNotification {
-  const PolledNotification({required this.id, required this.title, required this.message, required this.type, required this.createdAt});
+  const PolledNotification({
+    required this.id,
+    required this.title,
+    required this.message,
+    required this.type,
+    required this.createdAt,
+  });
 
   final String id;
   final String title;
@@ -30,14 +38,24 @@ class PollResult {
 
 /// Picks the notifications not shown yet. The first run only records where we are (no flood of old items);
 /// afterwards everything newer than the last seen one is shown once, oldest first, at most [max].
-PollResult newNotifications(List<PolledNotification> all, PollMarker marker, {int max = 5}) {
-  final sorted = all.where((n) => n.createdAt != null).toList()..sort((a, b) => a.createdAt!.compareTo(b.createdAt!));
+PollResult newNotifications(
+  List<PolledNotification> all,
+  PollMarker marker, {
+  int max = 5,
+}) {
+  final sorted = all.where((n) => n.createdAt != null).toList()
+    ..sort((a, b) => a.createdAt!.compareTo(b.createdAt!));
   if (sorted.isEmpty) return PollResult(const [], marker);
   final newest = sorted.last;
   final next = PollMarker(lastSeenId: newest.id, lastSeenAt: newest.createdAt);
   if (marker.isEmpty) return PollResult(const [], next);
   final fresh = sorted
-      .where((n) => n.id != marker.lastSeenId && (marker.lastSeenAt == null || n.createdAt!.isAfter(marker.lastSeenAt!)))
+      .where(
+        (n) =>
+            n.id != marker.lastSeenId &&
+            (marker.lastSeenAt == null ||
+                n.createdAt!.isAfter(marker.lastSeenAt!)),
+      )
       .toList();
   final shown = fresh.length > max ? fresh.sublist(fresh.length - max) : fresh;
   return PollResult(shown, next);
@@ -45,10 +63,19 @@ PollResult newNotifications(List<PolledNotification> all, PollMarker marker, {in
 
 /// The admin's attention counts the poller compares between runs.
 class AttentionSnapshot {
-  const AttentionSnapshot({this.registrations = 0, this.appeals = 0, this.complaints = 0, this.newActivity = 0});
+  const AttentionSnapshot({
+    this.registrations = 0,
+    this.appeals = 0,
+    this.complaints = 0,
+    this.newActivity = 0,
+  });
 
-  factory AttentionSnapshot.fromList(List<int> v) =>
-      AttentionSnapshot(registrations: v[0], appeals: v[1], complaints: v[2], newActivity: v[3]);
+  factory AttentionSnapshot.fromList(List<int> v) => AttentionSnapshot(
+    registrations: v[0],
+    appeals: v[1],
+    complaints: v[2],
+    newActivity: v[3],
+  );
 
   final int registrations;
   final int appeals;
@@ -62,17 +89,66 @@ class AttentionSnapshot {
 String? attentionIncrease(AttentionSnapshot? before, AttentionSnapshot now) {
   if (before == null) return null;
   final parts = <String>[
-    if (now.registrations > before.registrations) '${now.registrations - before.registrations} new hospital registration(s)',
-    if (now.appeals > before.appeals) '${now.appeals - before.appeals} new appeal(s)',
-    if (now.complaints > before.complaints) '${now.complaints - before.complaints} complaint(s) waiting for you',
-    if (now.newActivity > before.newActivity) '${now.newActivity - before.newActivity} new request(s) or transfer(s)',
+    if (now.registrations > before.registrations)
+      '${now.registrations - before.registrations} new hospital registration(s)',
+    if (now.appeals > before.appeals)
+      '${now.appeals - before.appeals} new appeal(s)',
+    if (now.complaints > before.complaints)
+      '${now.complaints - before.complaints} complaint(s) waiting for you',
+    if (now.newActivity > before.newActivity)
+      '${now.newActivity - before.newActivity} new request(s) or transfer(s)',
   ];
   return parts.isEmpty ? null : parts.join(', ');
 }
 
 /// The screen a tapped phone notification opens.
-String routeForNotificationType(String type) {
+String routeForNotificationType(String type, {CurrentUser? user}) {
   switch (type) {
+    case 'EligibleDonorAlert':
+      return user == null || user.isDonorCapable
+          ? AppRoutes.donorRequests
+          : AppRoutes.notifications;
+    case 'DonorApproved':
+    case 'DonorRejected':
+    case 'DonationRecorded':
+    case 'DonationReservationReleased':
+    case 'RequestFulfilled':
+      return user == null || user.isDonorCapable
+          ? AppRoutes.donorAcceptances
+          : AppRoutes.notifications;
+    case 'BloodRequestReviewAssigned':
+      return user == null || user.hasRole(Roles.doctor)
+          ? AppRoutes.doctorHome
+          : AppRoutes.notifications;
+    case 'ScreeningReportSubmitted':
+    case 'ScreeningReportSuperseded':
+      if (user?.hasRole(Roles.doctor) == true) return AppRoutes.doctorReports;
+      if (user?.hasRole(Roles.hospitalStaff) == true) {
+        return AppRoutes.hospitalVerifyRequests;
+      }
+      return AppRoutes.notifications;
+    case 'HospitalDonationOffered':
+      if (user?.hasRole(Roles.doctor) == true) {
+        return AppRoutes.doctorHospitalDonations;
+      }
+      if (user?.hasRole(Roles.hospitalStaff) == true) {
+        return AppRoutes.hospitalVerifyRequests;
+      }
+      return AppRoutes.notifications;
+    case 'DonorWithdrew':
+      if (user?.hasRole(Roles.doctor) == true) return AppRoutes.doctorReports;
+      if (user?.hasRole(Roles.hospitalStaff) == true) {
+        return AppRoutes.hospitalVerifyRequests;
+      }
+      return AppRoutes.notifications;
+    case 'TransferAccepted':
+    case 'TransferRejected':
+    case 'TransferCancelled':
+    case 'TransferSuspended':
+    case 'TransferSuspensionLifted':
+      return user == null || user.hasRole(Roles.hospitalStaff)
+          ? AppRoutes.hospitalTransfers
+          : AppRoutes.notifications;
     case 'InventoryShortage':
     case 'InventoryShortageHelp':
     case 'PacketsExpiringSoon':

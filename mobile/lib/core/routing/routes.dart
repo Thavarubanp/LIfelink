@@ -17,6 +17,12 @@ class AppRoutes {
   static const notifications = '/notifications';
   static const profile = '/profile';
   static const myActivity = '/activity';
+  static const search = '/search';
+  static const suspendedWithdrawals = '/governance/withdrawals';
+  static String userProfile(String userId) => '/profiles/user/$userId';
+  static String hospitalProfile(String hospitalId) =>
+      '/profiles/hospital/$hospitalId';
+  static String doctorProfile(String doctorId) => '/profiles/doctor/$doctorId';
 
   // Hospital staff (Step 1: Thavaruban; verify/doctors: Step 3)
   static const hospitalHome = '/hospital';
@@ -29,7 +35,8 @@ class AppRoutes {
   static const hospitalRecommendations = '/hospital/recommendations';
   static const hospitalVerifyRequests = '/hospital/verify-requests';
   static const hospitalDoctors = '/hospital/doctors';
-  static String hospitalPacket(String packetId) => '/hospital/packets/$packetId';
+  static String hospitalPacket(String packetId) =>
+      '/hospital/packets/$packetId';
 
   // Donor / patient (Step 2: Vidya)
   static const donorHome = '/donor';
@@ -40,16 +47,20 @@ class AppRoutes {
   static const donorComplaints = '/donor/complaints';
   static const donorAppeals = '/donor/appeals';
   static String requestDetail(String id) => '/donor/requests/$id';
-  static String screening(String acceptanceId) => '/donor/acceptances/$acceptanceId/screening';
+  static String screening(String acceptanceId) =>
+      '/donor/acceptances/$acceptanceId/screening';
 
   // Doctor (Step 3: Ahamed)
   static const doctorHome = '/doctor';
   static const doctorReports = '/doctor/reports';
   static const doctorMore = '/doctor/more';
   static const doctorHospitalDonations = '/doctor/hospital-donations';
-  static String doctorReport(String acceptanceId) => '/doctor/reports/$acceptanceId';
-  static String doctorRequestDonors(String requestId) => '/doctor/requests/$requestId/donors';
-  static String hospitalRequestDonors(String requestId) => '/hospital/requests/$requestId/donors';
+  static String doctorReport(String acceptanceId) =>
+      '/doctor/reports/$acceptanceId';
+  static String doctorRequestDonors(String requestId) =>
+      '/doctor/requests/$requestId/donors';
+  static String hospitalRequestDonors(String requestId) =>
+      '/hospital/requests/$requestId/donors';
 
   // Admin (Step 4: Mayureshan)
   static const adminHome = '/admin';
@@ -66,18 +77,18 @@ class AppRoutes {
 
   /// Home screen for the account's primary role.
   static String homeFor(CurrentUser user) => switch (user.primaryRole) {
-        Roles.admin => adminHome,
-        Roles.hospitalStaff => hospitalHome,
-        Roles.doctor => doctorHome,
-        _ => donorHome,
-      };
+    Roles.admin => adminHome,
+    Roles.hospitalStaff => hospitalHome,
+    Roles.doctor => doctorHome,
+    _ => donorHome,
+  };
 
   /// Roles allowed on a path (longest prefix wins); null = any signed-in account.
   static List<String>? rolesFor(String path) {
     const rules = <(String, List<String>)>[
       (createRequest, [Roles.user, Roles.hospitalStaff, Roles.admin]),
       (donorComplaints, [Roles.user, Roles.hospitalStaff]),
-      (donorAcceptances, [Roles.user]),
+      (donorAcceptances, [Roles.user, Roles.admin]),
       (donorHome, [Roles.user, Roles.admin]),
       (hospitalHome, [Roles.hospitalStaff]),
       (doctorHome, [Roles.doctor]),
@@ -90,14 +101,16 @@ class AppRoutes {
   }
 
   /// Pages where a signed-in account only waits: no idle sign-out there, the session is kept alive quietly.
-  static bool isWaitingPath(String path) => path == waitingApproval || path.startsWith('/governance');
+  static bool isWaitingPath(String path) =>
+      path == waitingApproval || path.startsWith('/governance');
 }
 
 /// The route guard, in the same order as the web app's ProtectedRoute:
 /// signed out → sign in; suspended → governance status; unapproved hospital → waiting screen;
 /// doctor who must change the password → change password; wrong role → own home.
 String? resolveRedirect(AuthState auth, String path) {
-  if (auth.status == AuthStatus.unknown || auth.status == AuthStatus.unreachable) {
+  if (auth.status == AuthStatus.unknown ||
+      auth.status == AuthStatus.unreachable) {
     return path == AppRoutes.splash ? null : AppRoutes.splash;
   }
 
@@ -106,10 +119,18 @@ String? resolveRedirect(AuthState auth, String path) {
     return AppRoutes.publicPaths.contains(path) ? null : AppRoutes.login;
   }
 
-  if (path == AppRoutes.splash || AppRoutes.publicPaths.contains(path)) return AppRoutes.homeFor(user);
+  if (path == AppRoutes.splash || AppRoutes.publicPaths.contains(path)) {
+    return AppRoutes.homeFor(user);
+  }
 
   if (user.isSuspended) {
-    return path.startsWith('/governance') ? null : AppRoutes.governanceStatus;
+    final narrowWithdrawal =
+        path == AppRoutes.suspendedWithdrawals && user.isDonorCapable;
+    return path == AppRoutes.governanceStatus ||
+            path == AppRoutes.myAppeals ||
+            narrowWithdrawal
+        ? null
+        : AppRoutes.governanceStatus;
   }
 
   if (user.isUnapprovedHospitalStaff) {
@@ -122,7 +143,9 @@ String? resolveRedirect(AuthState auth, String path) {
   }
 
   final allowed = AppRoutes.rolesFor(path);
-  if (allowed != null && !allowed.any(user.hasRole)) return AppRoutes.homeFor(user);
+  if (allowed != null && !allowed.any(user.hasRole)) {
+    return AppRoutes.homeFor(user);
+  }
 
   return null;
 }

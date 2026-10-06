@@ -17,107 +17,160 @@ import 'routes.dart';
 
 /// Admin routes (Step 4: Mayureshan). Bottom navigation: Home · Attention · Activity · More.
 List<RouteBase> adminRoutes() => [
-      roleShell(
-        tabs: [
-          const ShellTab('Home', Icons.dashboard_outlined, Icons.dashboard),
-          ShellTab('Attention', Icons.flag_outlined, Icons.flag, badge: attentionCountProvider('total')),
-          ShellTab('Activity', Icons.history, Icons.history, badge: attentionCountProvider('activity')),
-          const ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
-        ],
-        branches: [
-          (AppRoutes.adminHome, const AdminHomeScreen()),
-          (AppRoutes.adminAttention, const AttentionScreen()),
-          (AppRoutes.adminActivity, const AdminActivityScreen()),
-          (
-            AppRoutes.adminMore,
-            const MoreScreen(entries: [
-              MoreEntry('Hospital registrations', Icons.domain_add_outlined, AppRoutes.adminRegistrations),
-              MoreEntry('Appeals', Icons.gavel_outlined, AppRoutes.adminAppeals),
-              MoreEntry('Complaints', Icons.report_outlined, AppRoutes.adminComplaints),
-              MoreEntry('Users', Icons.people_outline, AppRoutes.adminUsers),
-              MoreEntry('Hospitals', Icons.local_hospital_outlined, AppRoutes.adminHospitals),
-              MoreEntry('Donate blood', Icons.bloodtype_outlined, AppRoutes.donorRequests,
-                  subtitle: 'Read-only public request browser'),
-              MoreEntry('Create blood request', Icons.add_circle_outline, AppRoutes.createRequest),
-            ]),
-          ),
-        ],
-        builders: {
-          AppRoutes.adminActivity: (state) => AdminActivityScreen(initialTab: state.uri.queryParameters['tab']),
-        },
+  roleShell(
+    tabs: [
+      const ShellTab('Home', Icons.dashboard_outlined, Icons.dashboard),
+      ShellTab(
+        'Attention',
+        Icons.flag_outlined,
+        Icons.flag,
+        badge: attentionCountProvider('total'),
       ),
+      ShellTab(
+        'Activity',
+        Icons.history,
+        Icons.history,
+        badge: attentionCountProvider('activity'),
+      ),
+      const ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
+    ],
+    branches: [
+      (AppRoutes.adminHome, const AdminHomeScreen()),
+      (AppRoutes.adminAttention, const AttentionScreen()),
+      (AppRoutes.adminActivity, const AdminActivityScreen()),
+      (
+        AppRoutes.adminMore,
+        const MoreScreen(
+          entries: [
+            MoreEntry(
+              'Hospital registrations',
+              Icons.domain_add_outlined,
+              AppRoutes.adminRegistrations,
+            ),
+            MoreEntry('Appeals', Icons.gavel_outlined, AppRoutes.adminAppeals),
+            MoreEntry(
+              'Complaints',
+              Icons.report_outlined,
+              AppRoutes.adminComplaints,
+            ),
+            MoreEntry('Users', Icons.people_outline, AppRoutes.adminUsers),
+            MoreEntry(
+              'Hospitals',
+              Icons.local_hospital_outlined,
+              AppRoutes.adminHospitals,
+            ),
+            MoreEntry(
+              'Donate blood',
+              Icons.bloodtype_outlined,
+              AppRoutes.donorRequests,
+              subtitle: 'Browse and participate in public requests',
+            ),
+            MoreEntry(
+              'My acceptances',
+              Icons.volunteer_activism_outlined,
+              AppRoutes.donorAcceptances,
+              subtitle: 'Screening and donation participation',
+            ),
+            MoreEntry(
+              'Create blood request',
+              Icons.add_circle_outline,
+              AppRoutes.createRequest,
+            ),
+          ],
+        ),
+      ),
+    ],
+    builders: {
+      AppRoutes.adminActivity: (state) =>
+          AdminActivityScreen(initialTab: state.uri.queryParameters['tab']),
+    },
+  ),
+  GoRoute(
+    path: AppRoutes.adminUsers,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const AdminUsersScreen(),
+    routes: [
       GoRoute(
-        path: AppRoutes.adminUsers,
+        path: ':userId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const AdminUsersScreen(),
+        builder: (_, state) => AdminUserProfileScreen(
+          userId: state.pathParameters['userId']!,
+          actions: userAdminActions,
+        ),
         routes: [
           GoRoute(
-            path: ':userId',
+            path: 'activity',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => AdminUserProfileScreen(userId: state.pathParameters['userId']!, actions: userAdminActions),
-            routes: [
-              GoRoute(
-                path: 'activity',
-                parentNavigatorKey: rootNavigatorKey,
-                builder: (_, state) => userActivityScreen(state.pathParameters['userId']!),
-              ),
-            ],
+            builder: (_, state) =>
+                userActivityScreen(state.pathParameters['userId']!),
           ),
         ],
       ),
+    ],
+  ),
+  GoRoute(
+    path: AppRoutes.adminHospitals,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const AdminHospitalsScreen(),
+    routes: [
       GoRoute(
-        path: AppRoutes.adminHospitals,
+        path: ':hospitalId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const AdminHospitalsScreen(),
+        builder: (_, state) => AdminHospitalProfileScreen(
+          hospitalId: state.pathParameters['hospitalId']!,
+          actions: hospitalAdminActions,
+        ),
         routes: [
           GoRoute(
-            path: ':hospitalId',
+            path: 'activity',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => AdminHospitalProfileScreen(hospitalId: state.pathParameters['hospitalId']!, actions: hospitalAdminActions),
-            routes: [
-              GoRoute(
-                path: 'activity',
-                parentNavigatorKey: rootNavigatorKey,
-                builder: (_, state) => hospitalActivityScreen(state.pathParameters['hospitalId']!),
-              ),
-            ],
+            builder: (_, state) =>
+                hospitalActivityScreen(state.pathParameters['hospitalId']!),
           ),
         ],
       ),
+    ],
+  ),
+  GoRoute(
+    path: AppRoutes.adminRegistrations,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const RegistrationsScreen(),
+    routes: [
       GoRoute(
-        path: AppRoutes.adminRegistrations,
+        path: ':hospitalId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const RegistrationsScreen(),
-        routes: [
-          GoRoute(
-            path: ':hospitalId',
-            parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => RegistrationDetailScreen(hospitalId: state.pathParameters['hospitalId']!),
-          ),
-        ],
+        builder: (_, state) => RegistrationDetailScreen(
+          hospitalId: state.pathParameters['hospitalId']!,
+        ),
       ),
+    ],
+  ),
+  GoRoute(
+    path: AppRoutes.adminAppeals,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const AdminAppealsScreen(),
+    routes: [
       GoRoute(
-        path: AppRoutes.adminAppeals,
+        path: ':appealId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const AdminAppealsScreen(),
-        routes: [
-          GoRoute(
-            path: ':appealId',
-            parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => AdminAppealDetailScreen(appealId: state.pathParameters['appealId']!),
-          ),
-        ],
+        builder: (_, state) => AdminAppealDetailScreen(
+          appealId: state.pathParameters['appealId']!,
+        ),
       ),
+    ],
+  ),
+  GoRoute(
+    path: AppRoutes.adminComplaints,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const AdminComplaintsScreen(),
+    routes: [
       GoRoute(
-        path: AppRoutes.adminComplaints,
+        path: ':complaintId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const AdminComplaintsScreen(),
-        routes: [
-          GoRoute(
-            path: ':complaintId',
-            parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => AdminComplaintDetailScreen(complaintId: state.pathParameters['complaintId']!),
-          ),
-        ],
+        builder: (_, state) => AdminComplaintDetailScreen(
+          complaintId: state.pathParameters['complaintId']!,
+        ),
       ),
-    ];
+    ],
+  ),
+];

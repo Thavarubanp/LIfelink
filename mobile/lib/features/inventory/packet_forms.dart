@@ -16,17 +16,27 @@ import 'packet_picker.dart';
 import 'packet_rules.dart';
 
 Future<bool> _sheet(BuildContext context, Widget child) async =>
-    await showModalBottomSheet<bool>(context: context, isScrollControlled: true, builder: (_) => child) ?? false;
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => child,
+    ) ??
+    false;
 
 /// "Add packets": blood group, number of packets (1–20) and the collected date from a date picker.
-Future<bool> showAddPacketsSheet(BuildContext context) => _sheet(context, const PacketFormSheet());
+Future<bool> showAddPacketsSheet(BuildContext context) =>
+    _sheet(context, const PacketFormSheet());
 
 /// Edit an Available packet created by this hospital (blood group and collected date only).
-Future<bool> showEditPacketSheet(BuildContext context, BloodPacket packet) => _sheet(context, PacketFormSheet(edit: packet));
+Future<bool> showEditPacketSheet(BuildContext context, BloodPacket packet) =>
+    _sheet(context, PacketFormSheet(edit: packet));
 
 /// Issue selected packets of a group with a required reason.
-Future<bool> showIssueSheet(BuildContext context, InventoryItem group, List<String> preselected) =>
-    _sheet(context, IssuePacketsSheet(group: group, preselected: preselected));
+Future<bool> showIssueSheet(
+  BuildContext context,
+  InventoryItem group,
+  List<String> preselected,
+) => _sheet(context, IssuePacketsSheet(group: group, preselected: preselected));
 
 class _SheetFrame extends StatelessWidget {
   const _SheetFrame({required this.title, required this.children});
@@ -36,19 +46,27 @@ class _SheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 16),
-              ...children,
-            ],
+    padding: EdgeInsets.fromLTRB(
+      20,
+      0,
+      20,
+      MediaQuery.viewInsetsOf(context).bottom + 20,
+    ),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
-        ),
-      );
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    ),
+  );
 }
 
 class PacketFormSheet extends ConsumerStatefulWidget {
@@ -75,6 +93,7 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
     final sl = Fmt.toSriLanka(c);
     return DateTime(sl.year, sl.month, sl.day);
   }
+
   final _quantity = TextEditingController(text: '1');
   // One idempotency key per opened form: a double submit or retry never adds the packets twice
   final String _key = newIdempotencyKey();
@@ -91,7 +110,12 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
 
   Future<void> _pickDate(int? shelfLife) async {
     final first = earliestCollectedDate(shelfLife, _today);
-    final current = _collected == null || _collected!.isBefore(first) || _collected!.isAfter(_today) ? _today : _collected!;
+    final current =
+        _collected == null ||
+            _collected!.isBefore(first) ||
+            _collected!.isAfter(_today)
+        ? _today
+        : _collected!;
     final picked = await showDatePicker(
       context: context,
       initialDate: current,
@@ -117,8 +141,19 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
     final date = Fmt.apiDate(_collected!);
     try {
       if (_editing) {
-        await repo.updatePacket(widget.edit!.packetId, bloodGroup: _group, collectionDate: date);
-        if (mounted) showSnack(context, '${widget.edit!.trackingNumber} saved.', type: SnackType.success, title: 'Packet updated');
+        await repo.updatePacket(
+          widget.edit!.packetId,
+          bloodGroup: _group,
+          collectionDate: date,
+        );
+        if (mounted) {
+          showSnack(
+            context,
+            '${widget.edit!.trackingNumber} saved.',
+            type: SnackType.success,
+            title: 'Packet updated',
+          );
+        }
       } else {
         final created = await repo.createPackets(
           bloodGroup: _group,
@@ -127,8 +162,12 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
           idempotencyKey: _key,
         );
         if (mounted) {
-          showSnack(context, '${created.length} $_group packet(s): ${created.map((p) => p.trackingNumber).join(', ')}',
-              type: SnackType.success, title: 'Packets added');
+          showSnack(
+            context,
+            '${created.length} $_group packet(s): ${created.map((p) => p.trackingNumber).join(', ')}',
+            type: SnackType.success,
+            title: 'Packets added',
+          );
         }
       }
       if (mounted) Navigator.of(context).pop(true);
@@ -137,7 +176,12 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
       if (!mounted) return;
       if (api.isConflict) {
         // Already submitted, or changed elsewhere at the same moment: show the current stock
-        showSnack(context, api.message, type: SnackType.error, title: 'Not saved');
+        showSnack(
+          context,
+          api.message,
+          type: SnackType.error,
+          title: 'Not saved',
+        );
         Navigator.of(context).pop(true);
       } else {
         setState(() => _error = api.message);
@@ -152,7 +196,9 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
     final hospital = ref.watch(myHospitalProvider).value;
     final shelfLife = hospital?.packetShelfLifeDays;
     return _SheetFrame(
-      title: _editing ? 'Edit packet ${widget.edit!.trackingNumber}' : 'Add blood packets',
+      title: _editing
+          ? 'Edit packet ${widget.edit!.trackingNumber}'
+          : 'Add blood packets',
       children: [
         Form(
           key: _formKey,
@@ -160,14 +206,20 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (_editing) ...[
-                const Text('Tracking number, created-by hospital and created date cannot be changed.', style: TextStyle(fontSize: 12)),
+                const Text(
+                  'Tracking number, created-by hospital and created date cannot be changed.',
+                  style: TextStyle(fontSize: 12),
+                ),
                 const SizedBox(height: 12),
               ],
               DropdownButtonFormField<String>(
                 key: const Key('packet-group'),
                 initialValue: _group,
                 decoration: const InputDecoration(labelText: 'Blood group'),
-                items: [for (final g in AppConstants.bloodGroups) DropdownMenuItem(value: g, child: Text(g))],
+                items: [
+                  for (final g in AppConstants.bloodGroups)
+                    DropdownMenuItem(value: g, child: Text(g)),
+                ],
                 onChanged: (v) => setState(() => _group = v ?? _group),
               ),
               const SizedBox(height: 14),
@@ -176,8 +228,15 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
                 borderRadius: BorderRadius.circular(12),
                 onTap: () => _pickDate(shelfLife),
                 child: InputDecorator(
-                  decoration: const InputDecoration(labelText: 'Collected date *', suffixIcon: Icon(Icons.calendar_month)),
-                  child: Text(_collected == null ? 'Choose a date' : Fmt.apiDate(_collected!)),
+                  decoration: const InputDecoration(
+                    labelText: 'Collected date *',
+                    suffixIcon: Icon(Icons.calendar_month),
+                  ),
+                  child: Text(
+                    _collected == null
+                        ? 'Choose a date'
+                        : Fmt.apiDate(_collected!),
+                  ),
                 ),
               ),
               if (!_editing) ...[
@@ -186,9 +245,19 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
                   key: const Key('packet-quantity'),
                   controller: _quantity,
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
-                  decoration: const InputDecoration(labelText: 'Number of packets (1–$maxPacketsPerForm)'),
-                  validator: (v) => Validators.intRange(v, 'Number of packets', min: 1, max: maxPacketsPerForm),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Number of packets (1–$maxPacketsPerForm)',
+                  ),
+                  validator: (v) => Validators.intRange(
+                    v,
+                    'Number of packets',
+                    min: 1,
+                    max: maxPacketsPerForm,
+                  ),
                 ),
               ],
               const SizedBox(height: 10),
@@ -198,7 +267,10 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
                 style: const TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 16),
-              if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
+              if (_error != null) ...[
+                FormErrorBox(_error!),
+                const SizedBox(height: 12),
+              ],
               BusyButton(
                 key: const Key('packet-save'),
                 label: _editing ? 'Save' : 'Add packets',
@@ -214,7 +286,11 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
 }
 
 class IssuePacketsSheet extends ConsumerStatefulWidget {
-  const IssuePacketsSheet({super.key, required this.group, this.preselected = const []});
+  const IssuePacketsSheet({
+    super.key,
+    required this.group,
+    this.preselected = const [],
+  });
 
   final InventoryItem group;
   final List<String> preselected;
@@ -237,10 +313,10 @@ class _IssuePacketsSheetState extends ConsumerState<IssuePacketsSheet> {
 
   Future<void> _save() async {
     final problem = _selected.isEmpty
-        ? 'Select at least one packet to issue.'
+        ? 'Select at least one packet to remove.'
         : _reason.text.trim().isEmpty
-            ? 'A reason is required when issuing blood.'
-            : null;
+        ? 'A reason is required when issuing blood.'
+        : null;
     if (problem != null) {
       setState(() => _error = problem);
       return;
@@ -251,7 +327,9 @@ class _IssuePacketsSheetState extends ConsumerState<IssuePacketsSheet> {
     });
     final g = widget.group;
     try {
-      await ref.read(inventoryRepositoryProvider).update(
+      await ref
+          .read(inventoryRepositoryProvider)
+          .update(
             g.inventoryId,
             minimumThreshold: g.minimumThreshold,
             maximumCapacity: g.maximumCapacity,
@@ -259,13 +337,23 @@ class _IssuePacketsSheetState extends ConsumerState<IssuePacketsSheet> {
             auditNotes: _reason.text.trim(),
           );
       if (!mounted) return;
-      showSnack(context, '${_selected.length} ${g.bloodGroup} packet(s) issued.', type: SnackType.success, title: 'Blood issued');
+      showSnack(
+        context,
+        '${_selected.length} ${g.bloodGroup} packet(s) removed from available stock.',
+        type: SnackType.success,
+        title: 'Stock updated',
+      );
       Navigator.of(context).pop(true);
     } catch (e) {
       final api = ApiError.from(e);
       if (!mounted) return;
       if (api.isConflict) {
-        showSnack(context, api.message, type: SnackType.error, title: 'Not saved');
+        showSnack(
+          context,
+          api.message,
+          type: SnackType.error,
+          title: 'Not saved',
+        );
         Navigator.of(context).pop(true);
       } else {
         setState(() => _error = api.message);
@@ -277,20 +365,37 @@ class _IssuePacketsSheetState extends ConsumerState<IssuePacketsSheet> {
 
   @override
   Widget build(BuildContext context) => _SheetFrame(
-        title: 'Issue ${widget.group.bloodGroup} blood',
-        children: [
-          const Text('Choose the packets to issue. They leave your available stock and stay in the packet history as Issued.',
-              style: TextStyle(fontSize: 12)),
-          const SizedBox(height: 10),
-          PacketPicker(bloodGroup: widget.group.bloodGroup, selected: _selected, onChanged: (ids) => setState(() => _selected = ids)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _reason,
-            maxLength: 500,
-            decoration: const InputDecoration(labelText: 'Reason', hintText: 'For example: issued to theatre for patient care'),
-          ),
-          if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
-          BusyButton(label: 'Issue ${_selected.isEmpty ? '' : '${_selected.length} '}packet(s)', busy: _saving, onPressed: _save),
-        ],
-      );
+    title: 'Remove ${widget.group.bloodGroup} blood',
+    children: [
+      const Text(
+        'Choose the packets to remove from available stock. They remain in packet history with status Issued.',
+        style: TextStyle(fontSize: 12),
+      ),
+      const SizedBox(height: 10),
+      PacketPicker(
+        bloodGroup: widget.group.bloodGroup,
+        selected: _selected,
+        onChanged: (ids) => setState(() => _selected = ids),
+      ),
+      const SizedBox(height: 12),
+      TextField(
+        controller: _reason,
+        maxLength: 500,
+        decoration: const InputDecoration(
+          labelText: 'Reason',
+          hintText: 'Enter why these packets are being removed',
+        ),
+      ),
+      if (_error != null) ...[
+        FormErrorBox(_error!),
+        const SizedBox(height: 12),
+      ],
+      BusyButton(
+        label:
+            'Remove ${_selected.isEmpty ? '' : '${_selected.length} '}packet(s)',
+        busy: _saving,
+        onPressed: _save,
+      ),
+    ],
+  );
 }

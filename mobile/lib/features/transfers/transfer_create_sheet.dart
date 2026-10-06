@@ -15,19 +15,29 @@ import '../inventory/packet_picker.dart';
 import '../profile/profile_repository.dart';
 import 'transfer_repository.dart';
 
-/// Other approved, unsuspended hospitals, with every hospital's stock for the "available" hints.
-final _transferFormDataProvider = FutureProvider.autoDispose<(List<HospitalSummary>, List<InventoryItem>, String)>((ref) async {
-  final me = await ref.watch(myHospitalProvider.future);
-  final hospitals = await ref.watch(transferRepositoryProvider).verifiedHospitals();
-  final stock = await ref.watch(inventoryRepositoryProvider).all().catchError((_) => <InventoryItem>[]);
-  final others = hospitals.where((h) => h.isVerified && !h.isSuspended && h.hospitalId != me.hospitalId).toList()
-    ..sort((a, b) => a.name.compareTo(b.name));
-  return (others, stock, me.hospitalId);
-});
+/// Counterpart availability is a restricted backend projection; own inventory is fetched separately.
+final _transferFormDataProvider = FutureProvider.autoDispose
+    .family<(List<TransferCounterpart>, List<InventoryItem>, String), String>((
+      ref,
+      group,
+    ) async {
+      final me = await ref.watch(myHospitalProvider.future);
+      final counterparts = await ref
+          .watch(transferRepositoryProvider)
+          .counterparts(group);
+      final ownStock = await ref
+          .watch(inventoryRepositoryProvider)
+          .forHospital(me.hospitalId);
+      return (counterparts, ownStock, me.hospitalId);
+    });
 
 /// Returns true when a transfer was created.
 Future<bool> showCreateTransferSheet(BuildContext context) async =>
-    await showModalBottomSheet<bool>(context: context, isScrollControlled: true, builder: (_) => const CreateTransferSheet()) ??
+    await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const CreateTransferSheet(),
+    ) ??
     false;
 
 /// Request blood from, or offer blood to, another approved hospital (same form as the web page).
@@ -35,7 +45,8 @@ class CreateTransferSheet extends ConsumerStatefulWidget {
   const CreateTransferSheet({super.key});
 
   @override
-  ConsumerState<CreateTransferSheet> createState() => _CreateTransferSheetState();
+  ConsumerState<CreateTransferSheet> createState() =>
+      _CreateTransferSheetState();
 }
 
 class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
@@ -61,7 +72,11 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
   }
 
   int _availableAt(List<InventoryItem> stock, String hospitalId) =>
-      stock.where((s) => s.hospitalId == hospitalId && s.bloodGroup == _group).map((s) => s.unitsAvailable).firstOrNull ?? 0;
+      stock
+          .where((s) => s.hospitalId == hospitalId && s.bloodGroup == _group)
+          .map((s) => s.unitsAvailable)
+          .firstOrNull ??
+      0;
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -74,11 +89,15 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
       _error = null;
     });
     try {
-      await ref.read(transferRepositoryProvider).create(
+      await ref
+          .read(transferRepositoryProvider)
+          .create(
             transferType: _type,
             counterpartHospitalId: _hospitalId!,
             bloodGroup: _group,
-            unitsRequested: _isOffer ? _packetIds.length : int.parse(_units.text.trim()),
+            unitsRequested: _isOffer
+                ? _packetIds.length
+                : int.parse(_units.text.trim()),
             notes: _notes.text.trim(),
             packetIds: _isOffer ? _packetIds : null,
             idempotencyKey: _key,
@@ -86,7 +105,9 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
       if (!mounted) return;
       showSnack(
         context,
-        _isOffer ? 'The packets are held until the other hospital answers.' : 'The other hospital has been notified.',
+        _isOffer
+            ? 'The packets are held until the other hospital answers.'
+            : 'The other hospital has been notified.',
         type: SnackType.success,
         title: _isOffer ? 'Offer sent' : 'Request sent',
       );
@@ -108,31 +129,51 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final data = ref.watch(_transferFormDataProvider);
+    final data = ref.watch(_transferFormDataProvider(_group));
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        0,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 20,
+      ),
       child: SingleChildScrollView(
         child: AsyncView(
           value: data,
-          onRetry: () => ref.invalidate(_transferFormDataProvider),
+          onRetry: () => ref.invalidate(_transferFormDataProvider(_group)),
           data: (d) {
-            final (hospitals, stock, me) = d;
+            final (counterparts, stock, me) = d;
+            final hospitals = _isOffer
+                ? counterparts
+                : counterparts.where((h) => h.transferableUnits > 0).toList();
             return Form(
               key: _formKey,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('New transfer', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                  const Text(
+                    'New transfer',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                  ),
                   const SizedBox(height: 12),
                   SegmentedButton<String>(
                     segments: const [
-                      ButtonSegment(value: 'Request', label: Text('Request blood'), icon: Icon(Icons.call_received)),
-                      ButtonSegment(value: 'Offer', label: Text('Offer blood'), icon: Icon(Icons.call_made)),
+                      ButtonSegment(
+                        value: 'Request',
+                        label: Text('Request blood'),
+                        icon: Icon(Icons.call_received),
+                      ),
+                      ButtonSegment(
+                        value: 'Offer',
+                        label: Text('Offer blood'),
+                        icon: Icon(Icons.call_made),
+                      ),
                     ],
                     selected: {_type},
                     onSelectionChanged: (s) => setState(() {
                       _type = s.first;
+                      _hospitalId = null;
                       _packetIds = [];
                     }),
                   ),
@@ -141,27 +182,37 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
                     key: const Key('transfer-group'),
                     initialValue: _group,
                     decoration: const InputDecoration(labelText: 'Blood group'),
-                    items: [for (final g in AppConstants.bloodGroups) DropdownMenuItem(value: g, child: Text(g))],
+                    items: [
+                      for (final g in AppConstants.bloodGroups)
+                        DropdownMenuItem(value: g, child: Text(g)),
+                    ],
                     onChanged: (v) => setState(() {
                       _group = v ?? _group;
+                      _hospitalId = null;
                       _packetIds = [];
                     }),
                   ),
                   const SizedBox(height: 14),
                   if (hospitals.isEmpty)
-                    const InfoBanner('There is no other approved hospital to transfer with yet.')
+                    InfoBanner(
+                      _isOffer
+                          ? 'There is no other approved hospital to transfer with yet.'
+                          : 'No approved hospital currently has transferable $_group packets.',
+                    )
                   else
                     DropdownButtonFormField<String>(
                       key: const Key('transfer-hospital'),
                       initialValue: _hospitalId,
                       isExpanded: true,
-                      decoration: InputDecoration(labelText: _isOffer ? 'Offer to' : 'Request from'),
+                      decoration: InputDecoration(
+                        labelText: _isOffer ? 'Offer to' : 'Request from',
+                      ),
                       items: [
                         for (final h in hospitals)
                           DropdownMenuItem(
                             value: h.hospitalId,
                             child: Text(
-                              _isOffer ? h.name : '${h.name} (${_availableAt(stock, h.hospitalId)} $_group available)',
+                              '${h.hospitalName} (${h.transferableUnits} $_group transferable)',
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -171,10 +222,16 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
                     ),
                   const SizedBox(height: 14),
                   if (_isOffer) ...[
-                    Text('Packets to offer (${_availableAt(stock, me)} $_group available)',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Text(
+                      'Packets to offer (${_availableAt(stock, me)} $_group available)',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                     const SizedBox(height: 6),
-                    PacketPicker(bloodGroup: _group, selected: _packetIds, onChanged: (ids) => setState(() => _packetIds = ids)),
+                    PacketPicker(
+                      bloodGroup: _group,
+                      selected: _packetIds,
+                      onChanged: (ids) => setState(() => _packetIds = ids),
+                    ),
                   ] else
                     TextFormField(
                       key: const Key('transfer-units'),
@@ -185,10 +242,21 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
                       validator: (v) => Validators.intRange(v, 'Units', min: 1),
                     ),
                   const SizedBox(height: 14),
-                  TextField(controller: _notes, maxLength: 500, decoration: const InputDecoration(labelText: 'Notes (optional)')),
-                  if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
+                  TextField(
+                    controller: _notes,
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes (optional)',
+                    ),
+                  ),
+                  if (_error != null) ...[
+                    FormErrorBox(_error!),
+                    const SizedBox(height: 12),
+                  ],
                   BusyButton(
-                    label: _isOffer ? 'Send offer (${_packetIds.length})' : 'Send request',
+                    label: _isOffer
+                        ? 'Send offer (${_packetIds.length})'
+                        : 'Send request',
                     icon: Icons.send,
                     busy: _saving,
                     onPressed: hospitals.isEmpty ? null : _submit,

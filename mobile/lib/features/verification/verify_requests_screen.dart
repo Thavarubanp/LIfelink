@@ -21,7 +21,8 @@ class VerifyRequestsScreen extends ConsumerStatefulWidget {
   const VerifyRequestsScreen({super.key});
 
   @override
-  ConsumerState<VerifyRequestsScreen> createState() => _VerifyRequestsScreenState();
+  ConsumerState<VerifyRequestsScreen> createState() =>
+      _VerifyRequestsScreenState();
 }
 
 class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
@@ -31,7 +32,11 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
   void _reload() => ref.invalidate(hospitalRequestsProvider);
 
   Future<void> _verify(ClinicalRequest r) async {
-    final done = await showModalBottomSheet<bool>(context: context, isScrollControlled: true, builder: (_) => AssignDoctorSheet(request: r));
+    final done = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => AssignDoctorSheet(request: r),
+    );
     if (done == true) _reload();
   }
 
@@ -46,10 +51,17 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
       requiredMessage: 'A rejection message is required.',
       allowAttachment: false,
       destructive: true,
-      onSubmit: (text, _) => ref.read(verificationRepositoryProvider).reject(r.id, text),
+      onSubmit: (text, _) =>
+          ref.read(verificationRepositoryProvider).reject(r.id, text),
     );
     _reload();
-    if (sent && mounted) showSnack(context, 'The creator will see your rejection message.', title: 'Request rejected');
+    if (sent && mounted) {
+      showSnack(
+        context,
+        'The creator will see your rejection message.',
+        title: 'Request rejected',
+      );
+    }
   }
 
   @override
@@ -60,7 +72,9 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
       body: RefreshableScroll(
         onRefresh: () async {
           _reload();
-          await ref.read(hospitalRequestsProvider.future).then((_) {}, onError: (_) {});
+          await ref
+              .read(hospitalRequestsProvider.future)
+              .then((_) {}, onError: (_) {});
         },
         child: ContentWidth(
           child: Padding(
@@ -68,24 +82,50 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SearchField(hint: 'Search ID, blood group, reason, creator', onChanged: (v) => setState(() => _search = v)),
+                SearchField(
+                  hint: 'Search ID, blood group, reason, creator',
+                  onChanged: (v) => setState(() => _search = v),
+                ),
                 const SizedBox(height: 10),
-                FilterChips<String?>(options: requestStatusFilters, selected: _status, onSelected: (s) => setState(() => _status = s)),
+                FilterChips<String?>(
+                  options: requestStatusFilters,
+                  selected: _status,
+                  onSelected: (s) => setState(() => _status = s),
+                ),
                 const SizedBox(height: 12),
                 AsyncView(
                   value: value,
                   onRetry: _reload,
                   loadingMessage: 'Loading requests...',
                   data: (all) {
-                    final pending = all.where((r) => r.status == 'Pending').length;
-                    final list = all.where((r) => requestMatches(r, status: _status, query: _search)).toList();
+                    final pending = all
+                        .where((r) => r.status == 'Pending')
+                        .length;
+                    final list = all
+                        .where(
+                          (r) => requestMatches(
+                            r,
+                            status: _status,
+                            query: _search,
+                          ),
+                        )
+                        .toList();
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text('$pending request(s) waiting for verification', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                        Text(
+                          '$pending request(s) waiting for verification',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                         const SizedBox(height: 8),
                         if (list.isEmpty)
-                          const EmptyView(icon: Icons.fact_check_outlined, message: 'No blood requests match.')
+                          const EmptyView(
+                            icon: Icons.fact_check_outlined,
+                            message: 'No blood requests match.',
+                          )
                         else
                           for (final r in list)
                             Padding(
@@ -96,24 +136,43 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
                                   if (r.canVerify) ...[
                                     FilledButton.icon(
                                       key: Key('verify-${r.id}'),
-                                      style: FilledButton.styleFrom(backgroundColor: AppColors.emerald600, minimumSize: const Size(0, 40)),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: AppColors.emerald600,
+                                        minimumSize: const Size(0, 40),
+                                      ),
                                       onPressed: () => _verify(r),
-                                      icon: const Icon(Icons.how_to_reg, size: 18),
+                                      icon: const Icon(
+                                        Icons.how_to_reg,
+                                        size: 18,
+                                      ),
                                       label: const Text('Verify'),
                                     ),
                                     OutlinedButton.icon(
                                       key: Key('reject-${r.id}'),
-                                      style: OutlinedButton.styleFrom(foregroundColor: AppColors.rose600, minimumSize: const Size(0, 40)),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.rose600,
+                                        minimumSize: const Size(0, 40),
+                                      ),
                                       onPressed: () => _reject(r),
                                       icon: const Icon(Icons.close, size: 18),
                                       label: const Text('Reject'),
                                     ),
                                   ],
-                                  if (const {'Approved', 'Completed'}.contains(r.status))
+                                  if (const {
+                                    'Approved',
+                                    'Completed',
+                                  }.contains(r.status))
                                     OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
-                                      onPressed: () => context.push(AppRoutes.hospitalRequestDonors(r.id)),
-                                      icon: const Icon(Icons.people_outline, size: 18),
+                                      style: OutlinedButton.styleFrom(
+                                        minimumSize: const Size(0, 40),
+                                      ),
+                                      onPressed: () => context.push(
+                                        AppRoutes.hospitalRequestDonors(r.id),
+                                      ),
+                                      icon: const Icon(
+                                        Icons.people_outline,
+                                        size: 18,
+                                      ),
                                       label: const Text('Donors'),
                                     ),
                                 ],
@@ -134,7 +193,12 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
 
 /// A blood request card shared by the hospital and doctor screens.
 class RequestCard extends StatelessWidget {
-  const RequestCard({super.key, required this.request, this.actions = const [], this.showHospital = false});
+  const RequestCard({
+    super.key,
+    required this.request,
+    this.actions = const [],
+    this.showHospital = false,
+  });
 
   final ClinicalRequest request;
   final List<Widget> actions;
@@ -149,12 +213,24 @@ class RequestCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              BloodGroupBadge(r.bloodGroup),
-              const SizedBox(width: 8),
-              Expanded(child: Text('${r.unitsRequired} unit(s) · #${r.shortId}', style: const TextStyle(fontWeight: FontWeight.w700))),
-              StatusBadge(r.priority, variant: r.isCritical ? BadgeVariant.danger : BadgeVariant.warning),
-            ]),
+            Row(
+              children: [
+                BloodGroupBadge(r.bloodGroup),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${r.unitsRequired} unit(s) · #${r.shortId}',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                StatusBadge(
+                  r.priority,
+                  variant: r.isCritical
+                      ? BadgeVariant.danger
+                      : BadgeVariant.warning,
+                ),
+              ],
+            ),
             const SizedBox(height: 6),
             if (r.reason.isNotEmpty) Text(r.reason),
             Text(
@@ -165,28 +241,56 @@ class RequestCard extends StatelessWidget {
               ].join(' · '),
               style: const TextStyle(fontSize: 12, color: AppColors.slate500),
             ),
-            Text('${r.fulfilledUnits} donated, ${r.reservedUnits} reserved · expires ${Fmt.date(r.expiryDate)}',
-                style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+            Text(
+              '${r.fulfilledUnits} donated, ${r.reservedUnits} reserved',
+              style: const TextStyle(fontSize: 12, color: AppColors.slate500),
+            ),
             if (r.assignedDoctorName != null)
-              Text('Doctor: ${r.assignedDoctorName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+              Text(
+                'Doctor: ${r.assignedDoctorName}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             const SizedBox(height: 6),
-            Wrap(spacing: 6, runSpacing: 4, children: [
-              StatusBadge(r.status, variant: requestStatusVariant(r.status)),
-              if (r.isSuspended) SuspendedBadge(reason: r.suspensionReason),
-              if (r.pendingHospitalDonations > 0) StatusBadge('${r.pendingHospitalDonations} hospital donation(s) waiting', variant: BadgeVariant.info),
-            ]),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                StatusBadge(r.status, variant: requestStatusVariant(r.status)),
+                if (r.isSuspended) SuspendedBadge(reason: r.suspensionReason),
+                if (r.pendingHospitalDonations > 0)
+                  StatusBadge(
+                    '${r.pendingHospitalDonations} hospital donation(s) waiting',
+                    variant: BadgeVariant.info,
+                  ),
+              ],
+            ),
             if (r.isSuspended)
               const Padding(
                 padding: EdgeInsets.only(top: 6),
-                child: Text('Suspended by the administrator: nobody can act on it until the suspension is lifted.',
-                    style: TextStyle(fontSize: 12, color: AppColors.rose600)),
+                child: Text(
+                  'Suspended by the administrator: nobody can act on it until the suspension is lifted.',
+                  style: TextStyle(fontSize: 12, color: AppColors.rose600),
+                ),
               ),
-            if (r.status == 'Rejected' && (r.rejectionReason?.isNotEmpty ?? false))
+            if (r.status == 'Rejected' &&
+                (r.rejectionReason?.isNotEmpty ?? false))
               Padding(
                 padding: const EdgeInsets.only(top: 6),
-                child: Text('Rejection message: ${r.rejectionReason}', style: const TextStyle(fontSize: 12, color: AppColors.rose600)),
+                child: Text(
+                  'Rejection message: ${r.rejectionReason}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.rose600,
+                  ),
+                ),
               ),
-            if (actions.isNotEmpty) ...[const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, children: actions)],
+            if (actions.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(spacing: 8, runSpacing: 8, children: actions),
+            ],
           ],
         ),
       ),
@@ -211,7 +315,9 @@ class _AssignDoctorSheetState extends ConsumerState<AssignDoctorSheet> {
 
   Future<void> _save() async {
     if (_doctorId == null) {
-      setState(() => _error = 'Choose the doctor who will review this request.');
+      setState(
+        () => _error = 'Choose the doctor who will review this request.',
+      );
       return;
     }
     setState(() {
@@ -219,15 +325,27 @@ class _AssignDoctorSheetState extends ConsumerState<AssignDoctorSheet> {
       _error = null;
     });
     try {
-      await ref.read(verificationRepositoryProvider).verify(widget.request.id, _doctorId!);
+      await ref
+          .read(verificationRepositoryProvider)
+          .verify(widget.request.id, _doctorId!);
       if (!mounted) return;
-      showSnack(context, 'The assigned doctor has been notified.', type: SnackType.success, title: 'Request verified');
+      showSnack(
+        context,
+        'The assigned doctor has been notified.',
+        type: SnackType.success,
+        title: 'Request verified',
+      );
       Navigator.of(context).pop(true);
     } catch (e) {
       final api = ApiError.from(e);
       if (!mounted) return;
       if (api.isConflict) {
-        showSnack(context, api.message, type: SnackType.error, title: 'Not verified');
+        showSnack(
+          context,
+          api.message,
+          type: SnackType.error,
+          title: 'Not verified',
+        );
         Navigator.of(context).pop(true);
       } else {
         setState(() => _error = api.message);
@@ -241,23 +359,35 @@ class _AssignDoctorSheetState extends ConsumerState<AssignDoctorSheet> {
   Widget build(BuildContext context) {
     final doctors = ref.watch(hospitalDoctorsProvider);
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
+      padding: EdgeInsets.fromLTRB(
+        20,
+        0,
+        20,
+        MediaQuery.viewInsetsOf(context).bottom + 20,
+      ),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Verify request #${widget.request.shortId}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(
+              'Verify request #${widget.request.shortId}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 6),
-            const Text('Assign the doctor who approves or rejects it. Only doctors who have completed their first sign-in can be assigned.',
-                style: TextStyle(fontSize: 12)),
+            const Text(
+              'Assign the doctor who approves or rejects it. Only doctors who have completed their first sign-in can be assigned.',
+              style: TextStyle(fontSize: 12),
+            ),
             const SizedBox(height: 12),
             AsyncView(
               value: doctors,
               onRetry: () => ref.invalidate(hospitalDoctorsProvider),
               data: (all) {
                 final eligible = all.where((d) => d.canBeAssigned).toList();
-                final pendingFirstLogin = all.where((d) => !d.canBeAssigned).length;
+                final pendingFirstLogin = all
+                    .where((d) => !d.canBeAssigned)
+                    .length;
                 if (eligible.isEmpty) {
                   return InfoBanner(
                     pendingFirstLogin > 0
@@ -278,21 +408,39 @@ class _AssignDoctorSheetState extends ConsumerState<AssignDoctorSheet> {
                               key: Key('doctor-${d.doctorId}'),
                               value: d.doctorId,
                               title: Text(d.name),
-                              subtitle: Text([d.specialization, 'SLMC ${d.licenseNumber}'].where((s) => s.isNotEmpty).join(' · ')),
+                              subtitle: Text(
+                                [
+                                  d.specialization,
+                                  'SLMC ${d.licenseNumber}',
+                                ].where((s) => s.isNotEmpty).join(' · '),
+                              ),
                             ),
                         ],
                       ),
                     ),
                     if (pendingFirstLogin > 0)
-                      Text('$pendingFirstLogin doctor(s) pending first login are not listed.',
-                          style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+                      Text(
+                        '$pendingFirstLogin doctor(s) pending first login are not listed.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.slate500,
+                        ),
+                      ),
                   ],
                 );
               },
             ),
             const SizedBox(height: 12),
-            if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
-            BusyButton(key: const Key('assign-submit'), label: 'Verify and assign', busy: _busy, onPressed: _save),
+            if (_error != null) ...[
+              FormErrorBox(_error!),
+              const SizedBox(height: 12),
+            ],
+            BusyButton(
+              key: const Key('assign-submit'),
+              label: 'Verify and assign',
+              busy: _busy,
+              onPressed: _save,
+            ),
           ],
         ),
       ),

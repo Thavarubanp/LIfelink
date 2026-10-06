@@ -26,13 +26,21 @@ class CurrentUser {
       firstName: str(json['firstName']),
       lastName: str(json['lastName']),
       email: str(json['email']),
-      roles: roles is List ? roles.map((r) => r.toString()).toList() : roles is String ? [roles] : const [],
+      roles: roles is List
+          ? roles.map((r) => r.toString()).toList()
+          : roles is String
+          ? [roles]
+          : const [],
       accountStatus: str(json['accountStatus']),
       isSuspended: boolOf(json['isSuspended']),
       mustChangePassword: boolOf(json['mustChangePassword']),
       hospitalApprovalStatus: json['hospitalApprovalStatus']?.toString(),
-      sessionIdleTimeoutMinutes: idle > 0 ? idle : AppConstants.defaultIdleMinutes,
-      sessionWarningMinutes: warning is num && warning >= 0 ? warning.toDouble() : AppConstants.defaultWarningMinutes,
+      sessionIdleTimeoutMinutes: idle > 0
+          ? idle
+          : AppConstants.defaultIdleMinutes,
+      sessionWarningMinutes: warning is num && warning >= 0
+          ? warning.toDouble()
+          : AppConstants.defaultWarningMinutes,
     );
   }
 
@@ -55,9 +63,18 @@ class CurrentUser {
 
   bool hasRole(String role) => effectiveRoles.contains(role);
 
+  /// Accounts that may participate as donors. Administrative authority does
+  /// not grant medical authority; the API still enforces every donor rule.
+  bool get isDonorCapable =>
+      (hasRole(Roles.user) || hasRole(Roles.admin)) &&
+      !hasRole(Roles.hospitalStaff) &&
+      !hasRole(Roles.doctor);
+
   /// Hospital staff whose hospital registration is not Approved may only see the waiting screen.
   bool get isUnapprovedHospitalStaff =>
-      hasRole(Roles.hospitalStaff) && !hasRole(Roles.admin) && hospitalApprovalStatus != 'Approved';
+      hasRole(Roles.hospitalStaff) &&
+      !hasRole(Roles.admin) &&
+      hospitalApprovalStatus != 'Approved';
 
   /// Primary role for the home screen: Admin > HospitalStaff > Doctor > User (same order as the web app).
   String get primaryRole {
@@ -68,9 +85,9 @@ class CurrentUser {
   }
 
   String get roleLabel => switch (primaryRole) {
-        Roles.admin => 'Administrator',
-        Roles.hospitalStaff => 'Hospital staff',
-        Roles.doctor => 'Doctor',
-        _ => 'Donor / patient',
-      };
+    Roles.admin => 'Administrator',
+    Roles.hospitalStaff => 'Hospital staff',
+    Roles.doctor => 'Doctor',
+    _ => 'Donor / patient',
+  };
 }

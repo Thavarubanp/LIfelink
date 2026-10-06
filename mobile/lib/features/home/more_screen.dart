@@ -39,11 +39,18 @@ class MoreScreen extends ConsumerWidget {
                   leading: CircleAvatar(
                     backgroundColor: AppColors.red600,
                     child: Text(
-                      (user.firstName.isNotEmpty ? user.firstName[0] : '?').toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      (user.firstName.isNotEmpty ? user.firstName[0] : '?')
+                          .toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                  title: Text(user.fullName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  title: Text(
+                    user.fullName,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   subtitle: Text('${user.roleLabel} · ${user.email}'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => context.push(AppRoutes.profile),
@@ -61,9 +68,19 @@ class MoreScreen extends ConsumerWidget {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(e.path),
                     ),
+                  ListTile(
+                    leading: const Icon(Icons.search, color: AppColors.red600),
+                    title: const Text('Global search'),
+                    subtitle: const Text('Find users, doctors and hospitals'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.search),
+                  ),
                   if (user != null && !user.hasRole(Roles.admin))
                     ListTile(
-                      leading: const Icon(Icons.gavel_outlined, color: AppColors.red600),
+                      leading: const Icon(
+                        Icons.gavel_outlined,
+                        color: AppColors.red600,
+                      ),
                       title: const Text('Account status and appeals'),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(AppRoutes.governanceStatus),
@@ -75,7 +92,12 @@ class MoreScreen extends ConsumerWidget {
                     onTap: () => context.push(AppRoutes.myActivity),
                   ),
                   ListTile(
-                    leading: const UnreadBadge(child: Icon(Icons.notifications_outlined, color: AppColors.red600)),
+                    leading: const UnreadBadge(
+                      child: Icon(
+                        Icons.notifications_outlined,
+                        color: AppColors.red600,
+                      ),
+                    ),
                     title: const Text('Notifications'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoutes.notifications),
@@ -86,7 +108,12 @@ class MoreScreen extends ConsumerWidget {
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
-                if (await confirmDialog(context, title: 'Sign out', message: 'Sign out of LifeLink on this phone?', confirmLabel: 'Sign out')) {
+                if (await confirmDialog(
+                  context,
+                  title: 'Sign out',
+                  message: 'Sign out of LifeLink on this phone?',
+                  confirmLabel: 'Sign out',
+                )) {
                   await ref.read(authControllerProvider.notifier).logout();
                 }
               },
