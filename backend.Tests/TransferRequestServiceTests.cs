@@ -7,7 +7,10 @@ using LifeLink.DTOs.Transfer;
 using LifeLink.Entities;
 using LifeLink.Services.Inventory;
 using LifeLink.Services.Transfer;
+using LifeLink.Controllers;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using System.Reflection;
 using Xunit;
 
 namespace LifeLink.Tests
@@ -45,6 +48,66 @@ namespace LifeLink.Tests
 
         private static async Task<int> UnitsAsync(AppDbContext context, Guid hospitalId, string group = "O+") =>
             (await context.BloodInventories.SingleOrDefaultAsync(i => i.HospitalId == hospitalId && i.BloodGroup == group))?.UnitsAvailable ?? 0;
+
+        [Fact]
+        public async Task CounterpartAvailability_Counts_Only_Live_Unheld_Available_Exact_Group_Packets()
+        {
+            var (context, source, counterpart) = await SeedAsync();
+            var eligibleZero = new Hospital { HospitalId = Guid.NewGuid(), Name = "Eligible Zero", Email = "zero@h.org", IsVerified = true };
+            var suspended = new Hospital { HospitalId = Guid.NewGuid(), Name = "Suspended", Email = "s@h.org", IsVerified = true, IsSuspended = true };
+            var unverified = new Hospital { HospitalId = Guid.NewGuid(), Name = "Unverified", Email = "u@h.org", IsVerified = false };
+            await context.Hospitals.AddRangeAsync(eligibleZero, suspended, unverified);
+            await context.SaveChangesAsync();
+
+            await AddStockAsync(context, source.HospitalId, "O+", 2);
+            await AddStockAsync(context, counterpart.HospitalId, "O+", 9);
+            await AddStockAsync(context, counterpart.HospitalId, "A+", 2);
+            await AddStockAsync(context, suspended.HospitalId, "O+", 3);
+            await AddStockAsync(context, unverified.HospitalId, "O+", 3);
+
+            var excluded = await context.BloodPackets
+                .Where(p => p.HospitalId == counterpart.HospitalId && p.BloodGroup == "O+")
+                .OrderBy(p => p.TrackingNumber)
+                .Take(4)
+                .ToListAsync();
+            excluded[0].ExpiryDate = DateTime.UtcNow.AddMinutes(-1);
+            excluded[1].Status = BloodPacketStatus.Reserved;
+            excluded[1].HeldForReferenceId = Guid.NewGuid();
+            excluded[2].Status = BloodPacketStatus.Issued;
+            excluded[3].HeldForReferenceId = Guid.NewGuid();
+            await context.SaveChangesAsync();
+
+            var results = (await new TransferRequestService(context)
+                .GetCounterpartAvailabilityAsync(source.HospitalId, "o+")).ToList();
+
+            Assert.DoesNotContain(results, row => row.HospitalId == source.HospitalId);
+            Assert.DoesNotContain(results, row => row.HospitalId == suspended.HospitalId);
+            Assert.DoesNotContain(results, row => row.HospitalId == unverified.HospitalId);
+            var available = Assert.Single(results, row => row.HospitalId == counterpart.HospitalId);
+            Assert.Equal("Hospital B", available.HospitalName);
+            Assert.Equal("O+", available.BloodGroup);
+            Assert.Equal(5, available.TransferableUnits);
+            Assert.Equal(0, Assert.Single(results, row => row.HospitalId == eligibleZero.HospitalId).TransferableUnits);
+        }
+
+        [Fact]
+        public void CounterpartAvailability_Dto_Exposes_Only_The_Approved_Projection()
+        {
+            var properties = typeof(TransferCounterpartAvailabilityDto).GetProperties().Select(property => property.Name).OrderBy(name => name);
+            Assert.Equal(new[] { "BloodGroup", "HospitalId", "HospitalName", "TransferableUnits" }, properties);
+        }
+
+        [Fact]
+        public void CounterpartAvailability_Endpoint_Is_HospitalStaff_Only_And_Accepts_No_Source_Hospital_Id()
+        {
+            var method = typeof(TransferRequestsController).GetMethod(nameof(TransferRequestsController.GetCounterpartAvailability))!;
+            var authorization = method.GetCustomAttribute<AuthorizeAttribute>();
+
+            Assert.Equal("HospitalStaff", authorization!.Roles);
+            var parameter = Assert.Single(method.GetParameters());
+            Assert.Equal("bloodGroup", parameter.Name);
+            Assert.Equal(typeof(string), parameter.ParameterType);
+        }
 
         [Fact]
         public async Task CreateTransferRequestAsync_SameSenderAndReceiver_ThrowsInvalidOperationException()

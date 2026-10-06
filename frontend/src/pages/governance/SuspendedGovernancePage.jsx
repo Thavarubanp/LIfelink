@@ -54,7 +54,7 @@ export const SuspendedGovernancePage = () => {
     try {
       const res = await governanceApi.getStatus();
       setStatus(res.data);
-      if (res.data?.profile?.role === 'User') {
+      if (['User', 'Admin'].includes(res.data?.profile?.role)) {
         const active = await acceptanceApi.getMyActiveWithdrawals();
         setActiveAcceptances(Array.isArray(active) ? active : []);
       } else {
@@ -220,7 +220,7 @@ export const SuspendedGovernancePage = () => {
         </div>
 
         {/* Narrow safety exception: suspended donors may end existing participation, but cannot enter donor workflows. */}
-        {profile?.role === 'User' && activeAcceptances.length > 0 && (
+        {['User', 'Admin'].includes(profile?.role) && activeAcceptances.length > 0 && (
           <div className={`${card} p-5`}>
             <div className="flex items-center gap-2 mb-2">
               <LogOut className="w-4 h-4 text-rose-600" />

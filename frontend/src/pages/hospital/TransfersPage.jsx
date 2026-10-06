@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, CheckCircle2, Loader2, Send, Trash2, X, XCircle } from 'lucide-react';
-import { hospitalApi, inventoryApi, profileApi, transferApi } from '../../api';
+import { inventoryApi, profileApi, transferApi } from '../../api';
 import { Badge, SuspendedBadge } from '../../components/common/Badge';
 import { PacketPicker } from '../../components/inventory/PacketPicker';
 import { useNotification } from '../../context/NotificationContext';
@@ -24,6 +24,7 @@ export const TransfersPage = () => {
   const { addToast } = useNotification();
   const [myHospitalId, setMyHospitalId] = useState(null);
   const [hospitals, setHospitals] = useState([]);
+  const [availabilityGroup, setAvailabilityGroup] = useState(null);
   const [stock, setStock] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,13 +49,11 @@ export const TransfersPage = () => {
     const fetchTransfers = async () => {
       try {
         const me = await profileApi.getMyProfile();
-        const [hospitalRes, stockRes, transferRes] = await Promise.all([
-          hospitalApi.getHospitals(true),
+        const [stockRes, transferRes] = await Promise.all([
           inventoryApi.getHospitalInventory(me.id).catch(() => []),
           transferApi.getAllTransferRequests()
         ]);
         setMyHospitalId(me.id);
-        setHospitals(unwrap(hospitalRes).filter((h) => h.isVerified && !h.isSuspended && h.hospitalId !== me.id));
         setStock(unwrap(stockRes));
         setTransfers(unwrap(transferRes));
       } catch (err) {
@@ -66,14 +65,36 @@ export const TransfersPage = () => {
     fetchTransfers();
   }, [reloadKey, addToast]);
 
+  useEffect(() => {
+    let current = true;
+    transferApi.getCounterpartAvailability(form.bloodGroup)
+      .then((response) => {
+        if (current) {
+          setHospitals(unwrap(response));
+          setAvailabilityGroup(form.bloodGroup);
+        }
+      })
+      .catch((err) => {
+        if (current) {
+          setHospitals([]);
+          setAvailabilityGroup(form.bloodGroup);
+          addToast({ title: 'Could not load hospital availability', message: getApiErrorMessage(err), type: 'error' });
+        }
+      });
+
+    return () => {
+      current = false;
+    };
+  }, [form.bloodGroup, reloadKey, addToast]);
+
   const counterpartOf = (t) => (t.transferType === 'Offer' ? t.receiverHospitalId : t.senderHospitalId);
   const incoming = transfers.filter((t) => t.status === 'Pending' && counterpartOf(t) === myHospitalId);
   const outgoing = transfers.filter((t) => t.status === 'Pending' && t.createdByHospitalId === myHospitalId);
   const history = transfers.filter((t) => t.status !== 'Pending');
   const visible = tab === 'incoming' ? incoming : tab === 'outgoing' ? outgoing : history;
 
-  const availableAt = (hospitalId, group) => stock.find((s) => s.hospitalId === hospitalId && s.bloodGroup === group)?.unitsAvailable ?? 0;
-  const myAvailable = availableAt(myHospitalId, form.bloodGroup);
+  const myAvailable = stock.find((s) => s.hospitalId === myHospitalId && s.bloodGroup === form.bloodGroup)?.unitsAvailable ?? 0;
+  const availabilityLoading = availabilityGroup !== form.bloodGroup;
 
   const isOffer = form.transferType === 'Offer';
 
@@ -155,11 +176,11 @@ export const TransfersPage = () => {
         </div>
         <div className="md:col-span-2">
           <label className="block font-semibold mb-1">{form.transferType === 'Offer' ? 'Offer to' : 'Request from'}</label>
-          <select required value={form.counterpartHospitalId} onChange={(e) => setForm({ ...form, counterpartHospitalId: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl">
-            <option value="">Select hospital</option>
+          <select required disabled={availabilityLoading} value={form.counterpartHospitalId} onChange={(e) => setForm({ ...form, counterpartHospitalId: e.target.value })} className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl disabled:opacity-60">
+            <option value="">{availabilityLoading ? 'Loading hospitals...' : 'Select hospital'}</option>
             {hospitals.map((h) => (
               <option key={h.hospitalId} value={h.hospitalId}>
-                {h.name}{form.transferType === 'Request' ? ` (${availableAt(h.hospitalId, form.bloodGroup)} ${form.bloodGroup} available)` : ''}
+                {h.hospitalName}{form.transferType === 'Request' ? ` (${h.transferableUnits} ${h.bloodGroup} available)` : ''}
               </option>
             ))}
           </select>

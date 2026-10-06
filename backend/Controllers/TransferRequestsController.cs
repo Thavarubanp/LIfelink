@@ -77,6 +77,15 @@ namespace LifeLink.Controllers
             return Ok(ApiResponse<IEnumerable<TransferRequestResponseDto>>.Ok(result, "Pending transfer requests retrieved successfully."));
         }
 
+        /// <summary>Exact-group selectable packet counts for eligible counterpart hospitals.</summary>
+        [HttpGet("counterparts")]
+        [Authorize(Roles = "HospitalStaff")]
+        [ProducesResponseType(typeof(ApiResponse<IEnumerable<TransferCounterpartAvailabilityDto>>), StatusCodes.Status200OK)]
+        public Task<IActionResult> GetCounterpartAvailability([FromQuery] string bloodGroup) =>
+            Execute(async hospitalId => Ok(ApiResponse<IEnumerable<TransferCounterpartAvailabilityDto>>.Ok(
+                await _transferRequestService.GetCounterpartAvailabilityAsync(hospitalId, bloodGroup),
+                "Transfer counterpart availability retrieved successfully.")));
+
         /// <summary>A transfer the signed-in hospital takes part in, with the IDs of the packets it moved.</summary>
         [HttpGet("{id:guid}")]
         [ProducesResponseType(typeof(ApiResponse<TransferRequestResponseDto>), StatusCodes.Status200OK)]

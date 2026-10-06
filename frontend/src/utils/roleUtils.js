@@ -6,11 +6,12 @@ export const getUserRoles = (user) => {
   return roles.length > 0 ? roles : ['User'];
 };
 
-// Donation is reserved for a plain donor/patient account. Privileged interactive
-// roles may still view public requests, but must never enter the acceptance flow.
+// Donor-capable interactive accounts are User and Admin. HospitalStaff and Doctor remain non-donors even when
+// combined with another role. The backend independently enforces the same rule and every clinical constraint.
 export const isDonorAccount = (user) => {
   const roles = getUserRoles(user);
-  return roles.includes('User') && !roles.some((role) => ['Admin', 'HospitalStaff', 'Doctor'].includes(role));
+  return roles.some((role) => ['User', 'Admin'].includes(role))
+    && !roles.some((role) => ['HospitalStaff', 'Doctor'].includes(role));
 };
 
 export const HOSPITAL_WAITING_PATH = '/hospital/waiting-approval';

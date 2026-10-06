@@ -214,7 +214,7 @@ namespace LifeLink.Tests
             var notificationService = CreateNotificationService(context);
             var verificationService = new VerificationService(context, notificationService);
 
-            // Admin accounts never receive donor alerts, whatever their blood group
+            // Admin is donor-capable and receives the same exact-group alert when otherwise eligible.
             var adminRole = new Role { RoleId = 10, Name = "Admin" };
             var adminUser = new User { UserId = Guid.NewGuid(), FirstName = "Super", LastName = "Admin", Email = "admin@lifelink.org", AccountStatus = AccountStatus.Active, BloodGroup = "O-" };
             var userRole = new UserRole { UserId = adminUser.UserId, RoleId = adminRole.RoleId, Role = adminRole, User = adminUser };
@@ -256,9 +256,10 @@ namespace LifeLink.Tests
             Assert.Equal("Approved", result.Status);
 
             var notifications = await context.Notifications.ToListAsync();
-            // Donors: 1 exact-group eligible; Hospitals: 1 with four valid units above its threshold of three.
-            Assert.Equal(2, notifications.Count);
-            Assert.Equal(donorUser.UserId, Assert.Single(notifications, n => n.NotificationType == "EligibleDonorAlert").UserId);
+            // Donors: exact-group User and Admin; Hospitals: one with four valid units above its threshold of three.
+            Assert.Equal(3, notifications.Count);
+            var alertedDonors = notifications.Where(n => n.NotificationType == "EligibleDonorAlert").Select(n => n.UserId).ToList();
+            Assert.Equal(new Guid?[] { donorUser.UserId, adminUser.UserId }.OrderBy(id => id), alertedDonors.OrderBy(id => id));
             Assert.Equal(otherHospital1.HospitalId, Assert.Single(notifications, n => n.NotificationType == "UrgentHospitalAlert").HospitalId);
             Assert.DoesNotContain(notifications, n => n.HospitalId == suspendedHospital.HospitalId || n.HospitalId == unverifiedHospital.HospitalId);
             Assert.Empty(notifications.Where(n => n.RecipientRole == "Admin"));

@@ -19,6 +19,11 @@ export const transferApi = {
     return response.data;
   },
 
+  getCounterpartAvailability: async (bloodGroup) => {
+    const response = await client.get('/transfers/counterparts', { params: { bloodGroup } });
+    return response.data;
+  },
+
   getTransferRequestById: async (id) => {
     const response = await client.get(`/transfers/${id}`);
     return response.data;

@@ -163,7 +163,7 @@ export function App() {
               <Route
                 path="/donor/acceptances"
                 element={
-                  <ProtectedRoute allowedRoles={['User']} excludedRoles={['Admin', 'HospitalStaff', 'Doctor']}>
+                  <ProtectedRoute allowedRoles={['User', 'Admin']} excludedRoles={['HospitalStaff', 'Doctor']}>
                     <MyAcceptancesPage />
                   </ProtectedRoute>
                 }
@@ -171,7 +171,7 @@ export function App() {
               <Route
                 path="/donor/acceptances/:id/screening"
                 element={
-                  <ProtectedRoute allowedRoles={['User']} excludedRoles={['Admin', 'HospitalStaff', 'Doctor']}>
+                  <ProtectedRoute allowedRoles={['User', 'Admin']} excludedRoles={['HospitalStaff', 'Doctor']}>
                     <ScreeningInterviewPage />
                   </ProtectedRoute>
                 }
