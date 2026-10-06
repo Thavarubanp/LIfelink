@@ -27,4 +27,4 @@ Your profile shows your blood group, last donation date and next eligible date. 
 
 # Complaints, appeals and suspensions
 
-Use **Complaints** to report a problem with a hospital or user. A suspended account can only use the Governance Portal to see its status and appeal; it cannot take part in donations until reinstated.
+Use **Complaints** to report a problem with a hospital or user. A suspended account normally has only the Governance Portal for status and appeals. A suspended donor-capable User/Admin has one narrow additional exception: they may inspect and withdraw only their own existing active, withdrawal-eligible participation. Suspension still blocks new acceptances, new donor participation and unrelated donor functions until reinstatement.

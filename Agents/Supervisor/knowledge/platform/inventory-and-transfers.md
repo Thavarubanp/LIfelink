@@ -11,7 +11,7 @@ LifeLink tracks each unit of blood as a **packet** of 440 ml with a unique track
 For each blood group the page shows available units, the minimum threshold, capacity, packets expiring soon and the next expiry date. You can:
 
 - set the **minimum threshold** per blood group; the inventory agent alerts you when stock falls below it;
-- issue blood by choosing the exact packets and giving a reason (issued packets stay in the packet list with status Issued);
+- **Remove from available stock** by choosing the exact packets and giving a reason (the persisted and historical packet status remains `Issued`);
 - open a packet to see its full history.
 
 **Packet shelf life** (21 to 35 days, matching your blood bags) and the **expiry alert window** (for example 5 days) are set in your hospital profile. Shelf life applies to newly collected packets.
@@ -26,6 +26,8 @@ Approved hospitals can:
 
 - **Request** blood from another hospital, or
 - **Offer** blood to another hospital by choosing the packets to send (they are held until the other hospital answers).
+
+The transfer destination selector uses `GET /api/transfers/counterparts?bloodGroup={group}`. For HospitalStaff it returns only `hospitalId`, `hospitalName`, `bloodGroup` and `transferableUnits`. The count is the destination's currently selectable packets for the exact chosen group: `Available`, unheld and unexpired. This restricted operational projection supports transfer selection; it does not grant HospitalStaff unrestricted access to another hospital's full inventory.
 
 The other hospital accepts or rejects; no doctor or AI approval is needed. When accepting a request, the sending hospital chooses exactly the requested number of packets. Accepted packets move straight away with all their details (same tracking number); they leave the sender's inventory and become available at the receiving hospital. The transfer record lists the tracking numbers sent. A rejected or withdrawn offer returns the held packets. A rejection needs a reason. The hospital that created a transfer can delete it while it is still pending; it then stays in the history as Cancelled.
 

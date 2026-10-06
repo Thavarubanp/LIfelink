@@ -11,7 +11,7 @@ The agent subsystem is internal to LifeLink. Clients call the ASP.NET Core API; 
 | Inventory Management | 8003 | Shortage, expiry, emergency-source, and transfer recommendations | [README](InventoryManagement/README.md) |
 | Supervisor | 8004 | Routes events/chat, runs planning and RAG, composes guarded responses | [README](Supervisor/README.md) |
 
-Start the three workers before the Supervisor, then start the backend. Each service exposes `GET /health`; other endpoints require the shared internal key. Configuration values belong in ignored `.env` files or environment variables.
+Start the three workers before the Supervisor, then start the backend. Notification, Inventory and Supervisor expose `GET /health`; Request Management exposes `GET /api/agent/health`. Other endpoints require the shared internal key. Configuration values belong in ignored `.env` files or environment variables.
 
 ## Trust and data flow
 
@@ -53,7 +53,7 @@ Unsupported events return a structured error and invoke no worker.
 |---|---|---|
 | Request Management | Acceptance id plus chat/structured answers; returns question/session/report state | Read the relevant acceptance and minimal user profile; update screening status; notify the backend of a completed report |
 | Notification | Backend-filtered donors/hospitals plus request/recommendation facts; returns notification objects | No database writes; optional Gemini call using minimized data |
-| Inventory Management | Inventory/public-request snapshot or emergency stock candidates; returns ranked recommendations | Primary `/analyze` path has no side effects; legacy scheduler may call only the configured inventory and recommendation endpoints when explicitly enabled |
+| Inventory Management | Inventory/public-request snapshot or emergency stock candidates; analyzes inventory and returns ranked recommendations | No notification writes: Supervisor/backend orchestration owns the operational flow, and the backend owns recipient authorization and notification persistence |
 | Supervisor | Event/chat envelope; returns composed, guarded result | Call the three configured worker URLs and its local RAG store |
 
 ## Deterministic rules versus LLM use
