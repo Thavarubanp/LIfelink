@@ -24,10 +24,12 @@ class GovernanceStatusScreen extends ConsumerStatefulWidget {
   const GovernanceStatusScreen({super.key});
 
   @override
-  ConsumerState<GovernanceStatusScreen> createState() => _GovernanceStatusScreenState();
+  ConsumerState<GovernanceStatusScreen> createState() =>
+      _GovernanceStatusScreenState();
 }
 
-class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen> {
+class _GovernanceStatusScreenState
+    extends ConsumerState<GovernanceStatusScreen> {
   final _reason = TextEditingController();
   Attachment? _file;
   bool _submitting = false;
@@ -41,7 +43,9 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
 
   Future<void> _refresh() async {
     ref.invalidate(governanceStatusProvider);
-    await ref.read(governanceStatusProvider.future).then((_) {}, onError: (_) {});
+    await ref
+        .read(governanceStatusProvider.future)
+        .then((_) {}, onError: (_) {});
     // An approved appeal reinstates the account: the router then leaves this screen
     try {
       await ref.read(authControllerProvider.notifier).refreshUser();
@@ -61,10 +65,16 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
       _error = null;
     });
     try {
-      await ref.read(governanceRepositoryProvider).submitAppeal(_reason.text.trim(), _file);
+      await ref
+          .read(governanceRepositoryProvider)
+          .submitAppeal(_reason.text.trim(), _file);
       if (!mounted) return;
-      showSnack(context, 'The administrator will review it. You will see the answer here and in your notifications.',
-          type: SnackType.success, title: 'Appeal submitted');
+      showSnack(
+        context,
+        'The administrator will review it. You will see the answer here and in your notifications.',
+        type: SnackType.success,
+        title: 'Appeal submitted',
+      );
       _reason.clear();
       setState(() => _file = null);
       ref.invalidate(governanceStatusProvider);
@@ -84,10 +94,18 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
       title: 'Reply to the administrator',
       maxLength: 1000,
       requiredMessage: 'A reply message is required.',
-      onSubmit: (text, file) => ref.read(governanceRepositoryProvider).reply(a.id, text, file),
+      onSubmit: (text, file) =>
+          ref.read(governanceRepositoryProvider).reply(a.id, text, file),
     );
     ref.invalidate(governanceStatusProvider);
-    if (sent && mounted) showSnack(context, 'The administrator has been notified.', type: SnackType.success, title: 'Reply sent');
+    if (sent && mounted) {
+      showSnack(
+        context,
+        'The administrator has been notified.',
+        type: SnackType.success,
+        title: 'Reply sent',
+      );
+    }
   }
 
   @override
@@ -118,6 +136,9 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
 
   Widget _body(GovernanceStatus s) {
     final appeals = s.newestFirst;
+    final donorCanWithdraw =
+        ref.read(authControllerProvider).user?.isDonorCapable == true &&
+        s.isSuspended;
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -127,34 +148,70 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
             title: s.isPermanentlyBlocked
                 ? 'Account permanently blocked'
                 : s.isSuspended
-                    ? (s.isHospital ? 'Your hospital is suspended' : 'Your account is suspended')
-                    : 'Your account is active',
-            icon: s.isSuspended || s.isPermanentlyBlocked ? Icons.gpp_maybe_outlined : Icons.verified_user_outlined,
+                ? (s.isHospital
+                      ? 'Your hospital is suspended'
+                      : 'Your account is suspended')
+                : 'Your account is active',
+            icon: s.isSuspended || s.isPermanentlyBlocked
+                ? Icons.gpp_maybe_outlined
+                : Icons.verified_user_outlined,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text([s.profileName, s.profileEmail, s.profileRole, ?s.hospitalName].where((x) => x.isNotEmpty).join(' · '),
-                    style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+                Text(
+                  [
+                    s.profileName,
+                    s.profileEmail,
+                    s.profileRole,
+                    ?s.hospitalName,
+                  ].where((x) => x.isNotEmpty).join(' · '),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.slate500,
+                  ),
+                ),
                 if (s.suspensionReason?.isNotEmpty == true) ...[
                   const SizedBox(height: 10),
-                  InfoBanner('Reason: ${s.suspensionReason}', color: AppColors.rose600, icon: Icons.info_outline),
+                  InfoBanner(
+                    'Reason: ${s.suspensionReason}',
+                    color: AppColors.rose600,
+                    icon: Icons.info_outline,
+                  ),
                 ],
                 if (s.suspendedUntil != null) ...[
                   const SizedBox(height: 6),
-                  Text('Suspended until: ${Fmt.sriLankaDateTime(s.suspendedUntil)}', style: const TextStyle(color: AppColors.amber600)),
+                  Text(
+                    'Suspended until: ${Fmt.sriLankaDateTime(s.suspendedUntil)}',
+                    style: const TextStyle(color: AppColors.amber600),
+                  ),
                 ],
                 if (s.isSuspended) ...[
                   const SizedBox(height: 8),
-                  const Text('While suspended you can only read this page and appeal.', style: TextStyle(fontSize: 12)),
+                  Text(
+                    donorCanWithdraw
+                        ? 'While suspended you may appeal and withdraw from an existing active donation. Other access remains blocked.'
+                        : 'While suspended you can only read this page and appeal.',
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ],
                 if (s.isReadOnlyViewer) ...[
                   const SizedBox(height: 8),
-                  const Text('Doctors can read the hospital\'s appeal threads; hospital staff send the appeal and replies.',
-                      style: TextStyle(fontSize: 12)),
+                  const Text(
+                    'Doctors can read the hospital\'s appeal threads; hospital staff send the appeal and replies.',
+                    style: TextStyle(fontSize: 12),
+                  ),
                 ],
               ],
             ),
           ),
+          if (donorCanWithdraw) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => context.push(AppRoutes.suspendedWithdrawals),
+              icon: const Icon(Icons.volunteer_activism_outlined),
+              label: const Text('Manage active donations'),
+            ),
+          ],
           const SizedBox(height: 12),
           for (final a in appeals) ...[
             SectionCard(
@@ -164,9 +221,16 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  ThreadView(messages: a.thread(appellantLabel: s.isHospital ? 'Hospital' : 'You')),
+                  ThreadView(
+                    messages: a.thread(
+                      appellantLabel: s.isHospital ? 'Hospital' : 'You',
+                    ),
+                  ),
                   if (a.awaitingAdminReply && !a.isClosed)
-                    const Text('Waiting for the administrator.', style: TextStyle(fontSize: 12, color: AppColors.slate500)),
+                    const Text(
+                      'Waiting for the administrator.',
+                      style: TextStyle(fontSize: 12, color: AppColors.slate500),
+                    ),
                   if (!s.isReadOnlyViewer && a.canAppellantReply)
                     Align(
                       alignment: Alignment.centerLeft,
@@ -194,17 +258,34 @@ class _GovernanceStatusScreenState extends ConsumerState<GovernanceStatusScreen>
                     controller: _reason,
                     maxLines: 5,
                     maxLength: 2000,
-                    decoration: const InputDecoration(labelText: 'Why should the suspension be lifted? (at least 10 characters)'),
+                    decoration: const InputDecoration(
+                      labelText: 'Why should the suspension be lifted? (at least 10 characters)',
+                    ),
                   ),
-                  AttachmentPickerField(value: _file, enabled: !_submitting, onChanged: (a) => setState(() => _file = a)),
+                  AttachmentPickerField(
+                    value: _file,
+                    enabled: !_submitting,
+                    onChanged: (a) => setState(() => _file = a),
+                  ),
                   const SizedBox(height: 12),
-                  if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
-                  BusyButton(key: const Key('appeal-submit'), label: 'Submit appeal', busy: _submitting, onPressed: _submit),
+                  if (_error != null) ...[
+                    FormErrorBox(_error!),
+                    const SizedBox(height: 12),
+                  ],
+                  BusyButton(
+                    key: const Key('appeal-submit'),
+                    label: 'Submit appeal',
+                    busy: _submitting,
+                    onPressed: _submit,
+                  ),
                 ],
               ),
             ),
           if (appeals.isEmpty && !s.canAppeal)
-            const EmptyView(icon: Icons.gavel_outlined, message: 'There are no appeals to show.'),
+            const EmptyView(
+              icon: Icons.gavel_outlined,
+              message: 'There are no appeals to show.',
+            ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: () => ref.read(authControllerProvider.notifier).logout(),
@@ -229,13 +310,18 @@ class MyAppealsScreen extends ConsumerWidget {
       body: RefreshableScroll(
         onRefresh: () async {
           ref.invalidate(myAppealsProvider);
-          await ref.read(myAppealsProvider.future).then((_) {}, onError: (_) {});
+          await ref
+              .read(myAppealsProvider.future)
+              .then((_) {}, onError: (_) {});
         },
         child: AsyncView(
           value: value,
           onRetry: () => ref.invalidate(myAppealsProvider),
           data: (list) => list.isEmpty
-              ? const EmptyView(icon: Icons.gavel_outlined, message: 'You have not sent any appeals.')
+              ? const EmptyView(
+                  icon: Icons.gavel_outlined,
+                  message: 'You have not sent any appeals.',
+                )
               : ContentWidth(
                   maxWidth: 640,
                   child: Padding(
@@ -246,8 +332,13 @@ class MyAppealsScreen extends ConsumerWidget {
                           SectionCard(
                             title: 'Appeal · ${Fmt.date(a.submittedAt)}',
                             icon: Icons.gavel_outlined,
-                            trailing: StatusBadge(a.status, variant: appealVariant(a.status)),
-                            child: ThreadView(messages: a.thread(appellantLabel: 'You')),
+                            trailing: StatusBadge(
+                              a.status,
+                              variant: appealVariant(a.status),
+                            ),
+                            child: ThreadView(
+                              messages: a.thread(appellantLabel: 'You'),
+                            ),
                           ),
                           const SizedBox(height: 12),
                         ],

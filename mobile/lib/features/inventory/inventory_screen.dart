@@ -20,7 +20,12 @@ class PacketActions {
   const PacketActions({this.addPackets, this.issue, this.edit});
 
   final Future<bool> Function(BuildContext context)? addPackets;
-  final Future<bool> Function(BuildContext context, InventoryItem group, List<String> preselected)? issue;
+  final Future<bool> Function(
+    BuildContext context,
+    InventoryItem group,
+    List<String> preselected,
+  )?
+  issue;
   final Future<bool> Function(BuildContext context, BloodPacket packet)? edit;
 }
 
@@ -28,7 +33,11 @@ class PacketActions {
 /// expiring soon, health), search by group or tracking number, stock filter, and each group expanding to its
 /// packets with a status filter. `?group=A%2B` opens that group.
 class InventoryScreen extends ConsumerStatefulWidget {
-  const InventoryScreen({super.key, this.initialGroup, this.actions = const PacketActions()});
+  const InventoryScreen({
+    super.key,
+    this.initialGroup,
+    this.actions = const PacketActions(),
+  });
 
   final String? initialGroup;
   final PacketActions actions;
@@ -61,8 +70,12 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     ref.invalidate(hospitalInventoryProvider);
     ref.invalidate(packetsProvider(_status));
     await Future.wait([
-      ref.read(hospitalInventoryProvider.future).catchError((_) => <InventoryItem>[]),
-      ref.read(packetsProvider(_status).future).catchError((_) => <BloodPacket>[]),
+      ref
+          .read(hospitalInventoryProvider.future)
+          .catchError((_) => <InventoryItem>[]),
+      ref
+          .read(packetsProvider(_status).future)
+          .catchError((_) => <BloodPacket>[]),
     ]);
   }
 
@@ -77,7 +90,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final ctx = _keys[group]?.currentContext;
     if (ctx == null) return;
     _scrolledTo = group;
-    Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 300), alignment: 0.05);
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 300),
+      alignment: 0.05,
+    );
   }
 
   @override
@@ -88,7 +105,9 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final term = _search.trim().toLowerCase();
     final packetList = packets.value ?? const <BloodPacket>[];
 
-    if (inventory.hasValue) WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToRequested());
+    if (inventory.hasValue) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToRequested());
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -98,8 +117,12 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             tooltip: 'Add blood group',
             icon: const Icon(Icons.add_circle_outline),
             onPressed: () async {
-              final groups = inventory.value?.map((i) => i.bloodGroup).toList() ?? const <String>[];
-              if (await showGroupFormSheet(context, existingGroups: groups)) _reload();
+              final groups =
+                  inventory.value?.map((i) => i.bloodGroup).toList() ??
+                  const <String>[];
+              if (await showGroupFormSheet(context, existingGroups: groups)) {
+                _reload();
+              }
             },
           ),
           IconButton(
@@ -133,10 +156,15 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   Text(
                     'Every unit is a 440 ml packet with its own tracking number. Shelf life ${hospital.packetShelfLifeDays} days, '
                     'expiry alert window ${hospital.expiryAlertDays} days (changed in the hospital profile on the web).',
-                    style: const TextStyle(fontSize: 12, color: AppColors.slate500),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.slate500,
+                    ),
                   ),
                 const SizedBox(height: 12),
-                if ((inventory.value ?? const []).any((i) => i.isLowStock || i.expiringSoonUnits > 0)) ...[
+                if ((inventory.value ?? const []).any(
+                  (i) => i.isLowStock || i.expiringSoonUnits > 0,
+                )) ...[
                   const InfoBanner(
                     'Some blood groups are below threshold or have packets expiring soon. The inventory analysis alerts '
                     'the hospitals holding that exact blood group; see your notifications or run the analysis from Home.',
@@ -144,7 +172,10 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                SearchField(hint: 'Search blood group or tracking number', onChanged: (v) => setState(() => _search = v)),
+                SearchField(
+                  hint: 'Search blood group or tracking number',
+                  onChanged: (v) => setState(() => _search = v),
+                ),
                 const SizedBox(height: 10),
                 FilterChips<StockFilter>(
                   options: const [
@@ -161,7 +192,12 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   onRetry: _reload,
                   loadingMessage: 'Loading inventory...',
                   data: (items) {
-                    final visible = filterGroups(items, packetList, term: term, filter: _filter);
+                    final visible = filterGroups(
+                      items,
+                      packetList,
+                      term: term,
+                      filter: _filter,
+                    );
                     if (visible.isEmpty) {
                       return EmptyView(
                         icon: Icons.inventory_2_outlined,
@@ -174,7 +210,10 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                       children: [
                         for (final item in visible)
                           Padding(
-                            key: _keys.putIfAbsent(item.bloodGroup, GlobalKey.new),
+                            key: _keys.putIfAbsent(
+                              item.bloodGroup,
+                              GlobalKey.new,
+                            ),
                             padding: const EdgeInsets.only(bottom: 10),
                             child: _GroupCard(
                               item: item,
@@ -185,12 +224,25 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                                     : _expanded.add(item.bloodGroup);
                               }),
                               onThresholds: () async {
-                                if (await showGroupFormSheet(context, edit: item)) _reload();
+                                if (await showGroupFormSheet(
+                                  context,
+                                  edit: item,
+                                )) {
+                                  _reload();
+                                }
                               },
-                              onIssue: widget.actions.issue == null || item.unitsAvailable == 0
+                              onIssue:
+                                  widget.actions.issue == null ||
+                                      item.unitsAvailable == 0
                                   ? null
                                   : () async {
-                                      if (await widget.actions.issue!(context, item, const [])) _reload();
+                                      if (await widget.actions.issue!(
+                                        context,
+                                        item,
+                                        const [],
+                                      )) {
+                                        _reload();
+                                      }
                                     },
                               packets: _GroupPackets(
                                 group: item,
@@ -198,16 +250,28 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                                 term: term,
                                 status: _status,
                                 onStatus: (s) => setState(() => _status = s),
-                                onRetry: () => ref.invalidate(packetsProvider(_status)),
+                                onRetry: () =>
+                                    ref.invalidate(packetsProvider(_status)),
                                 onIssue: widget.actions.issue == null
                                     ? null
                                     : (p) async {
-                                        if (await widget.actions.issue!(context, item, [p.packetId])) _reload();
+                                        if (await widget.actions.issue!(
+                                          context,
+                                          item,
+                                          [p.packetId],
+                                        )) {
+                                          _reload();
+                                        }
                                       },
                                 onEdit: widget.actions.edit == null
                                     ? null
                                     : (p) async {
-                                        if (await widget.actions.edit!(context, p)) _reload();
+                                        if (await widget.actions.edit!(
+                                          context,
+                                          p,
+                                        )) {
+                                          _reload();
+                                        }
                                       },
                               ),
                             ),
@@ -227,29 +291,41 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
 
 /// Search and stock filter (same rules as the web page): a group matches the search by its name or by any of its
 /// packets' tracking numbers; "Below threshold" uses the API's isLowStock, "Expiring soon" any expiring packet.
-List<InventoryItem> filterGroups(List<InventoryItem> items, List<BloodPacket> packets,
-    {String term = '', StockFilter filter = StockFilter.all}) {
+List<InventoryItem> filterGroups(
+  List<InventoryItem> items,
+  List<BloodPacket> packets, {
+  String term = '',
+  StockFilter filter = StockFilter.all,
+}) {
   final t = term.trim().toLowerCase();
   return items
-      .where((i) => switch (filter) {
-            StockFilter.all => true,
-            StockFilter.low => i.isLowStock,
-            StockFilter.expiring => i.expiringSoonUnits > 0,
-          })
-      .where((i) =>
-          t.isEmpty ||
-          i.bloodGroup.toLowerCase().contains(t) ||
-          packets.any((p) => p.bloodGroup == i.bloodGroup && p.trackingNumber.toLowerCase().contains(t)))
+      .where(
+        (i) => switch (filter) {
+          StockFilter.all => true,
+          StockFilter.low => i.isLowStock,
+          StockFilter.expiring => i.expiringSoonUnits > 0,
+        },
+      )
+      .where(
+        (i) =>
+            t.isEmpty ||
+            i.bloodGroup.toLowerCase().contains(t) ||
+            packets.any(
+              (p) =>
+                  p.bloodGroup == i.bloodGroup &&
+                  p.trackingNumber.toLowerCase().contains(t),
+            ),
+      )
       .toList();
 }
 
 BadgeVariant packetStatusVariant(String status) => switch (status) {
-      'Available' => BadgeVariant.success,
-      'Reserved' => BadgeVariant.info,
-      'Donated' => BadgeVariant.primary,
-      'Expired' => BadgeVariant.warning,
-      _ => BadgeVariant.neutral,
-    };
+  'Available' => BadgeVariant.success,
+  'Reserved' => BadgeVariant.info,
+  'Donated' => BadgeVariant.primary,
+  'Expired' => BadgeVariant.warning,
+  _ => BadgeVariant.neutral,
+};
 
 class _HealthBadge extends StatelessWidget {
   const _HealthBadge(this.item);
@@ -260,8 +336,8 @@ class _HealthBadge extends StatelessWidget {
   Widget build(BuildContext context) => item.isLowStock
       ? const StatusBadge('Below threshold', variant: BadgeVariant.warning)
       : item.isSurplus
-          ? const StatusBadge('Surplus', variant: BadgeVariant.info)
-          : const StatusBadge('Healthy', variant: BadgeVariant.success);
+      ? const StatusBadge('Surplus', variant: BadgeVariant.info)
+      : const StatusBadge('Healthy', variant: BadgeVariant.success);
 }
 
 class _GroupCard extends StatelessWidget {
@@ -283,63 +359,80 @@ class _GroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            InkWell(
-              onTap: onToggle,
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    clipBehavior: Clip.antiAlias,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        BloodGroupBadge(item.bloodGroup, large: true),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text('${item.unitsAvailable} unit(s)',
-                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+                    BloodGroupBadge(item.bloodGroup, large: true),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '${item.unitsAvailable} unit(s)',
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
                         ),
-                        _HealthBadge(item),
-                        Icon(expanded ? Icons.expand_less : Icons.expand_more, semanticLabel: expanded ? 'Hide packets' : 'Show packets'),
-                      ],
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Threshold ${item.minimumThreshold} · capacity ${item.maximumCapacity}'
-                      '${item.expiringSoonUnits > 0 ? ' · ${item.expiringSoonUnits} expiring within ${item.expiryAlertDays}d' : ''}'
-                      '${item.nextExpiryDate != null ? ' · next expiry ${Fmt.date(item.nextExpiryDate)}' : ''}',
-                      style: const TextStyle(fontSize: 12, color: AppColors.slate500),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(minimumSize: const Size(0, 36), visualDensity: VisualDensity.compact),
-                          onPressed: onThresholds,
-                          icon: const Icon(Icons.tune, size: 16),
-                          label: const Text('Thresholds'),
-                        ),
-                        if (onIssue != null)
-                          OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(minimumSize: const Size(0, 36), visualDensity: VisualDensity.compact),
-                            onPressed: onIssue,
-                            icon: const Icon(Icons.send_outlined, size: 16),
-                            label: const Text('Issue'),
-                          ),
-                      ],
+                    _HealthBadge(item),
+                    Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      semanticLabel: expanded ? 'Hide packets' : 'Show packets',
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  'Threshold ${item.minimumThreshold} · capacity ${item.maximumCapacity}'
+                  '${item.expiringSoonUnits > 0 ? ' · ${item.expiringSoonUnits} expiring within ${item.expiryAlertDays}d' : ''}'
+                  '${item.nextExpiryDate != null ? ' · next expiry ${Fmt.date(item.nextExpiryDate)}' : ''}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.slate500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 36),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onPressed: onThresholds,
+                      icon: const Icon(Icons.tune, size: 16),
+                      label: const Text('Thresholds'),
+                    ),
+                    if (onIssue != null)
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(0, 36),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        onPressed: onIssue,
+                        icon: const Icon(Icons.send_outlined, size: 16),
+                        label: const Text('Remove'),
+                      ),
+                  ],
+                ),
+              ],
             ),
-            if (expanded) ...[const Divider(), packets],
-          ],
+          ),
         ),
-      );
+        if (expanded) ...[const Divider(), packets],
+      ],
+    ),
+  );
 }
 
 class _GroupPackets extends StatelessWidget {
@@ -365,48 +458,74 @@ class _GroupPackets extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            FilterChips<String?>(options: packetStatusOptions, selected: status, onSelected: onStatus),
-            const SizedBox(height: 8),
-            packets.when(
-              loading: () => const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
-              error: (e, _) => ErrorView(error: e, onRetry: onRetry),
-              data: (all) {
-                final list = all
-                    .where((p) => p.bloodGroup == group.bloodGroup)
-                    .where((p) => term.isEmpty || group.bloodGroup.toLowerCase().contains(term) || p.trackingNumber.toLowerCase().contains(term))
-                    .toList();
-                if (list.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Text('No ${group.bloodGroup} packets with this status.',
-                        textAlign: TextAlign.center, style: const TextStyle(color: AppColors.slate500)),
-                  );
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('${group.bloodGroup} packets (${list.length})',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                    ShowMoreList<BloodPacket>(
-                      items: list,
-                      itemBuilder: (context, p) => PacketTile(packet: p, onIssue: onIssue, onEdit: onEdit),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
+    padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilterChips<String?>(
+          options: packetStatusOptions,
+          selected: status,
+          onSelected: onStatus,
         ),
-      );
+        const SizedBox(height: 8),
+        packets.when(
+          loading: () => const Padding(
+            padding: EdgeInsets.all(16),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+          error: (e, _) => ErrorView(error: e, onRetry: onRetry),
+          data: (all) {
+            final list = all
+                .where((p) => p.bloodGroup == group.bloodGroup)
+                .where(
+                  (p) =>
+                      term.isEmpty ||
+                      group.bloodGroup.toLowerCase().contains(term) ||
+                      p.trackingNumber.toLowerCase().contains(term),
+                )
+                .toList();
+            if (list.isEmpty) {
+              return Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No ${group.bloodGroup} packets with this status.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.slate500),
+                ),
+              );
+            }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${group.bloodGroup} packets (${list.length})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                ShowMoreList<BloodPacket>(
+                  items: list,
+                  itemBuilder: (context, p) =>
+                      PacketTile(packet: p, onIssue: onIssue, onEdit: onEdit),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    ),
+  );
 }
 
 /// One packet row: tracking number, dates, creator, status; tap opens its detail and history.
 class PacketTile extends StatelessWidget {
-  const PacketTile({super.key, required this.packet, this.onIssue, this.onEdit});
+  const PacketTile({
+    super.key,
+    required this.packet,
+    this.onIssue,
+    this.onEdit,
+  });
 
   final BloodPacket packet;
   final void Function(BloodPacket)? onIssue;
@@ -425,9 +544,18 @@ class PacketTile extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(p.trackingNumber, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w700)),
+                  child: Text(
+                    p.trackingNumber,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-                if (p.isExpiringSoon) ...[const StatusBadge('Soon', variant: BadgeVariant.warning), const SizedBox(width: 6)],
+                if (p.isExpiringSoon) ...[
+                  const StatusBadge('Soon', variant: BadgeVariant.warning),
+                  const SizedBox(width: 6),
+                ],
                 StatusBadge(p.status, variant: packetStatusVariant(p.status)),
               ],
             ),
@@ -437,14 +565,23 @@ class PacketTile extends StatelessWidget {
               '${p.createdHere ? 'Your hospital' : p.createdByHospitalName} · ${p.source}',
               style: const TextStyle(fontSize: 12, color: AppColors.slate500),
             ),
-            if ((p.canEdit && onEdit != null) || (p.status == 'Available' && onIssue != null))
+            if ((p.canEdit && onEdit != null) ||
+                (p.status == 'Available' && onIssue != null))
               Wrap(
                 spacing: 4,
                 children: [
                   if (p.canEdit && onEdit != null)
-                    TextButton.icon(onPressed: () => onEdit!(p), icon: const Icon(Icons.edit_outlined, size: 16), label: const Text('Edit')),
+                    TextButton.icon(
+                      onPressed: () => onEdit!(p),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: const Text('Edit'),
+                    ),
                   if (p.status == 'Available' && onIssue != null)
-                    TextButton.icon(onPressed: () => onIssue!(p), icon: const Icon(Icons.send_outlined, size: 16), label: const Text('Issue')),
+                    TextButton.icon(
+                      onPressed: () => onIssue!(p),
+                      icon: const Icon(Icons.remove_circle_outline, size: 16),
+                      label: const Text('Remove'),
+                    ),
                 ],
               ),
           ],

@@ -23,48 +23,124 @@ AuthState signedIn({
   bool suspended = false,
   bool mustChangePassword = false,
   String? approval,
-}) =>
-    AuthState.signedIn(testUser(roles: roles, suspended: suspended, mustChangePassword: mustChangePassword, hospitalApprovalStatus: approval));
+}) => AuthState.signedIn(
+  testUser(
+    roles: roles,
+    suspended: suspended,
+    mustChangePassword: mustChangePassword,
+    hospitalApprovalStatus: approval,
+  ),
+);
 
 void main() {
   group('resolveRedirect (same order as the web ProtectedRoute)', () {
     test('checking the session: splash only', () {
-      expect(resolveRedirect(const AuthState.unknown(), AppRoutes.hospitalHome), AppRoutes.splash);
-      expect(resolveRedirect(const AuthState.unknown(), AppRoutes.splash), isNull);
-      expect(resolveRedirect(const AuthState.unreachable('x'), AppRoutes.login), AppRoutes.splash);
+      expect(
+        resolveRedirect(const AuthState.unknown(), AppRoutes.hospitalHome),
+        AppRoutes.splash,
+      );
+      expect(
+        resolveRedirect(const AuthState.unknown(), AppRoutes.splash),
+        isNull,
+      );
+      expect(
+        resolveRedirect(const AuthState.unreachable('x'), AppRoutes.login),
+        AppRoutes.splash,
+      );
     });
 
     test('signed out: public screens only', () {
       const out = AuthState.signedOut();
-      expect(resolveRedirect(out, AppRoutes.hospitalInventory), AppRoutes.login);
+      expect(
+        resolveRedirect(out, AppRoutes.hospitalInventory),
+        AppRoutes.login,
+      );
       expect(resolveRedirect(out, AppRoutes.register), isNull);
       expect(resolveRedirect(out, AppRoutes.forgotPassword), isNull);
     });
 
     test('signed in: sign-in screens lead to the role home', () {
       expect(resolveRedirect(signedIn(), AppRoutes.login), AppRoutes.donorHome);
-      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.splash), AppRoutes.hospitalHome);
-      expect(resolveRedirect(signedIn(roles: ['Doctor']), AppRoutes.splash), AppRoutes.doctorHome);
-      expect(resolveRedirect(signedIn(roles: ['Admin', 'User']), AppRoutes.splash), AppRoutes.adminHome);
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+          AppRoutes.splash,
+        ),
+        AppRoutes.hospitalHome,
+      );
+      expect(
+        resolveRedirect(signedIn(roles: ['Doctor']), AppRoutes.splash),
+        AppRoutes.doctorHome,
+      );
+      expect(
+        resolveRedirect(signedIn(roles: ['Admin', 'User']), AppRoutes.splash),
+        AppRoutes.adminHome,
+      );
     });
 
-    test('suspended accounts only reach the governance status', () {
-      final s = signedIn(suspended: true);
-      expect(resolveRedirect(s, AppRoutes.donorHome), AppRoutes.governanceStatus);
-      expect(resolveRedirect(s, AppRoutes.notifications), AppRoutes.governanceStatus);
-      expect(resolveRedirect(s, AppRoutes.governanceStatus), isNull);
-    });
+    test(
+      'suspended donor-capable accounts only gain narrow withdrawal access',
+      () {
+        final s = signedIn(suspended: true);
+        expect(
+          resolveRedirect(s, AppRoutes.donorHome),
+          AppRoutes.governanceStatus,
+        );
+        expect(
+          resolveRedirect(s, AppRoutes.notifications),
+          AppRoutes.governanceStatus,
+        );
+        expect(resolveRedirect(s, AppRoutes.governanceStatus), isNull);
+        expect(resolveRedirect(s, AppRoutes.suspendedWithdrawals), isNull);
+        expect(
+          resolveRedirect(
+            signedIn(roles: ['Admin'], suspended: true),
+            AppRoutes.suspendedWithdrawals,
+          ),
+          isNull,
+        );
+        expect(
+          resolveRedirect(
+            signedIn(roles: ['Doctor'], suspended: true),
+            AppRoutes.suspendedWithdrawals,
+          ),
+          AppRoutes.governanceStatus,
+        );
+        expect(
+          resolveRedirect(
+            signedIn(roles: ['HospitalStaff'], suspended: true),
+            AppRoutes.suspendedWithdrawals,
+          ),
+          AppRoutes.governanceStatus,
+        );
+      },
+    );
 
-    test('hospital staff of an unapproved hospital only see the waiting screen', () {
-      final s = signedIn(roles: ['HospitalStaff'], approval: 'Pending');
-      expect(resolveRedirect(s, AppRoutes.hospitalInventory), AppRoutes.waitingApproval);
-      expect(resolveRedirect(s, AppRoutes.waitingApproval), isNull);
-      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.waitingApproval), AppRoutes.hospitalHome);
-    });
+    test(
+      'hospital staff of an unapproved hospital only see the waiting screen',
+      () {
+        final s = signedIn(roles: ['HospitalStaff'], approval: 'Pending');
+        expect(
+          resolveRedirect(s, AppRoutes.hospitalInventory),
+          AppRoutes.waitingApproval,
+        );
+        expect(resolveRedirect(s, AppRoutes.waitingApproval), isNull);
+        expect(
+          resolveRedirect(
+            signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+            AppRoutes.waitingApproval,
+          ),
+          AppRoutes.hospitalHome,
+        );
+      },
+    );
 
     test('a doctor with a temporary password must change it first', () {
       final s = signedIn(roles: ['Doctor'], mustChangePassword: true);
-      expect(resolveRedirect(s, AppRoutes.doctorHome), AppRoutes.changePassword);
+      expect(
+        resolveRedirect(s, AppRoutes.doctorHome),
+        AppRoutes.changePassword,
+      );
       expect(resolveRedirect(s, AppRoutes.changePassword), isNull);
     });
 
@@ -72,23 +148,79 @@ void main() {
       final doctor = signedIn(roles: ['Doctor']);
       final staff = signedIn(roles: ['HospitalStaff'], approval: 'Approved');
       expect(resolveRedirect(doctor, AppRoutes.doctorReport('a1')), isNull);
-      expect(resolveRedirect(doctor, AppRoutes.doctorRequestDonors('r1')), isNull);
-      expect(resolveRedirect(doctor, AppRoutes.hospitalVerifyRequests), AppRoutes.doctorHome);
+      expect(
+        resolveRedirect(doctor, AppRoutes.doctorRequestDonors('r1')),
+        isNull,
+      );
+      expect(
+        resolveRedirect(doctor, AppRoutes.hospitalVerifyRequests),
+        AppRoutes.doctorHome,
+      );
       expect(resolveRedirect(staff, AppRoutes.hospitalVerifyRequests), isNull);
-      expect(resolveRedirect(staff, AppRoutes.hospitalRequestDonors('r1')), isNull);
-      expect(resolveRedirect(staff, AppRoutes.doctorReport('a1')), AppRoutes.hospitalHome);
-      expect(resolveRedirect(signedIn(), AppRoutes.hospitalDoctors), AppRoutes.donorHome);
+      expect(
+        resolveRedirect(staff, AppRoutes.hospitalRequestDonors('r1')),
+        isNull,
+      );
+      expect(
+        resolveRedirect(staff, AppRoutes.doctorReport('a1')),
+        AppRoutes.hospitalHome,
+      );
+      expect(
+        resolveRedirect(signedIn(), AppRoutes.hospitalDoctors),
+        AppRoutes.donorHome,
+      );
     });
 
     test('wrong role goes to the own home', () {
-      expect(resolveRedirect(signedIn(), AppRoutes.hospitalInventory), AppRoutes.donorHome);
-      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.adminHome), AppRoutes.hospitalHome);
-      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.hospitalPacket('p1')), isNull);
+      expect(
+        resolveRedirect(signedIn(), AppRoutes.hospitalInventory),
+        AppRoutes.donorHome,
+      );
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+          AppRoutes.adminHome,
+        ),
+        AppRoutes.hospitalHome,
+      );
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+          AppRoutes.hospitalPacket('p1'),
+        ),
+        isNull,
+      );
       // Hospitals may open the (Step 2) create-request screen, like on the web
-      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.createRequest), isNull);
-      expect(resolveRedirect(signedIn(roles: ['HospitalStaff'], approval: 'Approved'), AppRoutes.donorComplaints), isNull);
-      expect(resolveRedirect(signedIn(roles: ['Admin']), AppRoutes.donorRequests), isNull);
-      expect(resolveRedirect(signedIn(roles: ['Doctor']), AppRoutes.donorRequests), AppRoutes.doctorHome);
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+          AppRoutes.createRequest,
+        ),
+        isNull,
+      );
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+          AppRoutes.donorComplaints,
+        ),
+        isNull,
+      );
+      expect(
+        resolveRedirect(signedIn(roles: ['Admin']), AppRoutes.donorRequests),
+        isNull,
+      );
+      expect(
+        resolveRedirect(signedIn(roles: ['Admin']), AppRoutes.donorAcceptances),
+        isNull,
+      );
+      expect(
+        resolveRedirect(signedIn(roles: ['Admin']), AppRoutes.screening('a1')),
+        isNull,
+      );
+      expect(
+        resolveRedirect(signedIn(roles: ['Doctor']), AppRoutes.donorRequests),
+        AppRoutes.doctorHome,
+      );
     });
   });
 
@@ -103,25 +235,41 @@ void main() {
           authControllerProvider.overrideWith(() => FakeAuthController(state)),
           unreadCountProvider.overrideWith(FakeUnreadCount.new),
           adminAttentionProvider.overrideWith(FakeAttention.new),
-          adminStatsProvider.overrideWith((ref) async => AdminStats.fromJson({'totalHospitals': 1})),
+          adminStatsProvider.overrideWith(
+            (ref) async => AdminStats.fromJson({'totalHospitals': 1}),
+          ),
           assignedRequestsProvider.overrideWith((ref) async => []),
-          governanceStatusProvider.overrideWith((ref) async => GovernanceStatus.fromJson({
-                'isSuspended': state.user?.isSuspended ?? false,
-                'suspendedEntity': 'User',
-                'profile': {'name': 'Test Person'},
-              })),
-          donorHomeProvider.overrideWith((ref) async => DonorHomeData(
-            requests: const [], acceptances: const [], profile: DonorProfileSummary.fromJson({}))),
-          publicBloodRequestsProvider.overrideWith((ref, filter) async => const []),
+          governanceStatusProvider.overrideWith(
+            (ref) async => GovernanceStatus.fromJson({
+              'isSuspended': state.user?.isSuspended ?? false,
+              'suspendedEntity': 'User',
+              'profile': {'name': 'Test Person'},
+            }),
+          ),
+          donorHomeProvider.overrideWith(
+            (ref) async => DonorHomeData(
+              requests: const [],
+              acceptances: const [],
+              profile: DonorProfileSummary.fromJson({}),
+            ),
+          ),
+          publicBloodRequestsProvider.overrideWith(
+            (ref, filter) async => const [],
+          ),
           myAcceptancesProvider.overrideWith((ref) async => const []),
         ],
         retry: (_, _) => null,
       );
       addTearDown(container.dispose);
-      await tester.pumpWidget(UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp.router(theme: AppTheme.light(), routerConfig: container.read(routerProvider)),
-      ));
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp.router(
+            theme: AppTheme.light(),
+            routerConfig: container.read(routerProvider),
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
     }
 
@@ -130,45 +278,91 @@ void main() {
       expect(find.text('Sign in to continue'), findsOneWidget);
     });
 
-    testWidgets('suspended account lands on the governance status', (tester) async {
+    testWidgets('suspended account lands on the governance status', (
+      tester,
+    ) async {
       await pumpRouter(tester, signedIn(suspended: true));
       expect(find.text('Your account is suspended'), findsOneWidget);
     });
 
-    testWidgets('unapproved hospital lands on the waiting screen', (tester) async {
-      await pumpRouter(tester, signedIn(roles: ['HospitalStaff'], approval: 'Pending'));
-      expect(find.text('Your hospital registration is waiting for the administrator.'), findsOneWidget);
+    testWidgets('unapproved hospital lands on the waiting screen', (
+      tester,
+    ) async {
+      await pumpRouter(
+        tester,
+        signedIn(roles: ['HospitalStaff'], approval: 'Pending'),
+      );
+      expect(
+        find.text(
+          'Your hospital registration is waiting for the administrator.',
+        ),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('doctor with a temporary password lands on change password', (tester) async {
-      await pumpRouter(tester, signedIn(roles: ['Doctor'], mustChangePassword: true));
+    testWidgets('doctor with a temporary password lands on change password', (
+      tester,
+    ) async {
+      await pumpRouter(
+        tester,
+        signedIn(roles: ['Doctor'], mustChangePassword: true),
+      );
       expect(find.text('Temporary password'), findsOneWidget);
     });
 
-    testWidgets('doctor lands on the doctor shell: assigned requests', (tester) async {
+    testWidgets('doctor lands on the doctor shell: assigned requests', (
+      tester,
+    ) async {
       await pumpRouter(tester, signedIn(roles: ['Doctor']));
       expect(find.text('Assigned requests'), findsOneWidget);
       for (final tab in ['Requests', 'Reports', 'More']) {
-        expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text(tab),
+          ),
+          findsOneWidget,
+        );
       }
     });
 
-    testWidgets('admin lands on the admin shell: Home, Attention, Activity, More', (tester) async {
-      await pumpRouter(tester, signedIn(roles: ['Admin']));
-      expect(find.text('Administration'), findsOneWidget);
-      for (final tab in ['Home', 'Attention', 'Activity', 'More']) {
-        expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)), findsOneWidget);
-      }
-    });
+    testWidgets(
+      'admin lands on the admin shell: Home, Attention, Activity, More',
+      (tester) async {
+        await pumpRouter(tester, signedIn(roles: ['Admin']));
+        expect(find.text('Administration'), findsOneWidget);
+        for (final tab in ['Home', 'Attention', 'Activity', 'More']) {
+          expect(
+            find.descendant(
+              of: find.byType(NavigationBar),
+              matching: find.text(tab),
+            ),
+            findsOneWidget,
+          );
+        }
+      },
+    );
 
-    testWidgets('donor lands on the implemented donor home shell', (tester) async {
+    testWidgets('donor lands on the implemented donor home shell', (
+      tester,
+    ) async {
       await pumpRouter(tester, signedIn());
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.text('Your donor dashboard'), findsOneWidget);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Requests')));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Requests'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Available requests'), findsOneWidget);
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Donations')));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Donations'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('My donations'), findsOneWidget);
     });

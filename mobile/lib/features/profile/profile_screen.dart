@@ -40,11 +40,26 @@ class ProfileScreen extends ConsumerWidget {
                 runSpacing: 12,
                 children: [
                   LabeledValue('Email', user.email),
-                  LabeledValue('Account status', user.accountStatus.isEmpty ? 'Active' : user.accountStatus),
-                  LabeledValue('Idle sign-out', '${user.sessionIdleTimeoutMinutes.round()} minutes'),
+                  LabeledValue(
+                    'Account status',
+                    user.accountStatus.isEmpty ? 'Active' : user.accountStatus,
+                  ),
+                  LabeledValue(
+                    'Idle sign-out',
+                    '${user.sessionIdleTimeoutMinutes.round()} minutes',
+                  ),
                 ],
               ),
             ),
+            if (user.isDonorCapable) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    context.push(AppRoutes.userProfile(user.userId)),
+                icon: const Icon(Icons.manage_accounts_outlined),
+                label: const Text('View and edit full profile'),
+              ),
+            ],
             if (user.hasRole(Roles.doctor)) ...[
               const SizedBox(height: 12),
               const DoctorProfileCard(),
@@ -59,12 +74,25 @@ class ProfileScreen extends ConsumerWidget {
               icon: Icons.palette_outlined,
               child: SegmentedButton<ThemeMode>(
                 segments: const [
-                  ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.phone_android)),
-                  ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
-                  ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
+                  ButtonSegment(
+                    value: ThemeMode.system,
+                    label: Text('System'),
+                    icon: Icon(Icons.phone_android),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    label: Text('Light'),
+                    icon: Icon(Icons.light_mode_outlined),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    label: Text('Dark'),
+                    icon: Icon(Icons.dark_mode_outlined),
+                  ),
                 ],
                 selected: {mode},
-                onSelectionChanged: (s) => ref.read(themeModeProvider.notifier).set(s.first),
+                onSelectionChanged: (s) =>
+                    ref.read(themeModeProvider.notifier).set(s.first),
               ),
             ),
             const SizedBox(height: 12),
@@ -89,7 +117,12 @@ class ProfileScreen extends ConsumerWidget {
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: () async {
-                if (await confirmDialog(context, title: 'Sign out', message: 'Sign out of LifeLink on this phone?', confirmLabel: 'Sign out')) {
+                if (await confirmDialog(
+                  context,
+                  title: 'Sign out',
+                  message: 'Sign out of LifeLink on this phone?',
+                  confirmLabel: 'Sign out',
+                )) {
                   await ref.read(authControllerProvider.notifier).logout();
                 }
               },
@@ -120,12 +153,21 @@ class _HospitalCard extends ConsumerWidget {
           runSpacing: 12,
           children: [
             LabeledValue('Name', h.name),
-            LabeledValue('Address', [h.address, h.city].whereType<String>().where((s) => s.isNotEmpty).join(', ')),
+            LabeledValue(
+              'Address',
+              [
+                h.address,
+                h.city,
+              ].whereType<String>().where((s) => s.isNotEmpty).join(', '),
+            ),
             LabeledValue('Contact', h.contactNumber),
             LabeledValue('Email', h.email),
             LabeledValue('Packet shelf life', '${h.packetShelfLifeDays} days'),
             LabeledValue('Expiry alert window', '${h.expiryAlertDays} days'),
-            const Text('Hospital details are changed on the LifeLink web app.', style: TextStyle(fontSize: 12)),
+            const Text(
+              'Hospital details are changed on the LifeLink web app.',
+              style: TextStyle(fontSize: 12),
+            ),
           ],
         ),
       ),
@@ -138,7 +180,8 @@ class _PhoneNotificationsTile extends StatefulWidget {
   const _PhoneNotificationsTile();
 
   @override
-  State<_PhoneNotificationsTile> createState() => _PhoneNotificationsTileState();
+  State<_PhoneNotificationsTile> createState() =>
+      _PhoneNotificationsTileState();
 }
 
 class _PhoneNotificationsTileState extends State<_PhoneNotificationsTile> {
@@ -157,25 +200,30 @@ class _PhoneNotificationsTileState extends State<_PhoneNotificationsTile> {
 
   @override
   Widget build(BuildContext context) => ListTile(
-        leading: const Icon(Icons.notifications_active_outlined),
-        title: const Text('Phone notifications'),
-        subtitle: Text(_enabled == null
-            ? 'Checking...'
-            : _enabled!
-                ? 'On: new messages and alerts, also when the app is closed'
-                : 'Off: allow them to be told about messages and alerts'),
-        trailing: _enabled == false
-            ? TextButton(
-                onPressed: () async {
-                  final ok = await PhoneNotifications.instance.requestPermission();
-                  await _check();
-                  if (!ok && context.mounted) {
-                    showSnack(context, 'Notifications are blocked. Allow them in Settings → Apps → LifeLink → Notifications.',
-                        type: SnackType.warning);
-                  }
-                },
-                child: const Text('Allow'),
-              )
-            : null,
-      );
+    leading: const Icon(Icons.notifications_active_outlined),
+    title: const Text('Phone notifications'),
+    subtitle: Text(
+      _enabled == null
+          ? 'Checking...'
+          : _enabled!
+          ? 'On: new messages and alerts, also when the app is closed'
+          : 'Off: allow them to be told about messages and alerts',
+    ),
+    trailing: _enabled == false
+        ? TextButton(
+            onPressed: () async {
+              final ok = await PhoneNotifications.instance.requestPermission();
+              await _check();
+              if (!ok && context.mounted) {
+                showSnack(
+                  context,
+                  'Notifications are blocked. Allow them in Settings → Apps → LifeLink → Notifications.',
+                  type: SnackType.warning,
+                );
+              }
+            },
+            child: const Text('Allow'),
+          )
+        : null,
+  );
 }
