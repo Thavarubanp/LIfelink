@@ -1,4 +1,5 @@
 import hmac
+import hashlib
 import json
 import os
 import uvicorn
@@ -28,7 +29,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("LifeLinkAgentAPI")
 
-INTERNAL_KEY = os.getenv("INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")
+_RETIRED_KEY_HASH = "e5d4012d86577772245b3c13308afde74eb674e50e726303fc80931dd47b9c2d"
+_configured_internal_key = os.getenv("INTERNAL_SERVICE_API_KEY", "").strip()
+INTERNAL_KEY = "" if hashlib.sha256(_configured_internal_key.encode()).hexdigest() == _RETIRED_KEY_HASH else _configured_internal_key
 
 
 async def require_internal_key(x_internal_key: str | None = Header(default=None)) -> None:

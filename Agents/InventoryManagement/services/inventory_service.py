@@ -25,7 +25,7 @@ class InventoryService:
         logger.info(f"FETCH_INVENTORY_STARTED: Requesting inventory data from endpoint: {url}")
 
         try:
-            headers = {"X-Internal-Key": getattr(settings, "INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")}
+            headers = {"X-Internal-Key": settings.INTERNAL_SERVICE_API_KEY}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(url, headers=headers)
                 logger.info(f"FETCH_INVENTORY_RESPONSE: HTTP status {response.status_code} received from {url}")

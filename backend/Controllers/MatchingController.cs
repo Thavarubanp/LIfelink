@@ -9,7 +9,7 @@ namespace LifeLink.Controllers
 {
     [ApiController]
     [Route("api/matching")]
-    [Authorize(Roles = "Doctor,Admin,InternalAgent")]
+    [Authorize(Roles = "Admin")]
     public class MatchingController : ControllerBase
     {
         private readonly IMatchingService _matchingService;
@@ -17,24 +17,6 @@ namespace LifeLink.Controllers
         public MatchingController(IMatchingService matchingService)
         {
             _matchingService = matchingService;
-        }
-
-        // Matching is a human decision: AI agents may read matches but never create them
-        [HttpPost("create")]
-        [Authorize(Roles = "Doctor,Admin")]
-        public async Task<IActionResult> CreateMatch([FromBody] CreateMatchDto dto)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            try
-            {
-                var result = await _matchingService.CreateMatchAsync(dto);
-                return Ok(result);
-            }
-            catch (InvalidOperationException ex) when (ex is not LifeLink.Common.ConflictException)
-            {
-                return BadRequest(new { message = ex.Message });
-            }
         }
 
         [HttpGet]

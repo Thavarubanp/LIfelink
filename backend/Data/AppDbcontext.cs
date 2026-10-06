@@ -198,6 +198,9 @@ namespace LifeLink.Data
                 entity.Property(u => u.PhoneNumber).HasMaxLength(20);
                 entity.Property(u => u.Gender).HasMaxLength(20);
                 entity.Property(u => u.Address).HasMaxLength(500);
+                entity.Property(u => u.IsEmailPublic).HasDefaultValue(false);
+                entity.Property(u => u.IsPhonePublic).HasDefaultValue(false);
+                entity.Property(u => u.IsAddressPublic).HasDefaultValue(false);
                 entity.Property(u => u.AccountStatus)
                       .HasConversion<string>()
                       .IsRequired();
@@ -298,6 +301,7 @@ namespace LifeLink.Data
             modelBuilder.Entity<PasswordResetToken>(entity =>
             {
                 entity.HasKey(prt => prt.PasswordResetTokenId);
+                entity.Property(prt => prt.FailedAttempts).HasDefaultValue(0);
                 entity.HasIndex(prt => prt.TokenHash);
                 entity.HasIndex(prt => prt.UserId);
 
@@ -638,6 +642,10 @@ namespace LifeLink.Data
                 entity.HasKey(a => a.AcceptanceId);
                 entity.HasIndex(a => a.BloodRequestId);
                 entity.HasIndex(a => a.DonorUserId);
+                entity.HasIndex(a => a.DonorUserId)
+                    .IsUnique()
+                    .HasDatabaseName("IX_Acceptances_OneActiveDonorProcess")
+                    .HasFilter("\"DonorHospitalId\" IS NULL AND \"Status\" IN ('Accepted', 'ScreeningPending', 'ScreeningCompleted', 'Verified')");
                 entity.HasIndex(a => a.Status);
                 entity.HasIndex(a => a.AcceptedAt);
                 entity.HasIndex(a => a.DonorHospitalId);

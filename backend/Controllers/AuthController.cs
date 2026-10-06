@@ -8,6 +8,7 @@ using LifeLink.Services.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace LifeLink.Controllers
 {
@@ -177,6 +178,7 @@ namespace LifeLink.Controllers
         /// Verifies a 6-digit OTP code and returns a reset session token upon success.
         /// </summary>
         [HttpPost("verify-otp")]
+        [EnableRateLimiting("otp-verification")]
         [ProducesResponseType(typeof(ApiResponse<VerifyOtpResponseDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpRequestDto request)

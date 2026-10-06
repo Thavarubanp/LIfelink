@@ -13,6 +13,7 @@ namespace LifeLink.Common
         public const string DuplicateActiveRequestMessage = "An active request already exists for this hospital and blood group.";
         public const string DuplicateOpenAppealMessage = "You already have an open appeal. Continue the conversation in that thread.";
         public const string AlreadySubmittedMessage = "This was already submitted. Please refresh to see the result.";
+        public const string ActiveDonorProcessMessage = "You already have an active donation process.";
 
         /// <summary>The 409 message for a race-related save failure, or null when the failure is something else.</summary>
         public static string? ConflictMessage(DbUpdateException exception)
@@ -35,6 +36,7 @@ namespace LifeLink.Common
                     "IX_BloodRequests_OneActivePerCreatorHospitalGroup" => DuplicateActiveRequestMessage,
                     "IX_Appeals_OneOpenPerUser" or "IX_Appeals_OneOpenPerHospital" => DuplicateOpenAppealMessage,
                     "PK_IdempotencyKeys" => AlreadySubmittedMessage,
+                    "IX_Acceptances_OneActiveDonorProcess" => ActiveDonorProcessMessage,
                     _ => ConflictException.DefaultMessage
                 };
             }

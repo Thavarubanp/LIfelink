@@ -1351,7 +1351,7 @@ namespace LifeLink.Tests
             await acceptanceService.UpdateScreeningStatusAsync(acc1.AcceptanceId, AcceptanceStatus.ScreeningPending);
 
             // Attempt to accept request 2 while in active screening
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            var ex = await Assert.ThrowsAsync<ConflictException>(() =>
                 acceptanceService.AcceptRequestAsync(donor1.UserId, new CreateAcceptanceDto
                 {
                     BloodRequestId = request2.BloodRequestId,

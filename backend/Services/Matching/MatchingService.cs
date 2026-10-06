@@ -18,63 +18,36 @@ namespace LifeLink.Services.Matching
             _context = context;
         }
 
+        // Retained for backward-compatible service tests and historical code only. No HTTP route exposes this mutation.
         public async Task<DonorPatientMatchResponseDto> CreateMatchAsync(CreateMatchDto dto)
         {
-            var doctor = await _context.Doctors.FindAsync(dto.DoctorId);
-            if (doctor == null)
-            {
-                throw new InvalidOperationException($"Doctor with ID {dto.DoctorId} was not found.");
-            }
-
+            var doctor = await _context.Doctors.FindAsync(dto.DoctorId)
+                ?? throw new InvalidOperationException($"Doctor with ID {dto.DoctorId} was not found.");
             var donorUser = await _context.Users.FindAsync(dto.DonorUserId);
             if (donorUser != null && (donorUser.AccountStatus == AccountStatus.Blocked || donorUser.AccountStatus == AccountStatus.Deleted))
-            {
                 throw new InvalidOperationException("This donor account can no longer take part in matching.");
-            }
 
-            // Check if emergency request exists (Student 3 table integration if applicable)
-            var emergencyReq = await _context.EmergencyRequests
-                .FirstOrDefaultAsync(e => e.EmergencyRequestId == dto.BloodRequestId);
-
+            var emergencyReq = await _context.EmergencyRequests.FirstOrDefaultAsync(e => e.EmergencyRequestId == dto.BloodRequestId);
             if (emergencyReq != null)
             {
-                // Remove request from public dashboard
                 emergencyReq.Status = EmergencyRequestStatus.Completed.ToString();
                 emergencyReq.UpdatedAt = DateTime.UtcNow;
             }
 
             var match = new DonorPatientMatch
             {
-                MatchId = Guid.NewGuid(),
-                BloodRequestId = dto.BloodRequestId,
-                DonorUserId = dto.DonorUserId,
-                DoctorId = dto.DoctorId,
-                Status = MatchStatus.Matched,
-                IsRemovedFromPublicDashboard = true,
-                Notes = dto.Notes,
-                MatchedAt = DateTime.UtcNow,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                MatchId = Guid.NewGuid(), BloodRequestId = dto.BloodRequestId, DonorUserId = dto.DonorUserId,
+                DoctorId = dto.DoctorId, Status = MatchStatus.Matched, IsRemovedFromPublicDashboard = true,
+                Notes = dto.Notes, MatchedAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
             };
-
             await _context.DonorPatientMatches.AddAsync(match);
             await _context.SaveChangesAsync();
-
-            var donorName = donorUser != null ? $"{donorUser.FirstName} {donorUser.LastName}" : null;
-
             return new DonorPatientMatchResponseDto
             {
-                MatchId = match.MatchId,
-                BloodRequestId = match.BloodRequestId,
-                DonorUserId = match.DonorUserId,
-                DonorName = donorName,
-                DoctorId = match.DoctorId,
-                DoctorName = $"{doctor.FirstName} {doctor.LastName}",
-                Status = match.Status.ToString(),
-                IsRemovedFromPublicDashboard = match.IsRemovedFromPublicDashboard,
-                Notes = match.Notes,
-                MatchedAt = match.MatchedAt,
-                CreatedAt = match.CreatedAt
+                MatchId = match.MatchId, BloodRequestId = match.BloodRequestId, DonorUserId = match.DonorUserId,
+                DonorName = donorUser == null ? null : $"{donorUser.FirstName} {donorUser.LastName}", DoctorId = match.DoctorId,
+                DoctorName = $"{doctor.FirstName} {doctor.LastName}", Status = match.Status.ToString(),
+                IsRemovedFromPublicDashboard = true, Notes = match.Notes, MatchedAt = match.MatchedAt, CreatedAt = match.CreatedAt
             };
         }
 

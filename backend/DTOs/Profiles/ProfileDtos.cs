@@ -42,10 +42,13 @@ namespace LifeLink.DTOs.Profiles
         public Guid UserId { get; set; }
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
-        public string Email { get; set; } = string.Empty;
-        public string PhoneNumber { get; set; } = string.Empty;
+        public string? Email { get; set; }
+        public string? PhoneNumber { get; set; }
         public string Gender { get; set; } = string.Empty;
-        public string Address { get; set; } = string.Empty;
+        public string? Address { get; set; }
+        public bool IsEmailPublic { get; set; }
+        public bool IsPhonePublic { get; set; }
+        public bool IsAddressPublic { get; set; }
         public List<string> Roles { get; set; } = new();
         public string AccountStatus { get; set; } = string.Empty;
         public string DisplayStatus { get; set; } = "Active"; // "Active", "Suspended" or "Permanently Blocked"
@@ -100,6 +103,9 @@ namespace LifeLink.DTOs.Profiles
         // Optional; blood group can change only until a recorded donation confirms it
         public string? BloodGroup { get; set; }
         public DateTime? LastDonationDate { get; set; }
+        public bool? IsEmailPublic { get; set; }
+        public bool? IsPhonePublic { get; set; }
+        public bool? IsAddressPublic { get; set; }
     }
 
     public class UpdateDoctorProfileDto

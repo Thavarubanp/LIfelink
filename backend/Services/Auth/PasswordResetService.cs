@@ -11,6 +11,7 @@ namespace LifeLink.Services.Auth
 {
     public class PasswordResetService : IPasswordResetService
     {
+        private const int MaximumFailedAttempts = 5;
         private readonly AppDbContext _context;
 
         public PasswordResetService(AppDbContext context)
@@ -90,9 +91,30 @@ namespace LifeLink.Services.Auth
             if (token == null)
                 return null;
 
-            // Check expiry & OTP code match
-            if (token.ExpiresAt < DateTime.UtcNow || token.Otp != cleanOtp)
+            if (token.ExpiresAt < DateTime.UtcNow || token.FailedAttempts >= MaximumFailedAttempts)
                 return null;
+
+            if (token.Otp != cleanOtp)
+            {
+                var now = DateTime.UtcNow;
+                if (_context.Database.IsRelational())
+                {
+                    await _context.PasswordResetTokens
+                        .Where(t => t.PasswordResetTokenId == token.PasswordResetTokenId &&
+                                    t.UsedAt == null && t.FailedAttempts < MaximumFailedAttempts)
+                        .ExecuteUpdateAsync(update => update
+                            .SetProperty(t => t.FailedAttempts, t => t.FailedAttempts + 1)
+                            .SetProperty(t => t.UsedAt, t => t.FailedAttempts + 1 >= MaximumFailedAttempts ? now : t.UsedAt));
+                }
+                else
+                {
+                    token.FailedAttempts++;
+                    if (token.FailedAttempts >= MaximumFailedAttempts)
+                        token.UsedAt = now;
+                    await _context.SaveChangesAsync();
+                }
+                return null;
+            }
 
             // Generate cryptographically secure single-use resetSessionToken
             var sessionBytes = new byte[32];

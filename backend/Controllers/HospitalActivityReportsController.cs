@@ -5,6 +5,8 @@ using LifeLink.Common;
 using LifeLink.DTOs.Common;
 using LifeLink.DTOs.HospitalActivity;
 using LifeLink.Services.HospitalActivity;
+using LifeLink.Services.Common;
+using LifeLink.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -17,10 +19,14 @@ namespace LifeLink.Controllers
     public class HospitalActivityReportsController : ControllerBase
     {
         private readonly IHospitalActivityService _activityService;
+        private readonly AppDbContext _context;
+        private readonly ICurrentUserService _currentUserService;
 
-        public HospitalActivityReportsController(IHospitalActivityService activityService)
+        public HospitalActivityReportsController(IHospitalActivityService activityService, AppDbContext context, ICurrentUserService currentUserService)
         {
             _activityService = activityService;
+            _context = context;
+            _currentUserService = currentUserService;
         }
 
         /// <summary>
@@ -39,7 +45,10 @@ namespace LifeLink.Controllers
 
             try
             {
-                var result = await _activityService.SubmitActivityReportAsync(request);
+                var hospitalId = await CallerHospitalResolver.ResolveAsync(_context, _currentUserService);
+                if (hospitalId == null)
+                    return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail("Unable to resolve the authenticated hospital."));
+                var result = await _activityService.SubmitActivityReportAsync(request, hospitalId.Value);
                 return StatusCode(StatusCodes.Status201Created, ApiResponse<ActivityReportResponseDto>.Ok(result, "Activity report submitted successfully."));
             }
             catch (KeyNotFoundException ex)

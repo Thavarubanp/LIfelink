@@ -12,7 +12,10 @@ import {
   Sparkles,
   Pencil,
   Trash2,
-  Droplet
+  Droplet,
+  Eye,
+  EyeOff,
+  Mail
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -35,6 +38,20 @@ const USER_EDIT_FIELDS = [
   { name: 'lastDonationDate', label: 'Last Donation (if outside LifeLink)', type: 'date' }
 ];
 
+const VisibilityButton = ({ field, label, isPublic, canEdit, busy, onToggle }) => canEdit ? (
+  <button
+    type="button"
+    disabled={busy}
+    onClick={() => onToggle(field, label)}
+    aria-label={`Make ${label.toLowerCase()} ${isPublic ? 'private' : 'public'}`}
+    title={`${label} is ${isPublic ? 'public' : 'private'}. Make ${label.toLowerCase()} ${isPublic ? 'private' : 'public'}.`}
+    className="ml-auto inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-200 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-700"
+  >
+    {isPublic ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+    {isPublic ? 'Public' : 'Private'}
+  </button>
+) : null;
+
 export const UserProfilePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -44,6 +61,7 @@ export const UserProfilePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
+  const [savingVisibility, setSavingVisibility] = useState('');
   // Admin only: the user's full activity log (what they did and what was done to their account)
   const isAdminViewer = getUserRoles(currentUser).includes('Admin');
   const loadActivity = useCallback((params) => activityApi.getUserActivity(id, params), [id]);
@@ -57,6 +75,29 @@ export const UserProfilePage = () => {
     setProfile(updated);
     setEditing(false);
     addToast({ title: 'Profile Updated', message: 'Your profile changes were saved.', type: 'success' });
+  };
+
+  const toggleVisibility = async (field, label) => {
+    const property = `is${label}Public`;
+    try {
+      setSavingVisibility(field);
+      const updated = await profileApi.updateUserProfile(profile.userId, {
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phoneNumber: profile.phoneNumber,
+        gender: profile.gender,
+        address: profile.address,
+        bloodGroup: profile.bloodGroup || null,
+        lastDonationDate: profile.lastDonationDate || null,
+        [property]: !profile[property]
+      });
+      setProfile(updated);
+      addToast({ title: 'Privacy Updated', message: `${label} is now ${updated[property] ? 'public' : 'private'}.`, type: 'success' });
+    } catch (err) {
+      addToast({ title: 'Privacy Update Failed', message: err.response?.data?.message || err.message, type: 'error' });
+    } finally {
+      setSavingVisibility('');
+    }
   };
 
   // Donor/patient self-delete: personal data and login removed, history kept; the email can register again
@@ -194,8 +235,16 @@ export const UserProfilePage = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6 text-xs">
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
+            <Mail className="w-5 h-5 text-violet-500" />
+            <div className="min-w-0">
+              <span className="text-slate-400 text-[10px] uppercase font-semibold">Email</span>
+              <div className="font-bold text-slate-900 dark:text-slate-100 truncate">{profile.email || 'Private'}</div>
+            </div>
+            <VisibilityButton field="email" label="Email" isPublic={profile.isEmailPublic} canEdit={profile.canEdit} busy={savingVisibility === 'email'} onToggle={toggleVisibility} />
+          </div>
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
             <User className="w-5 h-5 text-red-500" />
-            <div>
+            <div className="min-w-0">
               <span className="text-slate-400 text-[10px] uppercase font-semibold">Gender</span>
               <div className="font-bold text-slate-900 dark:text-slate-100">{profile.gender || 'Not specified'}</div>
             </div>
@@ -203,18 +252,20 @@ export const UserProfilePage = () => {
 
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
             <Phone className="w-5 h-5 text-blue-500" />
-            <div>
+            <div className="min-w-0">
               <span className="text-slate-400 text-[10px] uppercase font-semibold">Phone Number</span>
               <div className="font-bold text-slate-900 dark:text-slate-100">{profile.phoneNumber || 'Not provided'}</div>
             </div>
+            <VisibilityButton field="phone" label="Phone" isPublic={profile.isPhonePublic} canEdit={profile.canEdit} busy={savingVisibility === 'phone'} onToggle={toggleVisibility} />
           </div>
 
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center gap-3">
             <MapPin className="w-5 h-5 text-emerald-500" />
-            <div>
+            <div className="min-w-0">
               <span className="text-slate-400 text-[10px] uppercase font-semibold">Address</span>
               <div className="font-bold text-slate-900 dark:text-slate-100">{profile.address || 'Not listed'}</div>
             </div>
+            <VisibilityButton field="address" label="Address" isPublic={profile.isAddressPublic} canEdit={profile.canEdit} busy={savingVisibility === 'address'} onToggle={toggleVisibility} />
           </div>
 
           {(profile.bloodGroup || profile.nextEligibleDonationDate || profile.canEdit) && profile.roles?.includes('User') && (

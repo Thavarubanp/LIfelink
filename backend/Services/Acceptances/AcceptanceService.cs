@@ -255,12 +255,13 @@ namespace LifeLink.Services.Acceptances
             // One active donation process per donor (a completed donation is covered by the 120-day interval)
             var hasActiveProcess = await _context.Acceptances.AnyAsync(a =>
                 a.DonorUserId == donorUserId &&
-                (a.Status == AcceptanceStatus.ScreeningPending ||
+                (a.Status == AcceptanceStatus.Accepted ||
+                 a.Status == AcceptanceStatus.ScreeningPending ||
                  a.Status == AcceptanceStatus.Verified ||
                  a.Status == AcceptanceStatus.ScreeningCompleted));
             if (hasActiveProcess)
             {
-                throw new InvalidOperationException("You already have an active donation process.");
+                throw new ConflictException("You already have an active donation process.");
             }
 
             var acceptance = new Acceptance
@@ -1209,7 +1210,7 @@ namespace LifeLink.Services.Acceptances
             }
             catch (DbUpdateException ex) when (ex is not DbUpdateConcurrencyException)
             {
-                throw new ConflictException("This blood request is no longer available (it was just deleted).");
+                throw new ConflictException(DatabaseConflicts.ConflictMessage(ex) ?? "This blood request is no longer available (it was just deleted).");
             }
         }
 
