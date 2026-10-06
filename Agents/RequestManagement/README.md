@@ -26,13 +26,14 @@ report. The assigned doctor, or another active doctor at the same hospital, make
 
 3. After the last answer, the rules in `services/eligibility_rules.py` set the risk level and the AI
    recommendation (`Eligible`, `Temporarily Deferred` or `Requires Doctor Review`). Gemini writes a summary from
-   de-identified answers. The report is submitted to the backend (`POST api/screening-agent/report-notify`), which
+   de-identified answers. The report is submitted to the backend (`POST /api/agent/screening/report-notify`), which
    stores it as a new immutable version and notifies the doctor.
 4. If the donor chooses **Update my answers**, the backend moves the acceptance back to `ScreeningPending`. The
    next turn starts a new revision with the previous answers offered as defaults. Every submitted version is kept.
 
-The interview only runs while the backend shows the acceptance as `Accepted` or `ScreeningPending`. Withdrawn,
-decided, released or expired donations return a "screening is closed" reply.
+The interview only runs while the backend shows the acceptance as `Accepted` or `ScreeningPending`. Cancelled or
+withdrawn participation, decided screening, released participation, and other closed lifecycle states return a
+"screening is closed" reply.
 
 ## Questionnaire
 
@@ -61,15 +62,15 @@ How the questions behave:
 - The LLM summary never receives Section 1 (personal details) or Section 10 answers. Reports use the schema
   `lifelink.screening.v1`.
 
-## Endpoints (all under `/api/agent`)
+## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | Health, model name and whether Gemini is configured (no key needed) |
-| POST | `/screening/start/{acceptanceId}` | Open or resume the interview. Returns 409 if screening is closed |
-| GET | `/screening/session/{acceptanceId}` | Current question, progress and transcript, for resuming |
-| POST | `/screening/turn/{acceptanceId}` | One donor message: `{"message": "..."}` |
-| GET | `/report/{acceptanceId}` | Latest submitted report (the backend holds the official copy of every version) |
+| GET | `/api/agent/health` | Health, model name and whether Gemini is configured (no key needed) |
+| POST | `/api/agent/screening/start/{acceptanceId}` | Open or resume the interview. Returns 409 if screening is closed |
+| GET | `/api/agent/screening/session/{acceptanceId}` | Current question, progress and transcript, for resuming |
+| POST | `/api/agent/screening/turn/{acceptanceId}` | One donor message: `{"message": "..."}` |
+| GET | `/api/agent/report/{acceptanceId}` | Latest submitted report (the backend holds the official copy of every version) |
 
 If the backend is unreachable, the agent returns 503 and saves nothing.
 

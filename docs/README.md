@@ -14,7 +14,7 @@ LifeLink connects Sri Lankan donors/patients, hospitals, doctors, and an adminis
 | Create blood request | Yes | Yes, own hospital | No | Yes |
 | Verify request/assign doctor | No | Own hospital | No | Oversight only |
 | Approve verified request | No | No | Assigned doctor | No |
-| Accept request as donor | Yes | No | No | No |
+| Accept request as donor | Yes | No | No | Yes, while retaining governance role |
 | Offer hospital packets | No | Yes | Review only | No |
 | Decide screening/record donation | No | Authorized actions | Yes | No |
 | Manage inventory/transfers/emergencies | No | Own hospital | No | Read/suspend oversight |
@@ -22,6 +22,8 @@ LifeLink connects Sri Lankan donors/patients, hospitals, doctors, and an adminis
 | Manage accounts/hospitals | No | Own doctors/profile | Own profile | Yes |
 
 `InternalAgent` is a service principal created only by internal-key middleware; it is not an interactive role.
+
+Donor-capable accounts are `User`, `Admin`, combined `User` + `Admin`, and the existing no-role User fallback where applicable. `HospitalStaff`, `Doctor`, and `InternalAgent` are non-donor roles; any `HospitalStaff` or `Doctor` role disqualifies a combined-role account from donor participation. Admin donor participation follows the ordinary donor rules and does not grant Doctor approval or Hospital donation-recording authority: an Admin cannot self-approve screening or use governance authority to record their own donation.
 
 ## System architecture
 
@@ -67,7 +69,7 @@ The request pipeline applies global exception handling, CORS, internal-service a
 - Each login creates `UserSessions`; `sid` is placed in the token. Logout or inactivity ends the session.
 - `X-LifeLink-Activity: 1` records user activity. Background polling omits it. The configured warning precedes the idle timeout.
 - `X-Session-Ended` distinguishes idle and explicit/other ended sessions.
-- Suspended accounts are restricted to permitted auth heartbeat/logout, governance status, and appeal routes. A suspended plain donor may also use the governance page's narrow exception to view and withdraw only their own active donation participation. Doctors of a suspended hospital have read-only governance access.
+- Suspended accounts are restricted to permitted auth heartbeat/logout, governance status, and appeal routes. A suspended donor-capable User/Admin cannot begin new participation but may use the narrow exception to inspect and withdraw only their own existing withdrawal-eligible participation. Doctors of a suspended hospital have read-only governance access.
 - Internal middleware converts a valid `X-Internal-Key` into an `InternalAgent` principal.
 
 ### API endpoints
@@ -143,15 +145,15 @@ Routes are case-insensitive in ASP.NET Core. “Signed in” means any authentic
 | PUT | `/api/requests/{id}/approve` | Doctor | Assigned doctor approves request |
 | PUT | `/api/requests/{id}/reject` | HospitalStaff, Doctor | Reject with reason in permitted state |
 | GET | `/api/requests/verifications` | Admin | Verification audit list |
-| POST | `/api/Acceptances` | User | Accept approved request and trigger screening |
+| POST | `/api/Acceptances` | User, Admin | Accept an approved request subject to centralized donor-role and eligibility checks, then trigger screening |
 | POST | `/api/Acceptances/hospital` | HospitalStaff | Offer selected packets to another hospital’s request |
 | PUT | `/api/Acceptances/{id}/hospital-approve` | Doctor | Approve hospital donation |
 | PUT | `/api/Acceptances/{id}/hospital-reject` | Doctor | Reject hospital donation and release packets |
 | GET | `/api/Acceptances/my` | Signed in | Caller/hospital acceptance history |
 | GET | `/api/Acceptances/{id}` | Signed in | Authorized acceptance detail |
 | PUT | `/api/Acceptances/{id}/cancel` | Signed-in owner | Withdraw donor/hospital acceptance |
-| GET | `/api/Acceptances/{id}/screening-answers` | User owner | Latest answers and edit permission |
-| PUT | `/api/Acceptances/{id}/screening-answers` | User owner | Validate and submit revised answer version |
+| GET | `/api/Acceptances/{id}/screening-answers` | Eligible User/Admin owner | Latest answers and edit permission for own acceptance |
+| PUT | `/api/Acceptances/{id}/screening-answers` | Eligible User/Admin owner | Validate and submit revised answer version for own acceptance |
 | PUT | `/api/Acceptances/{id}/status` | Signed in/internal workflow | Controlled screening status transition |
 | PUT | `/api/Acceptances/{id}/release` | Doctor, HospitalStaff | Release reserved donor with reason |
 | PUT | `/api/donor-verification/{id}/approve` | Doctor | Approve latest pending screening report/reserve slot |
@@ -183,6 +185,7 @@ Routes are case-insensitive in ASP.NET Core. “Signed in” means any authentic
 | POST | `/api/transfers` | HospitalStaff | Create request/offer; idempotent |
 | GET | `/api/transfers` | HospitalStaff, Admin | Role-scoped/all transfers |
 | GET | `/api/transfers/pending` | HospitalStaff, Admin | Pending transfers |
+| GET | `/api/transfers/counterparts?bloodGroup={group}` | HospitalStaff | Limited projection of hospital id/name, exact group, and currently selectable packet count; not counterpart inventory access |
 | GET | `/api/transfers/{id}` | HospitalStaff, Admin | Transfer detail |
 | PUT | `/api/transfers/{id}/approve` | HospitalStaff | Counterparty accepts/selects packets |
 | PUT | `/api/transfers/{id}/reject` | HospitalStaff | Counterparty rejects with reason |
@@ -201,7 +204,7 @@ Routes are case-insensitive in ASP.NET Core. “Signed in” means any authentic
 | DELETE | `/api/notifications/{id}` | Signed in | Soft-dismiss owned notification |
 | PATCH | `/api/notifications/read-all` | Signed in | Mark all owned notifications read |
 | GET | `/api/notifications/user/{userId}` | Signed in, scope checked | Authorized user notifications |
-| POST | `/api/notifications/recommendations` | Admin, InternalAgent | Persist validated recommendation alerts |
+| POST | `/api/notifications/recommendations` | Admin | Create an explicitly Admin-authored recommendation notification |
 
 #### Complaints, activity reports, and administration
 
@@ -257,12 +260,12 @@ ASP.NET automatically returns 400 for invalid annotated DTOs. Services then enfo
 | Identity | Required valid email; PBKDF2 password hashing; strong password rules; normalized unique email; JWT/session/account state required |
 | Blood | One of A+, A-, B+, B-, AB+, AB-, O+, O-; normalized before storage |
 | Requests | Units 1–10; Normal/High/Critical; verified non-suspended destination; one active creator/hospital/group request; no automatic time-based expiry; only creator edits pending group/units |
-| Donors | Active/unblocked/unsuspended User; compatible group; age 18–60 when DOB known; at least 120 days since last donation; one active donation process |
+| Donors | Active/unblocked/unsuspended donor-capable User/Admin (or existing no-role fallback), with no HospitalStaff/Doctor role; compatible group; age 18–60 when DOB known; at least 120 days since last donation; one active donation process |
 | Screening | Only newest pending version can be decided; reports/answers are versioned and immutable; rejection/release reasons required; approval requires a free slot |
 | Doctors | Own-hospital active doctor; first-login password must be changed before new assignment/fallback; email unique among non-removed doctors; SLMC unique per hospital |
 | Hospitals | Registration number normalized and unique; only approved hospitals can operate/be suspended; packet shelf life 21–35 days; expiry alert window 1–20 days |
 | Packets | Collection date required/not future/not already expired; tracking/creator/created date immutable; only creator edits while it still owns an Available packet; stock count equals Available packets |
-| Transfers | Different approved, non-suspended hospitals; units positive; only counterpart decides; selected packets exact-group, Available, unexpired, and not double-used |
+| Transfers | Different approved, non-suspended hospitals; units positive; only counterpart decides; selected packets exact-group, Available, unheld, unexpired, and not double-used. The HospitalStaff counterpart query exposes only `hospitalId`, `hospitalName`, `bloodGroup`, and `transferableUnits`, not another hospital's full inventory. |
 | Governance | Suspension/admin-message/rejection text length bounds in DTO/service rules; one open appeal per user/hospital; appeal rejected at most once; exactly one Admin |
 | Attachments | Data URL with allowed PDF/DOC/DOCX/PNG/JPG media, filename, and 2 MB limit |
 | Idempotency | `Idempotency-Key` protects packet, transfer, emergency, and complaint creates; same user/key/endpoint cannot create twice |
@@ -359,14 +362,14 @@ Applied in filename order:
 
 1. A User/Admin creates a Pending request; a hospital-created request starts Verified with its own active doctor.
 2. Hospital staff verify a Pending request and assign a doctor, or reject it.
-3. The assigned doctor approves/rejects. Approved requests become public. Only Critical approval broadcasts alerts.
+3. The assigned doctor approves/rejects. Approved requests become public. Normal sends no proactive alerts; High alerts eligible exact-group donors only; Critical alerts those donors plus qualifying other verified, non-suspended/non-blocked hospitals whose available, unexpired exact-group stock is strictly greater than their `MinimumThreshold`. The requesting hospital is excluded. Backend allow-lists remain authoritative and Agents cannot expand recipients.
 4. An eligible donor accepts. The backend commits before dispatching `DonorAccepted`.
 5. Request Management interviews the donor, persists answers, and submits an immutable versioned report.
 6. A doctor reviews every answer/flag and approves or rejects. Approval reserves one free unit slot.
 7. A doctor/hospital staff records the actual donation with the tested group; only then do fulfilled units rise. Own-hospital requests create a packet.
-8. Releasing/withdrawing an approved donor frees the reservation. The request completes when fulfilled units reach required units.
+8. A donor may withdraw in `Accepted`, `ScreeningPending`, `ScreeningCompleted`, or `Verified`; withdrawal is unavailable in `Matched`, `Rejected`, or `Cancelled`. Withdrawing from `Verified` releases the reservation. It does not cancel the parent request or reduce preserved fulfilled units/history from successful donations. The request completes when fulfilled units reach required units.
 
-Creators may soft-delete requests in any status; active acceptances close, reservations/held packets release, reports remain, and currently affected participants are notified. Matched donations and fulfilled units remain historical. Blood requests do not expire automatically and remain governed by explicit workflow status changes.
+Creators may soft-delete requests in any status; active acceptances close, reservations/held packets release, reports remain, and currently affected participants are notified. Matched donations and fulfilled units remain historical. Blood requests do not expire automatically and remain governed by explicit workflow status changes. Normal, High, and Critical control urgency/notification behavior, not request lifetime; packet expiry remains a separate active inventory process.
 
 ### Inventory, packets, transfers, emergencies, and analysis
 

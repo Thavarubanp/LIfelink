@@ -4,6 +4,8 @@ title: Donating through LifeLink
 
 # Accepting a request
 
+`User`, `Admin`, and combined `User` + `Admin` accounts can participate as donors. Any `HospitalStaff` or `Doctor` role makes the account non-donor, and `InternalAgent` is service-only. Admin keeps its governance role while donating, but that does not grant Doctor screening approval or Hospital donation-recording authority.
+
 Open a request in **Available Requests** and choose **Accept & Begin Health Screening**. You need to:
 
 - use a donor account that is active (not suspended or blocked);
@@ -28,7 +30,9 @@ While the doctor has not yet decided, you can choose **Update my answers**. Your
 
 # Withdrawing
 
-You can withdraw from **My Acceptances** at any time before your donation is recorded. If a doctor had approved you, your reserved slot is released so another donor can take it. If you cannot attend, please withdraw so the patient is not kept waiting. The hospital may also release a reservation (for example if a donor does not attend), with a reason shown to the donor.
+You can withdraw from **My Acceptances** while participation is `Accepted`, `ScreeningPending`, `ScreeningCompleted` or `Verified`. You cannot withdraw after it is `Matched`, `Rejected` or already `Cancelled`. A `Verified` withdrawal releases the reserved slot so another donor can take it. Withdrawal does not cancel the parent blood request, and preserved history, successful donations and their fulfilled units are not removed. If you cannot attend, please withdraw so the patient is not kept waiting. The hospital may also release a reservation (for example if a donor does not attend), with a reason shown to the donor.
+
+A suspended donor-capable User/Admin cannot start new participation but retains the narrow ability to inspect and withdraw only their own existing active, withdrawal-eligible participation.
 
 # After donating
 
