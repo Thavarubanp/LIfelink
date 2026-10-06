@@ -18,12 +18,12 @@ namespace LifeLink.Services.HospitalActivity
             _context = context;
         }
 
-        public async Task<ActivityReportResponseDto> SubmitActivityReportAsync(SubmitActivityReportDto dto)
+        public async Task<ActivityReportResponseDto> SubmitActivityReportAsync(SubmitActivityReportDto dto, Guid actingHospitalId)
         {
-            var hospital = await _context.Hospitals.FindAsync(dto.HospitalId);
+            var hospital = await _context.Hospitals.FindAsync(actingHospitalId);
             if (hospital == null)
             {
-                throw new KeyNotFoundException($"Hospital with ID {dto.HospitalId} was not found.");
+                throw new KeyNotFoundException("The authenticated hospital was not found.");
             }
 
             var complaint = await _context.Complaints.FindAsync(dto.ComplaintId);
@@ -32,9 +32,9 @@ namespace LifeLink.Services.HospitalActivity
                 throw new KeyNotFoundException($"Complaint with ID {dto.ComplaintId} was not found.");
             }
 
-            if (complaint.HospitalId != dto.HospitalId)
+            if (complaint.HospitalId != actingHospitalId)
             {
-                throw new InvalidOperationException($"Hospital with ID {dto.HospitalId} is not associated with this complaint investigation.");
+                throw new InvalidOperationException("Your hospital is not associated with this complaint investigation.");
             }
 
             if (complaint.Status == ComplaintStatus.RESOLVED || complaint.Status == ComplaintStatus.REJECTED)
@@ -45,7 +45,7 @@ namespace LifeLink.Services.HospitalActivity
             var report = new HospitalActivityReport
             {
                 ReportId = Guid.NewGuid(),
-                HospitalId = dto.HospitalId,
+                HospitalId = actingHospitalId,
                 ComplaintId = dto.ComplaintId,
                 RequestedByAdminId = complaint.AssignedAdminId, // Preserves investigation context
                 Title = dto.Title.Trim(),

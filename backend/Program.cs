@@ -115,6 +115,9 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("assistant", httpContext => RateLimitPartition.GetFixedWindowLimiter(
         httpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? httpContext.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("otp-verification", httpContext => RateLimitPartition.GetFixedWindowLimiter(
+        httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 // 3. Configure JWT Authentication & Authorization

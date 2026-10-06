@@ -12,6 +12,7 @@ namespace LifeLink.Entities
         public string TokenHash { get; set; } = string.Empty;
         public string? Otp { get; set; }
         public bool IsVerified { get; set; } = false;
+        public int FailedAttempts { get; set; }
         public string? ResetSessionToken { get; set; }
         public DateTime? LastSentAt { get; set; }
         public DateTime ExpiresAt { get; set; }

@@ -1,5 +1,7 @@
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+import hashlib
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -13,7 +15,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # Shared key: the backend calls the Supervisor with it, and the Supervisor calls the worker agents with it
-    INTERNAL_SERVICE_API_KEY: str = "LifeLink-Internal-Agent-Key-2026"
+    INTERNAL_SERVICE_API_KEY: str = ""
 
     # Worker agents
     AGENT1_SCREENING_URL: str = "http://127.0.0.1:8001"   # Request Management
@@ -38,6 +40,12 @@ class Settings(BaseSettings):
     MAX_SUPERVISOR_STEPS: int = 8
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @field_validator("INTERNAL_SERVICE_API_KEY")
+    @classmethod
+    def reject_retired_internal_key(cls, value: str) -> str:
+        value = value.strip()
+        return "" if hashlib.sha256(value.encode()).hexdigest() == "e5d4012d86577772245b3c13308afde74eb674e50e726303fc80931dd47b9c2d" else value
 
     @property
     def gemini_key(self) -> str:

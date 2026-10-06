@@ -130,6 +130,7 @@ namespace LifeLink.Controllers
             var userRoles = user.UserRoles.Select(ur => ur.Role.Name).ToList();
             bool isTargetAdmin = userRoles.Any(r => r.Equals("Admin", StringComparison.OrdinalIgnoreCase));
             bool isCallerAdmin = _currentUserService.Roles.Contains("Admin");
+            bool isOwner = IsOwnUserProfile(id);
 
             if (isTargetAdmin && !isCallerAdmin)
             {
@@ -142,15 +143,18 @@ namespace LifeLink.Controllers
                 UserId = user.UserId,
                 FirstName = user.FirstName,
                 LastName = user.LastName,
-                Email = isBlocked && !isCallerAdmin ? string.Empty : user.Email, // kept internally, hidden from others
+                Email = (isOwner || isCallerAdmin || user.IsEmailPublic) && (!isBlocked || isCallerAdmin) ? user.Email : null,
                 DisplayStatus = isBlocked ? "Permanently Blocked" : (user.IsSuspended ? "Suspended" : "Active"),
-                PhoneNumber = user.PhoneNumber,
+                PhoneNumber = isOwner || isCallerAdmin || user.IsPhonePublic ? user.PhoneNumber : null,
                 Gender = user.Gender,
-                Address = user.Address,
+                Address = isOwner || isCallerAdmin || user.IsAddressPublic ? user.Address : null,
+                IsEmailPublic = user.IsEmailPublic,
+                IsPhonePublic = user.IsPhonePublic,
+                IsAddressPublic = user.IsAddressPublic,
                 Roles = userRoles,
                 AccountStatus = user.AccountStatus.ToString(),
                 CreatedAt = user.CreatedAt,
-                CanEdit = IsOwnUserProfile(id)
+                CanEdit = isOwner
             };
 
             // Blood group and donation dates are personal health details: owner and Admin only
@@ -258,6 +262,9 @@ namespace LifeLink.Controllers
             user.PhoneNumber = dto.PhoneNumber.Trim();
             user.Gender = dto.Gender?.Trim() ?? string.Empty;
             user.Address = dto.Address?.Trim() ?? string.Empty;
+            if (dto.IsEmailPublic.HasValue) user.IsEmailPublic = dto.IsEmailPublic.Value;
+            if (dto.IsPhonePublic.HasValue) user.IsPhonePublic = dto.IsPhonePublic.Value;
+            if (dto.IsAddressPublic.HasValue) user.IsAddressPublic = dto.IsAddressPublic.Value;
 
             if (!string.IsNullOrWhiteSpace(dto.BloodGroup))
             {

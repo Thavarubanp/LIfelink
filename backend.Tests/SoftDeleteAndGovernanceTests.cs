@@ -169,7 +169,7 @@ namespace LifeLink.Tests
             await context.SaveChangesAsync();
 
             await Assert.ThrowsAsync<KeyNotFoundException>(() => new HospitalActivityService(context).SubmitActivityReportAsync(
-                new SubmitActivityReportDto { HospitalId = venus.HospitalId, ComplaintId = complaint.ComplaintId, Title = "Report", Description = "Details" }));
+                new SubmitActivityReportDto { HospitalId = venus.HospitalId, ComplaintId = complaint.ComplaintId, Title = "Report", Description = "Details" }, venus.HospitalId));
             Assert.Empty(context.HospitalActivityReports);
         }
 

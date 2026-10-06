@@ -458,7 +458,7 @@ namespace LifeLink.Tests
                 Description = "Physical count confirmed 1 unit was quarantined due to low temperature sensor alarm."
             };
 
-            var report = await activityService.SubmitActivityReportAsync(reportDto);
+            var report = await activityService.SubmitActivityReportAsync(reportDto, hospitalId);
 
             // Assert
             Assert.NotNull(report);
@@ -508,7 +508,7 @@ namespace LifeLink.Tests
                 Description = "Trying to submit arbitrary report."
             };
 
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => activityService.SubmitActivityReportAsync(invalidReportDto));
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => activityService.SubmitActivityReportAsync(invalidReportDto, unassociatedHospitalId));
             Assert.Contains("not associated with this complaint investigation", ex.Message);
         }
 

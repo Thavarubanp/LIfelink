@@ -7,7 +7,7 @@ namespace LifeLink.Services.HospitalActivity
 {
     public interface IHospitalActivityService
     {
-        Task<ActivityReportResponseDto> SubmitActivityReportAsync(SubmitActivityReportDto dto);
+        Task<ActivityReportResponseDto> SubmitActivityReportAsync(SubmitActivityReportDto dto, Guid actingHospitalId);
         Task<List<ActivityReportResponseDto>> GetActivityReportsAsync(Guid? complaintId = null, Guid? hospitalId = null);
         Task<ActivityReportResponseDto?> GetActivityReportByIdAsync(Guid reportId);
     }

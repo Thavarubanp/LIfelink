@@ -16,6 +16,9 @@ namespace LifeLink.Entities
         public DateTime? DateOfBirth { get; set; }
         public string Gender { get; set; } = string.Empty;
         public string Address { get; set; } = string.Empty;
+        public bool IsEmailPublic { get; set; }
+        public bool IsPhonePublic { get; set; }
+        public bool IsAddressPublic { get; set; }
 
         // Donor eligibility: self-declared until a recorded donation confirms the tested group
         public string? BloodGroup { get; set; }

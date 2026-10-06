@@ -30,7 +30,7 @@ class NotificationService:
         )
 
         try:
-            headers = {"X-Internal-Key": getattr(settings, "INTERNAL_SERVICE_API_KEY", "LifeLink-Internal-Agent-Key-2026")}
+            headers = {"X-Internal-Key": settings.INTERNAL_SERVICE_API_KEY}
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(url, json=payload, headers=headers)
                 if response.status_code in (200, 201, 202):
