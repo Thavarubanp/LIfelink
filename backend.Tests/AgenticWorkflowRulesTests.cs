@@ -91,6 +91,14 @@ namespace LifeLink.Tests
             return donor;
         }
 
+        private static async Task<User> AddAdminDonorAsync(World w, string bloodGroup = "O+")
+        {
+            var admin = await AddDonorAsync(w, bloodGroup);
+            await w.Db.UserRoles.AddAsync(new UserRole { UserId = admin.UserId, RoleId = 4 });
+            await w.Db.SaveChangesAsync();
+            return admin;
+        }
+
         /// <summary>Accept → screening interview → report submitted (version 1) → returns the report.</summary>
         private static async Task<(Guid AcceptanceId, DonorVerification Report)> ScreenedDonorAsync(World w, User donor)
         {
@@ -381,6 +389,96 @@ namespace LifeLink.Tests
             var candidates = await w.Notifications.GetEligibleDonorCandidatesAsync(w.Request.BloodRequestId, "O+", w.Patient.UserId);
 
             Assert.Equal(new[] { eligible.UserId, longAgo.UserId }.OrderBy(x => x), candidates.Select(c => c.UserId).OrderBy(x => x));
+        }
+
+        [Fact]
+        public async Task Eligible_Admin_Is_A_Donor_Candidate_But_Privileged_Clinical_Roles_Remain_Excluded()
+        {
+            var w = await CreateWorldAsync();
+            var admin = await AddAdminDonorAsync(w);
+            var adminStaff = await AddDonorAsync(w);
+            var adminDoctor = await AddDonorAsync(w);
+            await w.Db.UserRoles.AddRangeAsync(
+                new UserRole { UserId = adminStaff.UserId, RoleId = 2 },
+                new UserRole { UserId = adminDoctor.UserId, RoleId = 3 });
+            await w.Db.SaveChangesAsync();
+
+            var candidates = await w.Notifications.GetEligibleDonorCandidatesAsync(w.Request.BloodRequestId, "O+", w.Patient.UserId);
+
+            Assert.Contains(candidates, candidate => candidate.UserId == admin.UserId);
+            Assert.DoesNotContain(candidates, candidate => candidate.UserId == adminStaff.UserId);
+            Assert.DoesNotContain(candidates, candidate => candidate.UserId == adminDoctor.UserId);
+        }
+
+        [Fact]
+        public async Task Admin_Donor_Completes_Normal_Workflow_Without_Self_Approval_Or_Recording_Authority()
+        {
+            var w = await CreateWorldAsync(unitsRequired: 1);
+            var admin = await AddAdminDonorAsync(w);
+            var (acceptanceId, report) = await ScreenedDonorAsync(w, admin);
+
+            Assert.Contains(await w.Acceptances.GetMyAcceptancesAsync(admin.UserId), acceptance => acceptance.AcceptanceId == acceptanceId);
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                w.Verification.ApproveDonorVerificationAsync(report.DonorVerificationId, admin.UserId, "self approve"));
+
+            await w.Verification.ApproveDonorVerificationAsync(report.DonorVerificationId, w.AssignedDoctor.UserId!.Value, "Approved by doctor");
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                w.Acceptances.FinalizeDonorSelectionAsync(w.Request.BloodRequestId, new List<Guid> { acceptanceId }, admin.UserId));
+
+            await w.Acceptances.FinalizeDonorSelectionAsync(
+                w.Request.BloodRequestId, new List<Guid> { acceptanceId }, w.AssignedDoctor.UserId!.Value,
+                testedBloodGroups: new Dictionary<Guid, string> { [acceptanceId] = "O+" });
+
+            Assert.Equal(AcceptanceStatus.Matched, (await w.Db.Acceptances.FindAsync(acceptanceId))!.Status);
+            Assert.NotNull(admin.LastDonationDate);
+            Assert.Equal(1, w.Request.FulfilledUnits);
+            Assert.Single(w.Db.RequestFulfillmentHistories.Where(history => history.AcceptanceId == acceptanceId));
+            Assert.Contains(w.Db.Notifications, notification => notification.UserId == admin.UserId && notification.NotificationType == "DonationRecorded");
+        }
+
+        [Fact]
+        public async Task Admin_Acceptance_Uses_Same_Own_Request_Compatibility_And_Duplicate_Rules()
+        {
+            var w = await CreateWorldAsync();
+            var admin = await AddAdminDonorAsync(w, "A+");
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => w.Acceptances.AcceptRequestAsync(admin.UserId,
+                new CreateAcceptanceDto { BloodRequestId = w.Request.BloodRequestId, DonorBloodGroup = "A+" }));
+
+            admin.BloodGroup = "O+";
+            var accepted = await w.Acceptances.AcceptRequestAsync(admin.UserId,
+                new CreateAcceptanceDto { BloodRequestId = w.Request.BloodRequestId, DonorBloodGroup = "O+" });
+            Assert.Equal("Accepted", accepted.Status);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => w.Acceptances.AcceptRequestAsync(admin.UserId,
+                new CreateAcceptanceDto { BloodRequestId = w.Request.BloodRequestId, DonorBloodGroup = "O+" }));
+
+            var own = new BloodRequest
+            {
+                BloodRequestId = Guid.NewGuid(), PatientUserId = admin.UserId, HospitalId = w.Hospital.HospitalId,
+                BloodGroup = "O+", UnitsRequired = 1, Reason = "Own", Priority = "Normal", Status = BloodRequestStatus.Approved
+            };
+            await w.Db.BloodRequests.AddAsync(own);
+            await w.Db.SaveChangesAsync();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => w.Acceptances.AcceptRequestAsync(admin.UserId,
+                new CreateAcceptanceDto { BloodRequestId = own.BloodRequestId, DonorBloodGroup = "O+" }));
+        }
+
+        [Fact]
+        public async Task Admin_Cannot_Bypass_Age_Or_Donation_Interval()
+        {
+            var ageWorld = await CreateWorldAsync();
+            var overAgeAdmin = await AddAdminDonorAsync(ageWorld);
+            overAgeAdmin.DateOfBirth = DateTime.UtcNow.AddYears(-65);
+            await ageWorld.Db.SaveChangesAsync();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => ageWorld.Acceptances.AcceptRequestAsync(overAgeAdmin.UserId,
+                new CreateAcceptanceDto { BloodRequestId = ageWorld.Request.BloodRequestId, DonorBloodGroup = "O+" }));
+
+            var intervalWorld = await CreateWorldAsync();
+            var recentAdmin = await AddAdminDonorAsync(intervalWorld);
+            recentAdmin.LastDonationDate = DateTime.UtcNow.AddDays(-30);
+            await intervalWorld.Db.SaveChangesAsync();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => intervalWorld.Acceptances.AcceptRequestAsync(recentAdmin.UserId,
+                new CreateAcceptanceDto { BloodRequestId = intervalWorld.Request.BloodRequestId, DonorBloodGroup = "O+" }));
         }
 
         [Fact]

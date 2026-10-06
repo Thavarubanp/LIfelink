@@ -42,7 +42,8 @@ namespace LifeLink.Services.Notification
 
         /// <summary>
         /// Donors who may receive a donation alert for this request (High and Critical requests only). Every rule is checked
-        /// here and again by the Notification agent: plain donor account; Active, not suspended, not permanently blocked;
+        /// here and again by the Notification agent: donor-capable User or Admin account (never HospitalStaff/Doctor);
+        /// Active, not suspended, not permanently blocked;
         /// a SAVED blood group EXACTLY equal to the request's (users without a saved group are never alerted); 120-day
         /// interval; age 18-60 when known; no active donation process; not the request creator; not already accepted or
         /// rejected for this request. (Accepting with a compatible group is still allowed; only alerts are exact.)

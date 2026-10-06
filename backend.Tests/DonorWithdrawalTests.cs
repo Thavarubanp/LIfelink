@@ -59,6 +59,7 @@ namespace LifeLink.Tests
                 Status = status, AcceptedAt = DateTime.UtcNow.AddDays(-1)
             };
             await db.AddRangeAsync(hospital, donor, other, doctorLogin, admin, doctor, request, acceptance);
+            await db.UserRoles.AddAsync(new UserRole { UserId = donor.UserId, RoleId = 4 });
             await db.BloodRequestVerifications.AddAsync(new BloodRequestVerification
             {
                 VerificationId = Guid.NewGuid(), BloodRequestId = request.BloodRequestId, DoctorId = doctor.DoctorId,
@@ -219,15 +220,15 @@ namespace LifeLink.Tests
         }
 
         [Fact]
-        public void Suspended_Endpoints_Are_User_Only_And_Explicitly_Allowed_Through_Governance_Middleware()
+        public void Suspended_Endpoints_Allow_User_And_Admin_And_Are_Explicitly_Allowed_Through_Governance_Middleware()
         {
             foreach (var methodName in new[] { nameof(AcceptancesController.GetMyActiveWithdrawals), nameof(AcceptancesController.WithdrawWhileSuspended) })
             {
                 var method = typeof(AcceptancesController).GetMethod(methodName)!;
-                Assert.Equal("User", method.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
+                Assert.Equal("User,Admin", method.GetCustomAttribute<AuthorizeAttribute>()!.Roles);
                 Assert.NotNull(method.GetCustomAttribute<AllowSuspendedAccessAttribute>());
             }
-            Assert.Equal("User,HospitalStaff", typeof(AcceptancesController).GetMethod(nameof(AcceptancesController.CancelAcceptance))!
+            Assert.Equal("User,HospitalStaff,Admin", typeof(AcceptancesController).GetMethod(nameof(AcceptancesController.CancelAcceptance))!
                 .GetCustomAttribute<AuthorizeAttribute>()!.Roles);
         }
     }

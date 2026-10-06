@@ -137,6 +137,50 @@ namespace LifeLink.Services.Transfer
         }
 
         /// <summary>
+        /// Limited transfer-planning projection for HospitalStaff. It intentionally exposes neither inventory rows nor
+        /// packet details: only the number of currently selectable exact-group packets at each eligible counterpart.
+        /// </summary>
+        public async Task<IEnumerable<TransferCounterpartAvailabilityDto>> GetCounterpartAvailabilityAsync(Guid actingHospitalId, string bloodGroup)
+        {
+            await RequireActiveHospitalAsync(actingHospitalId);
+            if (!BloodGroup.IsValid(bloodGroup))
+            {
+                throw new InvalidOperationException($"Invalid blood group: '{bloodGroup}'.");
+            }
+
+            var normalizedBloodGroup = BloodGroup.All.Single(group =>
+                string.Equals(group, bloodGroup, StringComparison.OrdinalIgnoreCase));
+            var now = DateTime.UtcNow;
+
+            var counterparts = await _context.Hospitals
+                .AsNoTracking()
+                .Where(h => h.HospitalId != actingHospitalId && h.IsVerified && !h.IsSuspended)
+                .Select(h => new { h.HospitalId, HospitalName = h.Name })
+                .OrderBy(h => h.HospitalName)
+                .ToListAsync();
+
+            var counterpartIds = counterparts.Select(h => h.HospitalId).ToList();
+            var counts = await _context.BloodPackets
+                .AsNoTracking()
+                .Where(p => counterpartIds.Contains(p.HospitalId)
+                            && p.BloodGroup == normalizedBloodGroup
+                            && p.Status == BloodPacketStatus.Available
+                            && p.HeldForReferenceId == null
+                            && p.ExpiryDate > now)
+                .GroupBy(p => p.HospitalId)
+                .Select(group => new { HospitalId = group.Key, Units = group.Count() })
+                .ToDictionaryAsync(row => row.HospitalId, row => row.Units);
+
+            return counterparts.Select(h => new TransferCounterpartAvailabilityDto
+            {
+                HospitalId = h.HospitalId,
+                HospitalName = h.HospitalName,
+                BloodGroup = normalizedBloodGroup,
+                TransferableUnits = counts.GetValueOrDefault(h.HospitalId)
+            });
+        }
+
+        /// <summary>
         /// The counterpart hospital accepts and the packets move from sender to receiver right away. For a "Request",
         /// the accepting sender selects exactly UnitsRequested of its packets (packetIds); for an "Offer", the packets
         /// the sender selected and held when offering move.

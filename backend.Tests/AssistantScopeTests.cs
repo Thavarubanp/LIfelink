@@ -10,10 +10,14 @@ using LifeLink.Data;
 using LifeLink.DTOs.Assistant;
 using LifeLink.Entities;
 using LifeLink.Services.Assistant;
+using LifeLink.Services.Common;
+using LifeLink.Controllers;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
+using System.Reflection;
 
 namespace LifeLink.Tests
 {
@@ -108,17 +112,24 @@ namespace LifeLink.Tests
             var owner = new User { UserId = Guid.NewGuid(), FirstName = "Owner", LastName = "D", Email = "o@d.org" };
             var intruder = new User { UserId = Guid.NewGuid(), FirstName = "Intruder", LastName = "D", Email = "i@d.org" };
             var suspended = new User { UserId = Guid.NewGuid(), FirstName = "S", LastName = "D", Email = "s@d.org", IsSuspended = true, AccountStatus = AccountStatus.Suspended };
+            var admin = new User { UserId = Guid.NewGuid(), FirstName = "Admin", LastName = "Donor", Email = "admin@d.org" };
             var acceptance = new Acceptance { BloodRequestId = Guid.NewGuid(), DonorUserId = owner.UserId, Status = AcceptanceStatus.ScreeningPending };
+            var adminAcceptance = new Acceptance { BloodRequestId = Guid.NewGuid(), DonorUserId = admin.UserId, Status = AcceptanceStatus.ScreeningPending };
             var suspendedAcceptance = new Acceptance { BloodRequestId = Guid.NewGuid(), DonorUserId = suspended.UserId, Status = AcceptanceStatus.ScreeningPending };
             var closed = new Acceptance { BloodRequestId = Guid.NewGuid(), DonorUserId = owner.UserId, Status = AcceptanceStatus.Rejected };
-            await db.Users.AddRangeAsync(owner, intruder, suspended);
-            await db.Acceptances.AddRangeAsync(acceptance, suspendedAcceptance, closed);
+            await db.Users.AddRangeAsync(owner, intruder, suspended, admin);
+            await db.UserRoles.AddAsync(new UserRole { UserId = admin.UserId, RoleId = 4 });
+            await db.Acceptances.AddRangeAsync(acceptance, adminAcceptance, suspendedAcceptance, closed);
             await db.SaveChangesAsync();
             var (service, handler) = CreateService(db);
 
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ChatAsync(intruder.UserId, new[] { "User" }, intruder.Email,
                 new AssistantChatRequestDto { AcceptanceId = acceptance.AcceptanceId, Message = "yes" }));
             await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ChatAsync(owner.UserId, new[] { "Doctor" }, owner.Email,
+                new AssistantChatRequestDto { AcceptanceId = acceptance.AcceptanceId, Message = "yes" }));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ChatAsync(admin.UserId, new[] { "Admin" }, admin.Email,
+                new AssistantChatRequestDto { AcceptanceId = acceptance.AcceptanceId, Message = "yes" }));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.ChatAsync(owner.UserId, new[] { "InternalAgent" }, owner.Email,
                 new AssistantChatRequestDto { AcceptanceId = acceptance.AcceptanceId, Message = "yes" }));
             await Assert.ThrowsAsync<InvalidOperationException>(() => service.ChatAsync(suspended.UserId, new[] { "User" }, suspended.Email,
                 new AssistantChatRequestDto { AcceptanceId = suspendedAcceptance.AcceptanceId, Message = "yes" }));
@@ -128,6 +139,74 @@ namespace LifeLink.Tests
 
             await service.ChatAsync(owner.UserId, new[] { "User" }, owner.Email, new AssistantChatRequestDto { AcceptanceId = acceptance.AcceptanceId, Message = "yes" });
             Assert.Contains("\"mode\":\"screening\"", handler.Body);
+            await service.ChatAsync(admin.UserId, new[] { "Admin" }, admin.Email, new AssistantChatRequestDto { AcceptanceId = adminAcceptance.AcceptanceId, Message = "yes" });
+            Assert.Contains("\"role\":\"Admin\"", handler.Body);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Admin_And_User_Admin_Accounts_Are_Eligible_To_Donate(bool includeUserRole)
+        {
+            var db = NewDb();
+            var account = new User { UserId = Guid.NewGuid(), FirstName = "Admin", LastName = "User", Email = "admin-user@l.org" };
+            await db.Users.AddAsync(account);
+            if (includeUserRole) await db.UserRoles.AddAsync(new UserRole { UserId = account.UserId, RoleId = 1 });
+            await db.UserRoles.AddAsync(new UserRole { UserId = account.UserId, RoleId = 4 });
+            await db.SaveChangesAsync();
+
+            Assert.Same(account, await DonorEligibility.RequireEligibleDonorAccountAsync(db, account.UserId));
+        }
+
+        [Theory]
+        [InlineData(2)]
+        [InlineData(3)]
+        public async Task Any_HospitalStaff_Or_Doctor_Combination_Is_Not_Donor_Eligible(int prohibitedRoleId)
+        {
+            var db = NewDb();
+            var account = new User { UserId = Guid.NewGuid(), FirstName = "Mixed", LastName = "Role", Email = $"mixed-{prohibitedRoleId}@l.org" };
+            await db.Users.AddAsync(account);
+            await db.UserRoles.AddRangeAsync(
+                new UserRole { UserId = account.UserId, RoleId = 1 },
+                new UserRole { UserId = account.UserId, RoleId = 4 },
+                new UserRole { UserId = account.UserId, RoleId = prohibitedRoleId });
+            await db.SaveChangesAsync();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                DonorEligibility.RequireEligibleDonorAccountAsync(db, account.UserId));
+        }
+
+        [Theory]
+        [InlineData(AccountStatus.Suspended, true, false)]
+        [InlineData(AccountStatus.Inactive, false, false)]
+        [InlineData(AccountStatus.Blocked, false, true)]
+        public async Task Inactive_Suspended_Or_Blocked_Admin_Is_Not_Donor_Eligible(
+            AccountStatus status, bool suspended, bool permanentlyBlocked)
+        {
+            var db = NewDb();
+            var account = new User
+            {
+                UserId = Guid.NewGuid(), FirstName = "Inactive", LastName = "Admin", Email = $"{status}@l.org",
+                AccountStatus = status, IsSuspended = suspended, IsPermanentlyBlocked = permanentlyBlocked
+            };
+            await db.Users.AddAsync(account);
+            await db.UserRoles.AddAsync(new UserRole { UserId = account.UserId, RoleId = 4 });
+            await db.SaveChangesAsync();
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                DonorEligibility.RequireEligibleDonorAccountAsync(db, account.UserId));
+        }
+
+        [Fact]
+        public void Acceptance_Create_Endpoint_Permits_User_And_Admin()
+        {
+            var authorization = typeof(AcceptancesController)
+                .GetMethod(nameof(AcceptancesController.AcceptRequest))!
+                .GetCustomAttribute<AuthorizeAttribute>();
+
+            Assert.NotNull(authorization);
+            Assert.Equal("User,Admin", authorization!.Roles);
+            Assert.DoesNotContain("InternalAgent", authorization.Roles!);
         }
     }
 }

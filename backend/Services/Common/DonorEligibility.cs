@@ -10,7 +10,8 @@ namespace LifeLink.Services.Common
     /// <summary>
     /// Who may take part in donor workflows (accept, screening, approval, donation, donor alerts).
     /// Governance rules apply as they are: only Active, non-suspended, non-blocked accounts that are plain
-    /// donor/patient accounts (not Admin, HospitalStaff or Doctor).
+    /// donor-capable interactive accounts (User or Admin, including the legacy no-role User fallback), but never
+    /// HospitalStaff or Doctor accounts. Admin authority does not bypass any clinical or lifecycle rule.
     /// </summary>
     public static class DonorEligibility
     {
@@ -18,7 +19,8 @@ namespace LifeLink.Services.Common
         public const int MinimumAge = 18;
         public const int MaximumAge = 60;
 
-        public static readonly string[] NonDonorRoles = { "Admin", "HospitalStaff", "Doctor" };
+        public static readonly string[] DonorCapableRoles = { "User", "Admin" };
+        public static readonly string[] NonDonorRoles = { "HospitalStaff", "Doctor" };
 
         public static bool IsActiveAccount(User user) =>
             user.AccountStatus == AccountStatus.Active && !user.IsSuspended && !user.IsPermanentlyBlocked;
@@ -59,7 +61,13 @@ namespace LifeLink.Services.Common
                 throw new InvalidOperationException("This account is not active and cannot take part in blood donation.");
             }
 
-            if (await context.UserRoles.AnyAsync(ur => ur.UserId == userId && NonDonorRoles.Contains(ur.Role.Name)))
+            var roles = await context.UserRoles
+                .Where(ur => ur.UserId == userId)
+                .Select(ur => ur.Role.Name)
+                .ToListAsync();
+
+            if (roles.Any(role => NonDonorRoles.Contains(role)) ||
+                (roles.Count > 0 && !roles.Any(role => DonorCapableRoles.Contains(role))))
             {
                 throw new InvalidOperationException("Only donor accounts can donate blood.");
             }

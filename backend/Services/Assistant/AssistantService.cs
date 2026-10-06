@@ -56,7 +56,7 @@ namespace LifeLink.Services.Assistant
 
             if (dto.AcceptanceId.HasValue)
             {
-                await RequireOwnScreeningAsync(userId, role, dto.AcceptanceId.Value);
+                await RequireOwnScreeningAsync(userId, roles, dto.AcceptanceId.Value);
             }
 
             var snapshot = await new AssistantContextBuilder(_context).BuildAsync(user, role, email);
@@ -105,9 +105,10 @@ namespace LifeLink.Services.Assistant
             }
         }
 
-        private async Task RequireOwnScreeningAsync(Guid userId, string role, Guid acceptanceId)
+        private async Task RequireOwnScreeningAsync(Guid userId, IReadOnlyCollection<string> roles, Guid acceptanceId)
         {
-            if (role != "Donor")
+            if (!roles.Any(role => role is "User" or "Admin") ||
+                roles.Any(role => role is "HospitalStaff" or "Doctor" or "InternalAgent"))
             {
                 throw new UnauthorizedAccessException("Only donors take part in the screening interview.");
             }
