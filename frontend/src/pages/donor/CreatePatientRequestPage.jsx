@@ -177,7 +177,7 @@ export const CreatePatientRequestPage = () => {
         </p>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 dark:border-slate-800 dark:bg-slate-900">
         {error && (
           <div className="mb-4 p-3.5 bg-red-950/60 border border-red-900/50 rounded-xl flex items-start gap-2.5 text-xs text-red-300 animate-in fade-in">
             <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -243,17 +243,17 @@ export const CreatePatientRequestPage = () => {
 
             {/* Selected Hospital Highlight Callout */}
             {selectedHospital && (
-              <div className="mt-2 p-2.5 px-3.5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center justify-between text-xs text-emerald-300">
-                <div className="flex items-center gap-2">
+              <div className="mt-2 flex min-w-0 flex-col gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 px-3.5 text-xs text-emerald-700 sm:flex-row sm:items-center sm:justify-between dark:text-emerald-300">
+                <div className="flex min-w-0 items-center gap-2">
                   <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <div>
-                    <p className="font-bold text-slate-100">{selectedHospital.name}</p>
-                    <p className="text-[10px] text-slate-400">
+                  <div className="min-w-0">
+                    <p className="break-words font-bold text-slate-900 dark:text-slate-100">{selectedHospital.name}</p>
+                    <p className="break-words text-[10px] text-slate-500 dark:text-slate-400">
                       License: {selectedHospital.licenseNumber || 'Active'} • {selectedHospital.address || 'Sri Lanka'}
                     </p>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 uppercase tracking-wider shrink-0">
+                <span className="self-start rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700 sm:self-auto dark:text-emerald-300">
                   Active Facility
                 </span>
               </div>
@@ -261,7 +261,7 @@ export const CreatePatientRequestPage = () => {
 
             {/* Dropdown Options List */}
             {isDropdownOpen && (
-              <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
+              <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-56 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
                 {loadingHospitals ? (
                   <div className="p-3.5 text-center text-slate-400 flex items-center justify-center gap-2 text-xs">
                     <Loader2 className="w-4 h-4 animate-spin text-red-500" />
@@ -273,7 +273,7 @@ export const CreatePatientRequestPage = () => {
                       key={h.hospitalId}
                       type="button"
                       onClick={() => handleSelectHospital(h)}
-                      className="w-full p-2.5 px-3.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 flex items-center justify-between transition-colors group"
+                      className="group flex w-full min-w-0 items-center justify-between gap-2 p-2.5 px-3.5 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/80"
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
@@ -331,7 +331,7 @@ export const CreatePatientRequestPage = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Blood Group Required</label>
               <select

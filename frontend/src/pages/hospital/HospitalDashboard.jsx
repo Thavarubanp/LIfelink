@@ -87,7 +87,7 @@ export const HospitalDashboard = () => {
       </div>
 
       {/* KPI Stats: emergencies and low stock open their details */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className={cardClass}>
           <span className="text-xs font-semibold text-slate-500">Blood Bank Stock</span>
           <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-2">
@@ -133,7 +133,7 @@ export const HospitalDashboard = () => {
             <p className="text-xs font-semibold">Loading live stock levels...</p>
           </div>
         ) : inventory.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {inventory.map((item) => {
               const units = item.unitsAvailable || 0;
               const max = item.maximumCapacity || 100;

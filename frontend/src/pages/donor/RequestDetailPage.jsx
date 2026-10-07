@@ -173,7 +173,7 @@ export const RequestDetailPage = () => {
           )}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-6">
+        <div className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-2 xl:grid-cols-4">
           <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-100 dark:border-slate-800">
             <span className="text-[10px] text-slate-400 uppercase font-semibold">Units Required</span>
             <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">{request.unitsRequired}</div>
