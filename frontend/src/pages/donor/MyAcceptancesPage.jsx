@@ -1,21 +1,20 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Calendar, CheckCircle2, FileText, Loader2, LogOut, PencilLine, Stethoscope, XCircle } from 'lucide-react';
 import { acceptanceApi } from '../../api';
-import { Badge, SuspendedBadge } from '../../components/common/Badge';
+import { AcceptanceStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { ScreeningAnswersForm } from '../../components/screening/ScreeningAnswersForm';
 import { useNotification } from '../../context/NotificationContext';
 import { getApiErrorMessage, isConflictError } from '../../utils/errorUtils';
 import { formatDisplayDate } from '../../utils/dateUtils';
+import { ACCEPTANCE_FILTERS, ACCEPTANCE_FILTER_LABELS, filterHistory, normalizeHistoryFilter } from '../../utils/donorHistoryFilters';
 
-const STATUS = {
-  Accepted: { label: 'Screening not started', variant: 'info', next: 'Start your health screening interview.' },
-  ScreeningPending: { label: 'Screening in progress', variant: 'warning', next: 'Continue your health screening interview.' },
-  ScreeningCompleted: { label: 'Waiting for doctor', variant: 'info', next: 'Your report is with the doctor. You can still update your answers until they decide.' },
-  Verified: { label: 'Approved - slot reserved', variant: 'success', next: 'Visit the hospital to donate. If you cannot attend, please withdraw so another donor can help.' },
-  Matched: { label: 'Donation recorded', variant: 'success', next: 'Thank you for donating!' },
-  Rejected: { label: 'Not approved', variant: 'primary', next: null },
-  Cancelled: { label: 'Withdrawn / closed', variant: 'default', next: null }
+const STATUS_NEXT = {
+  Accepted: 'Start your health screening interview.',
+  ScreeningPending: 'Continue your health screening interview.',
+  ScreeningCompleted: 'Your report is with the doctor. You can still update your answers until they decide.',
+  Verified: 'Visit the hospital to donate. If you cannot attend, please withdraw so another donor can help.',
+  Matched: 'Thank you for donating!'
 };
 const ACTIVE = ['Accepted', 'ScreeningPending', 'ScreeningCompleted', 'Verified'];
 
@@ -53,6 +52,16 @@ export const MyAcceptancesPage = () => {
   const [answersView, setAnswersView] = useState(null); // { data, mode: 'view' | 'edit' }
   const { addToast } = useNotification();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedFilter = normalizeHistoryFilter(searchParams.get('status'), ACCEPTANCE_FILTERS);
+  const visibleAcceptances = filterHistory(acceptances, ACCEPTANCE_FILTERS, selectedFilter);
+
+  const selectFilter = (filter) => {
+    const next = new URLSearchParams(searchParams);
+    if (filter === 'all') next.delete('status');
+    else next.set('status', filter);
+    setSearchParams(next);
+  };
 
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -138,16 +147,31 @@ export const MyAcceptancesPage = () => {
         </p>
       </div>
 
-      {acceptances.length === 0 ? (
+      <div className="flex flex-wrap gap-2" aria-label="Filter donation acceptances">
+        {Object.entries(ACCEPTANCE_FILTER_LABELS).map(([filter, label]) => (
+          <button
+            key={filter}
+            type="button"
+            onClick={() => selectFilter(filter)}
+            aria-pressed={selectedFilter === filter}
+            className={`min-h-10 rounded-xl px-3 py-2 text-xs font-semibold transition focus-visible:ring-4 focus-visible:ring-red-500/20 ${selectedFilter === filter ? 'bg-red-600 text-white' : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {visibleAcceptances.length === 0 ? (
         <div className="p-8 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-xs text-slate-500">
-          You have not accepted any donation requests yet. <Link to="/donor/requests" className="text-red-600 font-semibold">Browse available requests</Link>
+          {acceptances.length === 0 ? 'You have not accepted any donation requests yet. ' : `No records match “${ACCEPTANCE_FILTER_LABELS[selectedFilter]}”. `}
+          <Link to="/donor/requests" className="text-red-600 font-semibold">Browse available requests</Link>
         </div>
       ) : (
         <div className="space-y-4">
-          {acceptances.map((a) => {
+          {visibleAcceptances.map((a) => {
             // A deleted request: the acceptance stays closed in the history, without the request's details
             const deleted = a.requestDeleted;
-            const status = deleted ? { label: 'Closed', variant: 'default' } : STATUS[a.status] || { label: a.status, variant: 'default' };
+            const nextStep = STATUS_NEXT[a.status];
             const latest = a.screeningHistory?.[a.screeningHistory.length - 1];
             const canUpdate = !a.requestSuspended && a.status === 'ScreeningCompleted' && latest?.status === 'Pending';
             return (
@@ -160,7 +184,7 @@ export const MyAcceptancesPage = () => {
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{deleted ? 'Blood request deleted' : a.hospitalName || 'Hospital'}</h3>
-                        <Badge variant={status.variant} size="sm">{status.label}</Badge>
+                        <AcceptanceStatusBadge status={a.status} label={deleted ? 'Closed' : undefined} />
                         {!deleted && a.requestSuspended && <SuspendedBadge />}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
@@ -171,7 +195,7 @@ export const MyAcceptancesPage = () => {
                       {!deleted && a.requestSuspended ? (
                         <p className="text-xs text-rose-600 dark:text-rose-400 mt-1.5">The administrator has temporarily suspended this request. You can still withdraw; everything else waits until the suspension is lifted.</p>
                       ) : (
-                        !deleted && status.next && <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5">{status.next}</p>
+                        !deleted && nextStep && <p className="text-xs text-slate-700 dark:text-slate-300 mt-1.5">{nextStep}</p>
                       )}
                       {!deleted && a.rejectionReason && (a.status === 'Rejected' || a.status === 'Cancelled') && (
                         <p className="text-xs text-rose-600 dark:text-rose-400 mt-1.5"><span className="font-semibold">Reason:</span> {a.rejectionReason}</p>

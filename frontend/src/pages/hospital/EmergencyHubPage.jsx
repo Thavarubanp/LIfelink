@@ -71,7 +71,7 @@ export const EmergencyHubPage = () => {
 
       <EmergencyResponseTimeline status="CRITICAL" />
 
-      <div className="bg-white dark:bg-slate-900 border-2 border-red-500/30 dark:border-red-900/50 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+      <div className="relative overflow-hidden rounded-2xl border-2 border-red-500/30 bg-white p-4 shadow-xl sm:p-6 dark:border-red-900/50 dark:bg-slate-900">
         <div className="absolute top-0 right-0 w-32 h-32 bg-red-600/10 rounded-full blur-2xl pointer-events-none" />
 
         <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
@@ -79,7 +79,7 @@ export const EmergencyHubPage = () => {
         </h3>
 
         <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Blood Group Needed</label>
               <select

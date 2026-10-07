@@ -99,7 +99,7 @@ export const DataTable = ({
       )}
 
       {/* Mobile record cards */}
-      <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+      <div className="divide-y divide-slate-100 xl:hidden dark:divide-slate-800">
         {paginatedData.length > 0 ? paginatedData.map((row, idx) => (
           <div
             key={row.id || row.bloodRequestId || row.inventoryId || idx}
@@ -122,7 +122,7 @@ export const DataTable = ({
       </div>
 
       {/* Desktop table canvas */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className="hidden overflow-x-auto xl:block">
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">

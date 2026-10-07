@@ -34,11 +34,44 @@ const REQUEST_STATUS_VARIANTS = {
   Deleted: 'default'
 };
 
+const ACCEPTANCE_STATUS = {
+  Accepted: { variant: 'info', label: 'Screening not started' },
+  ScreeningPending: { variant: 'warning', label: 'Screening in progress' },
+  ScreeningCompleted: { variant: 'info', label: 'Waiting for doctor' },
+  Verified: { variant: 'success', label: 'Approved - slot reserved' },
+  Matched: { variant: 'success', label: 'Donation recorded' },
+  Rejected: { variant: 'danger', label: 'Not approved' },
+  Cancelled: { variant: 'default', label: 'Withdrawn / closed' }
+};
+
+const COMPLAINT_STATUS_VARIANTS = {
+  OPEN: 'warning',
+  UNDER_REVIEW: 'info',
+  AWAITING_INFORMATION: 'info',
+  RESOLVED: 'success',
+  REJECTED: 'danger',
+  CANCELLED: 'default'
+};
+
 export const RequestStatusBadge = ({ status, size = 'sm' }) => (
   <Badge variant={REQUEST_STATUS_VARIANTS[status] || 'default'} size={size}>
     {status || 'Unknown'}
   </Badge>
 );
+
+export const AcceptanceStatusBadge = ({ status, label, size = 'sm' }) => {
+  const config = ACCEPTANCE_STATUS[status] || { variant: 'default', label: status || 'Unknown' };
+  return <Badge variant={config.variant} size={size}>{label || config.label}</Badge>;
+};
+
+export const ComplaintStatusBadge = ({ status, label, size = 'sm' }) => {
+  const normalized = (status || 'OPEN').toUpperCase();
+  return (
+    <Badge variant={COMPLAINT_STATUS_VARIANTS[normalized] || 'default'} size={size}>
+      {label || normalized.replaceAll('_', ' ')}
+    </Badge>
+  );
+};
 
 /** Shown on a blood request or transfer while the admin has it suspended (nobody can act on it until lifted). */
 export const SuspendedBadge = ({ reason, size = 'sm' }) => (

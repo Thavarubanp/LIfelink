@@ -8,6 +8,7 @@ import ComplaintReplyModal from '../../components/complaints/ComplaintReplyModal
 import { isConflictError } from '../../utils/errorUtils';
 import { newIdempotencyKey } from '../../session/sessionActivity';
 import { formatDisplayDate } from '../../utils/dateUtils';
+import { ComplaintStatusBadge } from '../../components/common/Badge';
 import {
   MessageSquare,
   Trash2,
@@ -21,7 +22,6 @@ import {
   ShieldCheck,
   Sparkles,
   X,
-  XCircle,
   Inbox,
   ChevronDown,
   ChevronUp,
@@ -349,44 +349,12 @@ export const DonorComplaintsPage = () => {
   // Status Badge Config
   const getStatusBadge = (status) => {
     const normalized = (status || 'OPEN').toUpperCase();
-    if (normalized === 'RESOLVED') {
-      return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30 flex items-center gap-1.5 shrink-0">
-          <CheckCircle2 className="w-3 h-3" />
-          <span>Resolved</span>
-        </span>
-      );
-    }
-    if (normalized === 'UNDER_REVIEW' || normalized === 'AWAITING_INFORMATION' || normalized === 'IN PROGRESS') {
-      return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30 flex items-center gap-1.5 shrink-0">
-          <Clock className="w-3 h-3 animate-spin" />
-          <span>Under Investigation</span>
-        </span>
-      );
-    }
-    if (normalized === 'CANCELLED') {
-      return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30 flex items-center gap-1.5 shrink-0">
-          <XCircle className="w-3 h-3" />
-          <span>Closed / Cancelled</span>
-        </span>
-      );
-    }
-    if (normalized === 'REJECTED') {
-      return (
-        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30 flex items-center gap-1.5 shrink-0">
-          <X className="w-3 h-3" />
-          <span>Rejected</span>
-        </span>
-      );
-    }
-    return (
-      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30 flex items-center gap-1.5 shrink-0">
-        <Clock className="w-3 h-3 animate-pulse" />
-        <span>Pending Review</span>
-      </span>
-    );
+    const label = normalized === 'RESOLVED' ? 'Resolved'
+      : normalized === 'UNDER_REVIEW' || normalized === 'AWAITING_INFORMATION' ? 'Under Investigation'
+        : normalized === 'CANCELLED' ? 'Closed / Cancelled'
+          : normalized === 'REJECTED' ? 'Rejected'
+            : 'Pending Review';
+    return <ComplaintStatusBadge status={normalized} label={label} />;
   };
 
   return (
@@ -407,7 +375,7 @@ export const DonorComplaintsPage = () => {
       </div>
 
       {/* Complaint Form Card */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+      <div className="relative rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
           <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">File a New Complaint / Report</h2>
@@ -510,25 +478,25 @@ export const DonorComplaintsPage = () => {
 
               {/* Selected Target Badge Callout */}
               {selectedTarget && (
-                <div className="mt-2 p-2 px-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-center justify-between text-[11px] text-red-300">
-                  <div className="flex items-center gap-2">
+                <div className="mt-2 flex min-w-0 flex-col gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-2 px-3 text-[11px] text-red-700 sm:flex-row sm:items-center sm:justify-between dark:text-red-300">
+                  <div className="flex min-w-0 items-center gap-2">
                     {targetCategory === 'USER' ? (
                       <User className="w-4 h-4 text-purple-400 shrink-0" />
                     ) : (
                       <Building2 className="w-4 h-4 text-cyan-400 shrink-0" />
                     )}
-                    <div>
-                      <span className="font-bold text-white">{selectedTarget.name}</span>
-                      <span className="text-[10px] text-slate-400 ml-1.5">({selectedTarget.type})</span>
+                    <div className="min-w-0 break-words">
+                      <span className="font-bold text-slate-900 dark:text-white">{selectedTarget.name}</span>
+                      <span className="ml-1.5 text-[10px] text-slate-500 dark:text-slate-400">({selectedTarget.type})</span>
                     </div>
                   </div>
-                  <span className="text-[10px] text-emerald-400 font-semibold">Target Linked</span>
+                  <span className="self-start text-[10px] font-semibold text-emerald-700 sm:self-auto dark:text-emerald-400">Target Linked</span>
                 </div>
               )}
 
               {/* Autocomplete Results Dropdown */}
               {isDropdownOpen && (
-                <div className="absolute z-30 top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
+                <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-56 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 divide-y divide-slate-100 dark:divide-slate-800 animate-in fade-in">
                   {loadingTargets || (userSearchActive && searchingUsers) ? (
                     <div className="p-3 text-center text-slate-400 flex items-center justify-center gap-2 text-xs">
                       <Loader2 className="w-4 h-4 animate-spin text-cyan-500" />
@@ -544,7 +512,7 @@ export const DonorComplaintsPage = () => {
                         key={item.id}
                         type="button"
                         onClick={() => handleSelectTarget(item)}
-                        className="w-full p-2.5 px-3.5 text-left hover:bg-slate-100 dark:hover:bg-slate-800/80 flex items-center justify-between transition-colors group"
+                        className="group flex w-full min-w-0 items-center justify-between gap-2 p-2.5 px-3.5 text-left transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/80"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
@@ -863,7 +831,7 @@ export const DonorComplaintsPage = () => {
       {/* Solve Complaint Confirmation Modal */}
       {solveModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+          <div className="ll-modal-panel w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-5 h-5 text-emerald-500" />

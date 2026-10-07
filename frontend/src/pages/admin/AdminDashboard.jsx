@@ -340,7 +340,7 @@ export const AdminDashboard = () => {
       </div>
 
       {/* 3 Clickable KPI Cards: Users, Hospitals, Doctors */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {/* Total Registered Users Card */}
         <div
           onClick={() => handleCardClick('users')}
@@ -799,7 +799,7 @@ export const AdminDashboard = () => {
           <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">Governance Operations Hub</h2>
           <p className="text-xs text-slate-400">Priority review queues and regulatory compliance workflows.</p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           <Link
             to="/admin/hospitals/pending"
             className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm hover:border-red-500 transition-all flex flex-col justify-between"
@@ -850,7 +850,7 @@ export const AdminDashboard = () => {
       {/* Governance Suspension Modal */}
       {suspendModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+          <div className="ll-modal-panel w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-rose-600" />

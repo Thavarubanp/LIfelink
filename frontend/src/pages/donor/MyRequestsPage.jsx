@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { bloodRequestApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -7,6 +8,7 @@ import { getUserRoles } from '../../utils/roleUtils';
 import { DataTable } from '../../components/common/DataTable';
 import { Badge, RequestStatusBadge, SuspendedBadge } from '../../components/common/Badge';
 import { Trash2, Loader2, X, AlertTriangle, Pencil, Ban } from 'lucide-react';
+import { REQUEST_FILTERS, REQUEST_FILTER_LABELS, filterHistory, normalizeHistoryFilter } from '../../utils/donorHistoryFilters';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -32,6 +34,9 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
   const [editForm, setEditForm] = useState({ bloodGroup: '', unitsRequired: 1 });
   const [editError, setEditError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedFilter = normalizeHistoryFilter(searchParams.get('requestStatus'), REQUEST_FILTERS);
+  const visibleRequests = filterHistory(requests, REQUEST_FILTERS, selectedFilter);
   // Only donor/patient accounts edit their requests (hospital staff and admins cannot; the backend enforces this too)
   const isPatient = getUserRoles(user).includes('User');
 
@@ -220,12 +225,29 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
 
   return (
     // Bottom padding keeps the floating assistant button clear of the last row's actions and messages
-    <div className="space-y-3 pb-24">
-      <div>
+    <div id="my-requests" className="scroll-mt-24 space-y-3 pb-24">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
         <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">My Requests</h2>
         <p className="text-xs text-slate-500 dark:text-slate-400">
           Track the verification and donor fulfillment status of your submitted requests.
         </p>
+        </div>
+        <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+          <span className="mb-1 block">Show</span>
+          <select
+            value={selectedFilter}
+            onChange={(event) => {
+              const next = new URLSearchParams(searchParams);
+              if (event.target.value === 'all') next.delete('requestStatus');
+              else next.set('requestStatus', event.target.value);
+              setSearchParams(next);
+            }}
+            className="min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-red-500 focus:outline-none focus:ring-4 focus:ring-red-500/10 sm:w-52 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            {Object.entries(REQUEST_FILTER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
       </div>
 
       {loading ? (
@@ -235,16 +257,16 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       ) : (
         <DataTable
           columns={columns}
-          data={requests}
+          data={visibleRequests}
           searchPlaceholder="Search my requests..."
-          emptyMessage="You have not created any blood requests yet."
+          emptyMessage={requests.length === 0 ? 'You have not created any blood requests yet.' : `No records match “${REQUEST_FILTER_LABELS[selectedFilter]}”.`}
         />
       )}
 
       {/* Edit Modal (Pending requests: blood group and units only) */}
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <form onSubmit={handleSaveEdit} noValidate className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+          <form onSubmit={handleSaveEdit} noValidate className="ll-modal-panel w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-slate-600 dark:text-slate-300" />
@@ -258,7 +280,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
               Request <span className="font-mono font-semibold text-slate-900 dark:text-slate-100">#{String(editTarget.bloodRequestId).substring(0, 8)}</span>{' '}
               at {editTarget.hospitalName || 'the hospital'}. You can change the blood group and units until the hospital verifies or rejects it.
             </p>
-            <div className="grid grid-cols-2 gap-4 text-xs">
+            <div className="grid grid-cols-1 gap-4 text-xs sm:grid-cols-2">
               <div>
                 <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">Blood Group Required</label>
                 <select
@@ -309,7 +331,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       {/* Cancel Confirmation Modal (a donor was screened, so the request is cancelled instead of deleted) */}
       {cancelTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+          <div className="ll-modal-panel w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <Ban className="w-5 h-5 text-amber-600" />
@@ -350,7 +372,7 @@ export const MyRequestsList = ({ refreshKey = 0 }) => {
       {/* Delete Confirmation Modal */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4 animate-in fade-in">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
+          <div className="ll-modal-panel w-full max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl sm:p-6 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5 text-rose-600" />
