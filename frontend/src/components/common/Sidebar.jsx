@@ -101,7 +101,7 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
       )}
       <aside
         id="primary-navigation"
-        className={`fixed inset-y-0 left-0 z-50 flex h-full w-[min(19rem,88vw)] shrink-0 flex-col border-r border-slate-200 bg-white p-4 shadow-2xl transition-transform duration-200 md:static md:z-auto md:w-64 md:translate-x-0 md:shadow-none dark:border-slate-800 dark:bg-slate-900 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
+        className={`ll-sidebar fixed inset-y-0 left-0 z-50 flex w-[min(19rem,88vw)] shrink-0 flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-200 md:static md:z-auto md:w-64 md:translate-x-0 md:shadow-none dark:border-slate-800 dark:bg-slate-900 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}
       >
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mb-5 flex items-center justify-between md:hidden">
