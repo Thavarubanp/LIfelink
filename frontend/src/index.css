@@ -68,6 +68,28 @@
     @apply min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8;
   }
 
+  .ll-sidebar {
+    box-sizing: border-box;
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    padding-left: max(1rem, env(safe-area-inset-left));
+  }
+
+  @media (min-width: 48rem) {
+    .ll-sidebar {
+      height: 100%;
+      max-height: 100%;
+      padding: 1rem;
+    }
+  }
+
   .ll-content {
     @apply mx-auto w-full max-w-7xl;
   }
