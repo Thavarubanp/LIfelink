@@ -153,7 +153,7 @@ export const Sidebar = ({ mobileOpen = false, onClose }) => {
           <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">LifeLink Verified</span>
         </div>
         <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-tight">
-          Secure ASP.NET Core & AI Orchestration System.
+          © 2026 LifeLink. All rights reserved.
         </p>
       </div>
       </aside>
