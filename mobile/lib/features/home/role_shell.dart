@@ -7,10 +7,17 @@ import '../../core/theme/app_theme.dart';
 
 import '../../core/widgets/common.dart';
 import '../notifications/unread_badge.dart';
+import 'lifelink_app_bar.dart';
 
 /// One bottom-navigation tab of a role's shell.
 class ShellTab {
-  const ShellTab(this.label, this.icon, this.selectedIcon, {this.showUnread = false, this.badge});
+  const ShellTab(
+    this.label,
+    this.icon,
+    this.selectedIcon, {
+    this.showUnread = false,
+    this.badge,
+  });
 
   final String label;
   final IconData icon;
@@ -30,7 +37,9 @@ class RoleShell extends StatelessWidget {
   final StatefulNavigationShell shell;
   final List<ShellTab> tabs;
 
-  void _go(int index) => shell.goBranch(index, initialLocation: index == shell.currentIndex);
+  void _go(int index) =>
+      shell.goBranch(index, initialLocation: index == shell.currentIndex);
+  void _goHome() => shell.goBranch(0, initialLocation: true);
 
   Widget _icon(ShellTab tab, bool selected) {
     final icon = Icon(selected ? tab.selectedIcon : tab.icon);
@@ -42,6 +51,7 @@ class RoleShell extends StatelessWidget {
   Widget build(BuildContext context) {
     if (isWide(context)) {
       return Scaffold(
+        appBar: LifeLinkAppBar(onBrandTap: _goHome),
         body: Row(
           children: [
             SafeArea(
@@ -51,7 +61,11 @@ class RoleShell extends StatelessWidget {
                 labelType: NavigationRailLabelType.all,
                 destinations: [
                   for (final t in tabs)
-                    NavigationRailDestination(icon: _icon(t, false), selectedIcon: _icon(t, true), label: Text(t.label)),
+                    NavigationRailDestination(
+                      icon: _icon(t, false),
+                      selectedIcon: _icon(t, true),
+                      label: Text(t.label),
+                    ),
                 ],
               ),
             ),
@@ -62,12 +76,18 @@ class RoleShell extends StatelessWidget {
       );
     }
     return Scaffold(
+      appBar: LifeLinkAppBar(onBrandTap: _goHome),
       body: shell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: shell.currentIndex,
         onDestinationSelected: _go,
         destinations: [
-          for (final t in tabs) NavigationDestination(icon: _icon(t, false), selectedIcon: _icon(t, true), label: t.label),
+          for (final t in tabs)
+            NavigationDestination(
+              icon: _icon(t, false),
+              selectedIcon: _icon(t, true),
+              label: t.label,
+            ),
         ],
       ),
     );
@@ -83,6 +103,11 @@ class _CountBadge extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final n = ref.watch(count);
-    return Badge(isLabelVisible: n > 0, backgroundColor: AppColors.red600, label: Text(n > 99 ? '99+' : '$n'), child: child);
+    return Badge(
+      isLabelVisible: n > 0,
+      backgroundColor: AppColors.red600,
+      label: Text(n > 99 ? '99+' : '$n'),
+      child: child,
+    );
   }
 }

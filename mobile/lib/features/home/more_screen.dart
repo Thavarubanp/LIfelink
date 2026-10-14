@@ -7,7 +7,6 @@ import '../../core/config/constants.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common.dart';
-import '../notifications/unread_badge.dart';
 
 class MoreEntry {
   const MoreEntry(this.label, this.icon, this.path, {this.subtitle});
@@ -28,7 +27,6 @@ class MoreScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authControllerProvider).user;
     return Scaffold(
-      appBar: AppBar(title: const Text('More')),
       body: ContentWidth(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -68,13 +66,6 @@ class MoreScreen extends ConsumerWidget {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(e.path),
                     ),
-                  ListTile(
-                    leading: const Icon(Icons.search, color: AppColors.red600),
-                    title: const Text('Global search'),
-                    subtitle: const Text('Find users, doctors and hospitals'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push(AppRoutes.search),
-                  ),
                   if (user != null && !user.hasRole(Roles.admin))
                     ListTile(
                       leading: const Icon(
@@ -90,17 +81,6 @@ class MoreScreen extends ConsumerWidget {
                     title: const Text('My activity'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoutes.myActivity),
-                  ),
-                  ListTile(
-                    leading: const UnreadBadge(
-                      child: Icon(
-                        Icons.notifications_outlined,
-                        color: AppColors.red600,
-                      ),
-                    ),
-                    title: const Text('Notifications'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push(AppRoutes.notifications),
                   ),
                 ],
               ),

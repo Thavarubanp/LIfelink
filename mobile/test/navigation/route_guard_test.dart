@@ -256,6 +256,17 @@ void main() {
           publicBloodRequestsProvider.overrideWith(
             (ref, filter) async => const [],
           ),
+          hospitalChoicesProvider.overrideWith(
+            (ref) async => const [
+              HospitalChoice(
+                id: 'h1',
+                name: 'Central Hospital',
+                address: 'Colombo',
+                email: 'hospital@example.test',
+              ),
+            ],
+          ),
+          myBloodRequestsProvider.overrideWith((ref) async => const []),
           myAcceptancesProvider.overrideWith((ref) async => const []),
         ],
         retry: (_, _) => null,
@@ -349,6 +360,15 @@ void main() {
       await pumpRouter(tester, signedIn());
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.text('Your donor dashboard'), findsOneWidget);
+      for (final tab in ['Home', 'Requests', 'Create', 'Donations', 'More']) {
+        expect(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text(tab),
+          ),
+          findsOneWidget,
+        );
+      }
       await tester.tap(
         find.descendant(
           of: find.byType(NavigationBar),
@@ -357,6 +377,16 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Available requests'), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Create'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Create blood request'), findsOneWidget);
+      expect(find.text('New blood request'), findsOneWidget);
+      expect(find.text('My requests'), findsOneWidget);
       await tester.tap(
         find.descendant(
           of: find.byType(NavigationBar),

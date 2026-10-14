@@ -45,6 +45,8 @@ final authControllerProvider = NotifierProvider<AuthController, AuthState>(AuthC
 
 /// Sign-in state for the whole app: restores the session on start, signs in and out, and reacts to 401s.
 class AuthController extends Notifier<AuthState> {
+  SignOutReason? _restoreUnauthorizedReason;
+
   @override
   AuthState build() {
     ref.read(apiClientProvider).onUnauthorized = _onUnauthorized;
@@ -55,6 +57,7 @@ class AuthController extends Notifier<AuthState> {
   /// Auto-login: a stored token is checked with /Auth/me.
   Future<void> restore() async {
     state = const AuthState.unknown();
+    _restoreUnauthorizedReason = null;
     final tokens = ref.read(tokenStorageProvider);
     final token = await tokens.load();
     if (!ref.mounted) return;
@@ -70,9 +73,14 @@ class AuthController extends Notifier<AuthState> {
       if (e.isNetwork) {
         // Keep the token: the account may still be signed in once the server is reachable
         state = AuthState.unreachable(e.message);
-      } else if (state.status != AuthStatus.signedOut) {
-        await _clear(null);
+      } else if (e.isUnauthorized) {
+        await _clear(_restoreUnauthorizedReason ?? SignOutReason.expired);
+      } else {
+        // Only a confirmed 401 proves that the stored session has ended.
+        state = AuthState.unreachable(e.message);
       }
+    } finally {
+      _restoreUnauthorizedReason = null;
     }
   }
 
@@ -113,7 +121,13 @@ class AuthController extends Notifier<AuthState> {
   }
 
   void _onUnauthorized(SignOutReason reason) {
-    if (state.status == AuthStatus.signedIn) _clear(reason);
+    if (state.status == AuthStatus.signedIn) {
+      _clear(reason);
+    } else if (state.status == AuthStatus.unknown) {
+      // restore() has not loaded CurrentUser yet, so retain the response header's
+      // reason until its catch block clears the stored token.
+      _restoreUnauthorizedReason = reason;
+    }
   }
 
   Future<void> _clear(SignOutReason? reason) async {

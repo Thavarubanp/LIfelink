@@ -7,6 +7,7 @@ import '../../core/utils/format.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
+import '../home/shell_page_header.dart';
 import '../inventory/inventory_repository.dart';
 import '../inventory/packet_picker.dart';
 import '../profile/profile_repository.dart';
@@ -16,11 +17,11 @@ import 'transfer_repository.dart';
 enum _Tab { incoming, outgoing, history }
 
 BadgeVariant transferStatusVariant(String status) => switch (status) {
-      'Pending' => BadgeVariant.warning,
-      'Completed' => BadgeVariant.success,
-      'Rejected' => BadgeVariant.danger,
-      _ => BadgeVariant.neutral,
-    };
+  'Pending' => BadgeVariant.warning,
+  'Completed' => BadgeVariant.success,
+  'Rejected' => BadgeVariant.danger,
+  _ => BadgeVariant.neutral,
+};
 
 /// Inter-hospital transfers: waiting for my response / sent by my hospital / history (with a status filter).
 /// The other hospital accepts or rejects; accepted transfers move the packets straight away.
@@ -48,7 +49,12 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
     await ref.read(transfersProvider.future).catchError((_) => <Transfer>[]);
   }
 
-  Future<void> _act(Future<void> Function() action, String title, String message, {SnackType type = SnackType.success}) async {
+  Future<void> _act(
+    Future<void> Function() action,
+    String title,
+    String message, {
+    SnackType type = SnackType.success,
+  }) async {
     if (_acting) return;
     setState(() => _acting = true);
     try {
@@ -57,7 +63,13 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
       _reload();
     } catch (e) {
       final api = ApiError.from(e);
-      if (mounted) showSnack(context, api.message, type: SnackType.error, title: 'Action failed');
+      if (mounted)
+        showSnack(
+          context,
+          api.message,
+          type: SnackType.error,
+          title: 'Action failed',
+        );
       // Accepted, rejected or withdrawn by the other side at the same moment: show the current state
       if (api.isConflict) _reload();
     } finally {
@@ -75,28 +87,61 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
         builder: (_) => _SendPacketsSheet(transfer: t),
       );
       if (ids == null) return;
-      await _act(() => repo.approve(t.id, ids), 'Transfer accepted', '${ids.length} packet(s) sent to ${t.receiverHospitalName}.');
+      await _act(
+        () => repo.approve(t.id, ids),
+        'Transfer accepted',
+        '${ids.length} packet(s) sent to ${t.receiverHospitalName}.',
+      );
     } else {
       if (!mounted) return;
-      final ok = await confirmDialog(context,
-          title: 'Accept transfer', message: 'Accept ${t.unitsRequested} x ${t.bloodGroup} from ${t.senderHospitalName}?', confirmLabel: 'Accept');
-      if (ok) await _act(() => repo.approve(t.id), 'Transfer accepted', 'Packets moved and both inventories updated.');
+      final ok = await confirmDialog(
+        context,
+        title: 'Accept transfer',
+        message:
+            'Accept ${t.unitsRequested} x ${t.bloodGroup} from ${t.senderHospitalName}?',
+        confirmLabel: 'Accept',
+      );
+      if (ok)
+        await _act(
+          () => repo.approve(t.id),
+          'Transfer accepted',
+          'Packets moved and both inventories updated.',
+        );
     }
   }
 
   Future<void> _reject(Transfer t) async {
-    final reason = await reasonDialog(context, title: 'Reject transfer', hint: 'Reason (shown to the other hospital)', confirmLabel: 'Reject');
+    final reason = await reasonDialog(
+      context,
+      title: 'Reject transfer',
+      hint: 'Reason (shown to the other hospital)',
+      confirmLabel: 'Reject',
+    );
     if (reason == null) return;
-    await _act(() => ref.read(transferRepositoryProvider).reject(t.id, reason), 'Transfer rejected', 'The other hospital will see your reason.',
-        type: SnackType.info);
+    await _act(
+      () => ref.read(transferRepositoryProvider).reject(t.id, reason),
+      'Transfer rejected',
+      'The other hospital will see your reason.',
+      type: SnackType.info,
+    );
   }
 
   Future<void> _cancel(Transfer t) async {
-    final ok = await confirmDialog(context,
-        title: 'Delete transfer', message: 'Delete this pending transfer? It stays in the history as Cancelled.', confirmLabel: 'Delete', destructive: true);
+    final ok = await confirmDialog(
+      context,
+      title: 'Delete transfer',
+      message:
+          'Delete this pending transfer? It stays in the history as Cancelled.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
     if (ok) {
-      await _act(() => ref.read(transferRepositoryProvider).cancel(t.id), 'Transfer deleted', 'The other hospital has been notified.',
-          type: SnackType.info);
+      await _act(
+        () => ref.read(transferRepositoryProvider).cancel(t.id),
+        'Transfer deleted',
+        'The other hospital has been notified.',
+        type: SnackType.info,
+      );
     }
   }
 
@@ -117,8 +162,13 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${detail.status == 'Completed' ? 'Packets moved' : 'Packets offered'} (${detail.packetTrackingNumbers.length})',
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+              Text(
+                '${detail.status == 'Completed' ? 'Packets moved' : 'Packets offered'} (${detail.packetTrackingNumbers.length})',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 6),
               Text(
                 'From ${detail.senderHospitalName} to ${detail.receiverHospitalName}'
@@ -131,7 +181,13 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
                 runSpacing: 6,
                 children: [
                   for (final n in detail.packetTrackingNumbers)
-                    Text(n, style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+                    Text(
+                      n,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -146,7 +202,6 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
     final value = ref.watch(transfersProvider);
     final me = ref.watch(myHospitalProvider).value?.hospitalId;
     return Scaffold(
-      appBar: AppBar(title: const Text('Transfers')),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.red600,
         foregroundColor: Colors.white,
@@ -164,59 +219,87 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
         child: ContentWidth(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
-            child: AsyncView(
-              value: value,
-              onRetry: _reload,
-              loadingMessage: 'Loading transfers...',
-              data: (all) {
-                if (me == null) return const LoadingView();
-                final lists = TransferLists(all, me);
-                final history = lists.history.where((t) => _historyStatus == null || t.status == _historyStatus).toList();
-                final visible = switch (_tab) {
-                  _Tab.incoming => lists.incoming,
-                  _Tab.outgoing => lists.outgoing,
-                  _Tab.history => history,
-                };
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    FilterChips<_Tab>(
-                      options: [
-                        (_Tab.incoming, 'Waiting for me (${lists.incoming.length})'),
-                        (_Tab.outgoing, 'Sent by us (${lists.outgoing.length})'),
-                        (_Tab.history, 'History (${lists.history.length})'),
-                      ],
-                      selected: _tab,
-                      onSelected: (t) => setState(() => _tab = t),
-                    ),
-                    if (_tab == _Tab.history) ...[
-                      const SizedBox(height: 8),
-                      FilterChips<String?>(
-                        options: const [(null, 'All'), ('Completed', 'Completed'), ('Rejected', 'Rejected'), ('Cancelled', 'Cancelled')],
-                        selected: _historyStatus,
-                        onSelected: (s) => setState(() => _historyStatus = s),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    if (visible.isEmpty)
-                      const EmptyView(icon: Icons.swap_horiz, message: 'No transfers here.')
-                    else
-                      for (final t in visible)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _TransferCard(
-                            t: t,
-                            me: me,
-                            busy: _acting,
-                            onAccept: () => _accept(t, me),
-                            onReject: () => _reject(t),
-                            onCancel: () => _cancel(t),
-                            onPackets: () => _showPackets(t),
-                          ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const ShellPageHeader(title: 'Transfers'),
+                const SizedBox(height: 16),
+                AsyncView(
+                  value: value,
+                  onRetry: _reload,
+                  loadingMessage: 'Loading transfers...',
+                  data: (all) {
+                    if (me == null) return const LoadingView();
+                    final lists = TransferLists(all, me);
+                    final history = lists.history
+                        .where(
+                          (t) =>
+                              _historyStatus == null ||
+                              t.status == _historyStatus,
+                        )
+                        .toList();
+                    final visible = switch (_tab) {
+                      _Tab.incoming => lists.incoming,
+                      _Tab.outgoing => lists.outgoing,
+                      _Tab.history => history,
+                    };
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FilterChips<_Tab>(
+                          options: [
+                            (
+                              _Tab.incoming,
+                              'Waiting for me (${lists.incoming.length})',
+                            ),
+                            (
+                              _Tab.outgoing,
+                              'Sent by us (${lists.outgoing.length})',
+                            ),
+                            (_Tab.history, 'History (${lists.history.length})'),
+                          ],
+                          selected: _tab,
+                          onSelected: (t) => setState(() => _tab = t),
                         ),
-                  ],
-                );
-              },
+                        if (_tab == _Tab.history) ...[
+                          const SizedBox(height: 8),
+                          FilterChips<String?>(
+                            options: const [
+                              (null, 'All'),
+                              ('Completed', 'Completed'),
+                              ('Rejected', 'Rejected'),
+                              ('Cancelled', 'Cancelled'),
+                            ],
+                            selected: _historyStatus,
+                            onSelected: (s) =>
+                                setState(() => _historyStatus = s),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        if (visible.isEmpty)
+                          const EmptyView(
+                            icon: Icons.swap_horiz,
+                            message: 'No transfers here.',
+                          )
+                        else
+                          for (final t in visible)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: _TransferCard(
+                                t: t,
+                                me: me,
+                                busy: _acting,
+                                onAccept: () => _accept(t, me),
+                                onReject: () => _reject(t),
+                                onCancel: () => _cancel(t),
+                                onPackets: () => _showPackets(t),
+                              ),
+                            ),
+                      ],
+                    );
+                  },
+                ),
+              ],
             ),
           ),
         ),
@@ -248,8 +331,10 @@ class _TransferCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final sends = t.senderHospitalId == me;
     final other = sends ? t.receiverHospitalName : t.senderHospitalName;
-    final canAnswer = !t.isSuspended && t.isPending && t.counterpartHospitalId == me;
-    final canCancel = !t.isSuspended && t.isPending && t.createdByHospitalId == me;
+    final canAnswer =
+        !t.isSuspended && t.isPending && t.counterpartHospitalId == me;
+    final canCancel =
+        !t.isSuspended && t.isPending && t.createdByHospitalId == me;
     final showPackets = t.status == 'Completed' || (t.isPending && t.isOffer);
     return Card(
       child: Padding(
@@ -259,13 +344,18 @@ class _TransferCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(sends ? Icons.north_east : Icons.south_west, color: sends ? AppColors.rose600 : AppColors.emerald600),
+                Icon(
+                  sends ? Icons.north_east : Icons.south_west,
+                  color: sends ? AppColors.rose600 : AppColors.emerald600,
+                ),
                 const SizedBox(width: 8),
                 BloodGroupBadge(t.bloodGroup),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('${t.unitsRequested} unit(s) ${sends ? 'to' : 'from'} $other',
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  child: Text(
+                    '${t.unitsRequested} unit(s) ${sends ? 'to' : 'from'} $other',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                 ),
               ],
             ),
@@ -281,16 +371,26 @@ class _TransferCard extends StatelessWidget {
             ),
             if (t.isSuspended) ...[
               const SizedBox(height: 8),
-              const Text('Suspended by the administrator: it cannot be accepted, rejected or deleted until the suspension is lifted.',
-                  style: TextStyle(fontSize: 12, color: AppColors.rose600)),
+              const Text(
+                'Suspended by the administrator: it cannot be accepted, rejected or deleted until the suspension is lifted.',
+                style: TextStyle(fontSize: 12, color: AppColors.rose600),
+              ),
             ],
             const SizedBox(height: 6),
-            Text('Created ${Fmt.sriLankaDateTime(t.requestedAt)}${t.notes.isNotEmpty ? ' · ${t.notes}' : ''}',
-                style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+            Text(
+              'Created ${Fmt.sriLankaDateTime(t.requestedAt)}${t.notes.isNotEmpty ? ' · ${t.notes}' : ''}',
+              style: const TextStyle(fontSize: 12, color: AppColors.slate500),
+            ),
             if (t.rejectionReason?.isNotEmpty == true)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text('Rejection reason: ${t.rejectionReason}', style: const TextStyle(fontSize: 12, color: AppColors.rose600)),
+                child: Text(
+                  'Rejection reason: ${t.rejectionReason}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.rose600,
+                  ),
+                ),
               ),
             if (canAnswer || canCancel || showPackets) ...[
               const SizedBox(height: 10),
@@ -300,13 +400,19 @@ class _TransferCard extends StatelessWidget {
                 children: [
                   if (canAnswer) ...[
                     FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.emerald600, minimumSize: const Size(0, 40)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.emerald600,
+                        minimumSize: const Size(0, 40),
+                      ),
                       onPressed: busy ? null : onAccept,
                       icon: const Icon(Icons.check, size: 18),
                       label: const Text('Accept'),
                     ),
                     FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: AppColors.rose600, minimumSize: const Size(0, 40)),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.rose600,
+                        minimumSize: const Size(0, 40),
+                      ),
                       onPressed: busy ? null : onReject,
                       icon: const Icon(Icons.close, size: 18),
                       label: const Text('Reject'),
@@ -314,16 +420,24 @@ class _TransferCard extends StatelessWidget {
                   ],
                   if (canCancel)
                     OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 40),
+                      ),
                       onPressed: busy ? null : onCancel,
                       icon: const Icon(Icons.delete_outline, size: 18),
                       label: const Text('Delete'),
                     ),
                   if (showPackets)
                     OutlinedButton(
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(0, 40),
+                      ),
                       onPressed: onPackets,
-                      child: Text(t.status == 'Completed' ? 'Packets moved' : 'Packets offered'),
+                      child: Text(
+                        t.status == 'Completed'
+                            ? 'Packets moved'
+                            : 'Packets offered',
+                      ),
                     ),
                 ],
               ),
@@ -358,17 +472,30 @@ class _SendPacketsSheetState extends State<_SendPacketsSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Send ${t.unitsRequested} x ${t.bloodGroup} to ${t.receiverHospitalName}',
-                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(
+              'Send ${t.unitsRequested} x ${t.bloodGroup} to ${t.receiverHospitalName}',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 6),
-            Text('Select exactly ${t.unitsRequested} packet(s). They move to the other hospital with the same tracking numbers.',
-                style: const TextStyle(fontSize: 13)),
+            Text(
+              'Select exactly ${t.unitsRequested} packet(s). They move to the other hospital with the same tracking numbers.',
+              style: const TextStyle(fontSize: 13),
+            ),
             const SizedBox(height: 10),
-            PacketPicker(bloodGroup: t.bloodGroup, exact: t.unitsRequested, selected: _ids, onChanged: (ids) => setState(() => _ids = ids)),
+            PacketPicker(
+              bloodGroup: t.bloodGroup,
+              exact: t.unitsRequested,
+              selected: _ids,
+              onChanged: (ids) => setState(() => _ids = ids),
+            ),
             const SizedBox(height: 14),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: AppColors.emerald600),
-              onPressed: _ids.length == t.unitsRequested ? () => Navigator.of(context).pop(_ids) : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.emerald600,
+              ),
+              onPressed: _ids.length == t.unitsRequested
+                  ? () => Navigator.of(context).pop(_ids)
+                  : null,
               child: const Text('Accept and send'),
             ),
           ],

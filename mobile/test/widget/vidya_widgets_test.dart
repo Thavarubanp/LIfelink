@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lifelink_mobile/core/auth/auth_controller.dart';
 import 'package:lifelink_mobile/features/blood_requests/blood_request_models.dart';
 import 'package:lifelink_mobile/features/blood_requests/blood_request_repository.dart';
+import 'package:lifelink_mobile/features/blood_requests/create_request_screen.dart';
 import 'package:lifelink_mobile/features/blood_requests/public_requests_screen.dart';
 import 'package:lifelink_mobile/features/screening/screening_inputs.dart';
 import 'package:lifelink_mobile/features/screening/screening_models.dart';
@@ -38,6 +39,38 @@ void main() {
     expect(find.text('Expiring soon'), findsNothing);
     expect(find.textContaining('Open until'), findsNothing);
     expect(find.text('AB-'), findsWidgets);
+    expect(find.text('Create request'), findsNothing);
+  });
+
+  testWidgets('embedded create request reuses the form and request history', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      testApp(
+        const CreateRequestScreen(embedded: true),
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => FakeAuthController(AuthState.signedIn(testUser())),
+          ),
+          hospitalChoicesProvider.overrideWith(
+            (ref) async => const [
+              HospitalChoice(
+                id: 'h1',
+                name: 'Central Hospital',
+                address: 'Colombo',
+                email: 'hospital@example.test',
+              ),
+            ],
+          ),
+          myBloodRequestsProvider.overrideWith((ref) async => const []),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Create blood request'), findsOneWidget);
+    expect(find.text('New blood request'), findsOneWidget);
+    expect(find.text('My requests'), findsOneWidget);
+    expect(find.byType(AppBar), findsNothing);
   });
 
   testWidgets('screening renders structured choices and unknown date', (

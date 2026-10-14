@@ -138,61 +138,64 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
         MediaQuery.viewInsetsOf(context).bottom + 20,
       ),
       child: SingleChildScrollView(
-        child: AsyncView(
-          value: data,
-          onRetry: () => ref.invalidate(_transferFormDataProvider(_group)),
-          data: (d) {
-            final (counterparts, stock, me) = d;
-            final hospitals = _isOffer
-                ? counterparts
-                : counterparts.where((h) => h.transferableUnits > 0).toList();
-            return Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'New transfer',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'New transfer',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'Request',
+                    label: Text('Request blood'),
+                    icon: Icon(Icons.call_received),
                   ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<String>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 'Request',
-                        label: Text('Request blood'),
-                        icon: Icon(Icons.call_received),
-                      ),
-                      ButtonSegment(
-                        value: 'Offer',
-                        label: Text('Offer blood'),
-                        icon: Icon(Icons.call_made),
-                      ),
-                    ],
-                    selected: {_type},
-                    onSelectionChanged: (s) => setState(() {
-                      _type = s.first;
-                      _hospitalId = null;
-                      _packetIds = [];
-                    }),
+                  ButtonSegment(
+                    value: 'Offer',
+                    label: Text('Offer blood'),
+                    icon: Icon(Icons.call_made),
                   ),
-                  const SizedBox(height: 14),
-                  DropdownButtonFormField<String>(
-                    key: const Key('transfer-group'),
-                    initialValue: _group,
-                    decoration: const InputDecoration(labelText: 'Blood group'),
-                    items: [
-                      for (final g in AppConstants.bloodGroups)
-                        DropdownMenuItem(value: g, child: Text(g)),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _group = v ?? _group;
-                      _hospitalId = null;
-                      _packetIds = [];
-                    }),
-                  ),
-                  const SizedBox(height: 14),
+                ],
+                selected: {_type},
+                onSelectionChanged: (s) => setState(() {
+                  _type = s.first;
+                  _hospitalId = null;
+                  _packetIds = [];
+                }),
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                key: const Key('transfer-group'),
+                initialValue: _group,
+                decoration: const InputDecoration(labelText: 'Blood group'),
+                items: [
+                  for (final g in AppConstants.bloodGroups)
+                    DropdownMenuItem(value: g, child: Text(g)),
+                ],
+                onChanged: (v) => setState(() {
+                  _group = v ?? _group;
+                  _hospitalId = null;
+                  _packetIds = [];
+                }),
+              ),
+              const SizedBox(height: 14),
+              AsyncView(
+                value: data,
+                onRetry: () => ref.invalidate(_transferFormDataProvider(_group)),
+                data: (d) {
+                  final (counterparts, stock, me) = d;
+                  final hospitals = _isOffer
+                      ? counterparts
+                      : counterparts.where((h) => h.transferableUnits > 0).toList();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                   if (hospitals.isEmpty)
                     InfoBanner(
                       _isOffer
@@ -261,10 +264,12 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
                     busy: _saving,
                     onPressed: hospitals.isEmpty ? null : _submit,
                   ),
-                ],
+                    ],
+                  );
+                },
               ),
-            );
-          },
+            ],
+          ),
         ),
       ),
     );

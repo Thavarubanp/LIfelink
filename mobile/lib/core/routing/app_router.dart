@@ -122,6 +122,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         tabs: const [
           ShellTab('Home', Icons.home_outlined, Icons.home),
           ShellTab('Requests', Icons.bloodtype_outlined, Icons.bloodtype),
+          ShellTab('Create', Icons.add, Icons.add),
           ShellTab(
             'Donations',
             Icons.volunteer_activism_outlined,
@@ -132,6 +133,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         branches: [
           (AppRoutes.donorHome, const DonorHomeScreen()),
           (AppRoutes.donorRequests, const PublicRequestsScreen()),
+          (AppRoutes.donorCreate, const CreateRequestScreen(embedded: true)),
           (AppRoutes.donorAcceptances, const MyAcceptancesScreen()),
           (
             AppRoutes.donorMore,

@@ -134,6 +134,47 @@ void main() {
       },
     );
 
+    test(
+      'idle 401 during restore clears the token and preserves the idle notice',
+      () async {
+        final api = MockedApi(token: 'jwt-stored');
+        final c = containerFor(api);
+        api.adapter.onGet(
+          '/Auth/me',
+          (s) => s.reply(
+            401,
+            {},
+            headers: {
+              'x-session-ended': ['idle'],
+              'content-type': ['application/json'],
+            },
+          ),
+        );
+
+        await c.read(authControllerProvider.notifier).restore();
+
+        final state = c.read(authControllerProvider);
+        expect(state.status, AuthStatus.signedOut);
+        expect(state.reason, SignOutReason.idle);
+        expect(state.signOutMessage, contains('inactivity'));
+        expect(api.tokens.token, isNull);
+      },
+    );
+
+    test('non-401 restore failure retains the stored token', () async {
+      final api = MockedApi(token: 'jwt-stored');
+      final c = containerFor(api);
+      api.adapter.onGet(
+        '/Auth/me',
+        (s) => s.reply(500, {'message': 'Server failed.'}),
+      );
+
+      await c.read(authControllerProvider.notifier).restore();
+
+      expect(c.read(authControllerProvider).status, AuthStatus.unreachable);
+      expect(api.tokens.token, 'jwt-stored');
+    });
+
     test('login stores the token; logout clears everything', () async {
       final api = MockedApi();
       api.adapter

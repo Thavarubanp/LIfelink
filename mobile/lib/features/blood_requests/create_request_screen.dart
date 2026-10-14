@@ -12,6 +12,7 @@ import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../auth/auth_widgets.dart';
+import '../home/shell_page_header.dart';
 import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
 import 'donor_home_screen.dart';
@@ -21,9 +22,11 @@ class CreateRequestScreen extends ConsumerStatefulWidget {
     super.key,
     this.initialPriority,
     this.initialBloodGroup,
+    this.embedded = false,
   });
   final String? initialPriority;
   final String? initialBloodGroup;
+  final bool embedded;
 
   @override
   ConsumerState<CreateRequestScreen> createState() =>
@@ -32,6 +35,7 @@ class CreateRequestScreen extends ConsumerStatefulWidget {
 
 class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _myRequestsKey = GlobalKey<_MyRequestsSectionState>();
   final _units = TextEditingController(text: '2');
   final _reason = TextEditingController();
   late String _group;
@@ -109,6 +113,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
         if (!hospitalStaff) _hospitalId = null;
         _submitKey = newIdempotencyKey();
       });
+      _myRequestsKey.currentState?.showAll();
       _reload();
     } catch (e) {
       final api = ApiError.from(e);
@@ -136,54 +141,60 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
     final doctorsValue = hospitalStaff
         ? ref.watch(doctorChoicesProvider)
         : null;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Create blood request')),
-      body: RefreshableScroll(
-        onRefresh: () async {
-          ref.invalidate(hospitalChoicesProvider);
-          if (hospitalStaff) ref.invalidate(doctorChoicesProvider);
-          _reload();
-          await ref
-              .read(myBloodRequestsProvider.future)
-              .then((_) {}, onError: (_) {});
-        },
-        child: ContentWidth(
-          maxWidth: 900,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AsyncView(
-                  value: hospitalsValue,
-                  onRetry: () => ref.invalidate(hospitalChoicesProvider),
-                  loadingMessage: 'Loading active hospitals...',
-                  data: (hospitals) {
-                    if (hospitals.isEmpty) {
-                      return const EmptyView(
-                        icon: Icons.local_hospital_outlined,
-                        message: 'No active hospitals are available.',
-                      );
-                    }
-                    if (hospitalStaff && _hospitalId == null) {
-                      final email = user?.email.toLowerCase();
-                      for (final h in hospitals) {
-                        if (h.email.toLowerCase() == email) {
-                          _hospitalId = h.id;
-                          break;
-                        }
+    final body = RefreshableScroll(
+      onRefresh: () async {
+        ref.invalidate(hospitalChoicesProvider);
+        if (hospitalStaff) ref.invalidate(doctorChoicesProvider);
+        _reload();
+        await ref
+            .read(myBloodRequestsProvider.future)
+            .then((_) {}, onError: (_) {});
+      },
+      child: ContentWidth(
+        maxWidth: 900,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.embedded) ...[
+                const ShellPageHeader(title: 'Create blood request'),
+                const SizedBox(height: 16),
+              ],
+              AsyncView(
+                value: hospitalsValue,
+                onRetry: () => ref.invalidate(hospitalChoicesProvider),
+                loadingMessage: 'Loading active hospitals...',
+                data: (hospitals) {
+                  if (hospitals.isEmpty) {
+                    return const EmptyView(
+                      icon: Icons.local_hospital_outlined,
+                      message: 'No active hospitals are available.',
+                    );
+                  }
+                  if (hospitalStaff && _hospitalId == null) {
+                    final email = user?.email.toLowerCase();
+                    for (final h in hospitals) {
+                      if (h.email.toLowerCase() == email) {
+                        _hospitalId = h.id;
+                        break;
                       }
                     }
-                    return _form(hospitalStaff, hospitals, doctorsValue);
-                  },
-                ),
-                const SizedBox(height: 20),
-                const MyRequestsSection(),
-              ],
-            ),
+                  }
+                  return _form(hospitalStaff, hospitals, doctorsValue);
+                },
+              ),
+              const SizedBox(height: 20),
+              MyRequestsSection(key: _myRequestsKey),
+            ],
           ),
         ),
       ),
+    );
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create blood request')),
+      body: body,
     );
   }
 
@@ -201,6 +212,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _hospitalId,
               decoration: InputDecoration(
                 labelText: hospitalStaff ? 'Your hospital' : 'Hospital *',
@@ -226,6 +238,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
                     onRetry: () => ref.invalidate(doctorChoicesProvider),
                   ),
                   data: (doctors) => DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _doctorId,
                     decoration: const InputDecoration(
                       labelText: 'Approving doctor *',
@@ -252,6 +265,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
               children: [
                 Expanded(
                   child: DropdownButtonFormField<String>(
+                    isExpanded: true,
                     initialValue: _group,
                     decoration: const InputDecoration(labelText: 'Blood group'),
                     items: [
@@ -280,6 +294,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _priority,
               decoration: const InputDecoration(labelText: 'Priority'),
               items: const [
@@ -337,6 +352,10 @@ class MyRequestsSection extends ConsumerStatefulWidget {
 class _MyRequestsSectionState extends ConsumerState<MyRequestsSection> {
   String _status = 'All';
   String? _busy;
+
+  void showAll() {
+    if (_status != 'All') setState(() => _status = 'All');
+  }
 
   void _reload() {
     ref.invalidate(myBloodRequestsProvider);

@@ -141,78 +141,83 @@ class RecommendationsScreen extends ConsumerWidget {
               .read(notificationsProvider.future)
               .catchError((_) => <AppNotification>[]);
         },
-        child: AsyncView(
-          value: value,
-          onRetry: () => ref.invalidate(notificationsProvider),
-          data: (all) {
-            final byKind = {
-              for (final k in recommendationKinds)
-                k: all.where((n) => n.type == k.type).toList(),
-            };
-            if (byKind.values.every((l) => l.isEmpty)) {
-              return const EmptyView(
-                icon: Icons.auto_awesome_outlined,
-                title: 'No recommendations',
-                message: 'The inventory analysis has not flagged anything for your hospital. Run it from Home.',
-              );
-            }
-            return ContentWidth(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Alerts from the inventory analysis (scheduled every 30 minutes or run by a hospital). '
-                      'Repeated alerts are not sent again for 12 hours. The analysis only recommends; your staff decide.',
-                      style: TextStyle(fontSize: 12, color: AppColors.slate500),
-                    ),
-                    const SizedBox(height: 12),
-                    for (final entry in byKind.entries)
-                      if (entry.value.isNotEmpty) ...[
-                        SectionCard(
-                          title: '${entry.key.title} (${entry.value.length})',
-                          icon: entry.key.icon,
-                          child: Column(
-                            children: [
-                              for (final n in entry.value)
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  onTap: () =>
-                                      _open(context, ref, n, entry.key),
-                                  leading: recommendationBloodGroup(n) == null
-                                      ? Icon(
-                                          entry.key.icon,
-                                          color: entry.key.color,
-                                        )
-                                      : BloodGroupBadge(
-                                          recommendationBloodGroup(n)!,
-                                        ),
-                                  title: Text(
-                                    n.title,
-                                    style: TextStyle(
-                                      fontWeight: n.isRead
-                                          ? FontWeight.w500
-                                          : FontWeight.w700,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    '${n.message}\n${Fmt.sriLankaDateTime(n.createdAt)}',
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  isThreeLine: true,
-                                ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                  ],
+        child: ContentWidth(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Alerts from the inventory analysis (scheduled every 30 minutes or run by a hospital). '
+                  'Repeated alerts are not sent again for 12 hours. The analysis only recommends; your staff decide.',
+                  style: TextStyle(fontSize: 12, color: AppColors.slate500),
                 ),
-              ),
-            );
-          },
+                const SizedBox(height: 12),
+                AsyncView(
+                  value: value,
+                  onRetry: () => ref.invalidate(notificationsProvider),
+                  data: (all) {
+                    final byKind = {
+                      for (final k in recommendationKinds)
+                        k: all.where((n) => n.type == k.type).toList(),
+                    };
+                    if (byKind.values.every((l) => l.isEmpty)) {
+                      return const EmptyView(
+                        icon: Icons.auto_awesome_outlined,
+                        title: 'No recommendations',
+                        message: 'The inventory analysis has not flagged anything for your hospital. Run it from Home.',
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final entry in byKind.entries)
+                          if (entry.value.isNotEmpty) ...[
+                            SectionCard(
+                              title: '${entry.key.title} (${entry.value.length})',
+                              icon: entry.key.icon,
+                              child: Column(
+                                children: [
+                                  for (final n in entry.value)
+                                    ListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      onTap: () =>
+                                          _open(context, ref, n, entry.key),
+                                      leading: recommendationBloodGroup(n) == null
+                                          ? Icon(
+                                              entry.key.icon,
+                                              color: entry.key.color,
+                                            )
+                                          : BloodGroupBadge(
+                                              recommendationBloodGroup(n)!,
+                                            ),
+                                      title: Text(
+                                        n.title,
+                                        style: TextStyle(
+                                          fontWeight: n.isRead
+                                              ? FontWeight.w500
+                                              : FontWeight.w700,
+                                        ),
+                                      ),
+                                      subtitle: Text(
+                                        '${n.message}\n${Fmt.sriLankaDateTime(n.createdAt)}',
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      isThreeLine: true,
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

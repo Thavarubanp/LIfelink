@@ -347,5 +347,8 @@ class ContentWidth extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) =>
-      Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child));
+      Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child),
+      );
 }

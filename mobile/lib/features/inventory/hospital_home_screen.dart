@@ -10,6 +10,7 @@ import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../analysis/analysis_panel.dart';
 import '../emergencies/emergency_repository.dart';
+import '../home/shell_page_header.dart';
 import '../notifications/notifications_repository.dart';
 import '../profile/profile_repository.dart';
 import 'inventory_models.dart';
@@ -24,8 +25,12 @@ class HospitalHomeScreen extends ConsumerWidget {
     ref.invalidate(hospitalInventoryProvider);
     ref.invalidate(criticalEmergenciesProvider);
     await Future.wait([
-      ref.read(hospitalInventoryProvider.future).catchError((_) => <InventoryItem>[]),
-      ref.read(criticalEmergenciesProvider.future).catchError((_) => <EmergencyRequest>[]),
+      ref
+          .read(hospitalInventoryProvider.future)
+          .catchError((_) => <InventoryItem>[]),
+      ref
+          .read(criticalEmergenciesProvider.future)
+          .catchError((_) => <EmergencyRequest>[]),
     ]);
   }
 
@@ -36,15 +41,10 @@ class HospitalHomeScreen extends ConsumerWidget {
     final emergencies = ref.watch(criticalEmergenciesProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(hospital.value?.name ?? 'Hospital'),
-        actions: [
-          IconButton(
-            tooltip: 'Scan packet',
-            icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => context.push(AppRoutes.hospitalScan),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'Scan packet',
+        onPressed: () => context.push(AppRoutes.hospitalScan),
+        child: const Icon(Icons.qr_code_scanner),
       ),
       body: RefreshIndicator(
         color: AppColors.red600,
@@ -57,6 +57,8 @@ class HospitalHomeScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  ShellPageHeader(title: hospital.value?.name ?? 'Hospital'),
+                  const SizedBox(height: 16),
                   _actions(context),
                   const SizedBox(height: 16),
                   _kpis(context, inventory, emergencies),
@@ -98,26 +100,30 @@ class HospitalHomeScreen extends ConsumerWidget {
   }
 
   Widget _actions(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: () => context.push(AppRoutes.hospitalEmergencies),
-              icon: const Icon(Icons.bolt),
-              label: const Text('Emergencies'),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () => context.go(AppRoutes.hospitalInventory),
-              icon: const Icon(Icons.water_drop_outlined),
-              label: const Text('Inventory'),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Expanded(
+        child: FilledButton.icon(
+          onPressed: () => context.push(AppRoutes.hospitalEmergencies),
+          icon: const Icon(Icons.bolt),
+          label: const Text('Emergencies'),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: OutlinedButton.icon(
+          onPressed: () => context.go(AppRoutes.hospitalInventory),
+          icon: const Icon(Icons.water_drop_outlined),
+          label: const Text('Inventory'),
+        ),
+      ),
+    ],
+  );
 
-  Widget _kpis(BuildContext context, AsyncValue<List<InventoryItem>> inventory, AsyncValue<List<EmergencyRequest>> emergencies) {
+  Widget _kpis(
+    BuildContext context,
+    AsyncValue<List<InventoryItem>> inventory,
+    AsyncValue<List<EmergencyRequest>> emergencies,
+  ) {
     final items = inventory.value ?? const <InventoryItem>[];
     final total = items.fold<int>(0, (sum, i) => sum + i.unitsAvailable);
     final low = items.where((i) => i.isLowStock).toList();
@@ -125,22 +131,30 @@ class HospitalHomeScreen extends ConsumerWidget {
     final cards = [
       _KpiCard(
         label: 'Blood bank stock',
-        value: inventory.isLoading && !inventory.hasValue ? null : '$total units',
+        value: inventory.isLoading && !inventory.hasValue
+            ? null
+            : '$total units',
         caption: 'Across ${items.length} blood groups',
         color: AppColors.emerald600,
       ),
       _KpiCard(
         key: const Key('kpi-emergencies'),
         label: 'Critical emergencies',
-        value: emergencies.isLoading && !emergencies.hasValue ? null : '${critical.length}',
-        caption: emergencies.hasError ? 'Could not load' : 'Active broadcasts · details',
+        value: emergencies.isLoading && !emergencies.hasValue
+            ? null
+            : '${critical.length}',
+        caption: emergencies.hasError
+            ? 'Could not load'
+            : 'Active broadcasts · details',
         color: AppColors.rose600,
         onTap: () => _showEmergencies(context, critical),
       ),
       _KpiCard(
         key: const Key('kpi-low-stock'),
         label: 'Low stock',
-        value: inventory.isLoading && !inventory.hasValue ? null : '${low.length}',
+        value: inventory.isLoading && !inventory.hasValue
+            ? null
+            : '${low.length}',
         caption: 'Below threshold · details',
         color: AppColors.amber600,
         onTap: () => _showLowStock(context, low),
@@ -150,59 +164,101 @@ class HospitalHomeScreen extends ConsumerWidget {
       builder: (context, c) {
         final columns = c.maxWidth >= 600 ? 3 : 1;
         if (columns == 1) {
-          return Column(children: [for (final card in cards) Padding(padding: const EdgeInsets.only(bottom: 10), child: card)]);
+          return Column(
+            children: [
+              for (final card in cards)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: card,
+                ),
+            ],
+          );
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (var i = 0; i < cards.length; i++) ...[if (i > 0) const SizedBox(width: 10), Expanded(child: cards[i])],
+            for (var i = 0; i < cards.length; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(child: cards[i]),
+            ],
           ],
         );
       },
     );
   }
 
-  void _showEmergencies(BuildContext context, List<EmergencyRequest> list) => showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        builder: (ctx) => _DetailSheet(
-          title: 'Critical emergencies (${list.length})',
-          footer: TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              context.push(AppRoutes.hospitalEmergencies);
-            },
-            child: const Text('Open emergencies'),
-          ),
-          children: list.isEmpty
-              ? [const Padding(padding: EdgeInsets.all(16), child: Text('There are no active critical emergencies.'))]
-              : [
-                  for (final e in list)
-                    ListTile(
-                      leading: BloodGroupBadge(e.bloodGroup),
-                      title: Text('${e.hospitalName} · ${e.unitsRequired} unit(s)'),
-                      subtitle: Text('${e.reason.isEmpty ? '' : '${e.reason}\n'}${Fmt.sriLankaDateTime(e.createdAt)} · ${e.status}'),
-                      isThreeLine: e.reason.isNotEmpty,
-                    ),
-                ],
-        ),
-      );
+  void _showEmergencies(
+    BuildContext context,
+    List<EmergencyRequest> list,
+  ) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (ctx) => _DetailSheet(
+      title: 'Critical emergencies (${list.length})',
+      footer: TextButton(
+        onPressed: () {
+          Navigator.of(ctx).pop();
+          context.push(AppRoutes.hospitalEmergencies);
+        },
+        child: const Text('Open emergencies'),
+      ),
+      children: list.isEmpty
+          ? [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('There are no active critical emergencies.'),
+              ),
+            ]
+          : [
+              for (final e in list)
+                ListTile(
+                  leading: BloodGroupBadge(e.bloodGroup),
+                  title: Text('${e.hospitalName} · ${e.unitsRequired} unit(s)'),
+                  subtitle: Text(
+                    '${e.reason.isEmpty ? '' : '${e.reason}\n'}${Fmt.sriLankaDateTime(e.createdAt)} · ${e.status}',
+                  ),
+                  isThreeLine: e.reason.isNotEmpty,
+                ),
+            ],
+    ),
+  );
 
-  void _showLowStock(BuildContext context, List<InventoryItem> list) => showModalBottomSheet<void>(
+  void _showLowStock(BuildContext context, List<InventoryItem> list) =>
+      showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
         builder: (ctx) => _DetailSheet(
           title: 'Low stock (${list.length})',
           subtitle: 'A blood group is low when its available units are below its minimum threshold.',
           children: list.isEmpty
-              ? [const Padding(padding: EdgeInsets.all(16), child: Text('No blood group is below its threshold.'))]
+              ? [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('No blood group is below its threshold.'),
+                  ),
+                ]
               : [
                   for (final i in list)
                     ListTile(
-                      leading: const Icon(Icons.warning_amber_rounded, color: AppColors.amber500),
-                      title: Row(children: [BloodGroupBadge(i.bloodGroup), const SizedBox(width: 8), Text('${i.unitsAvailable} unit(s)')]),
+                      leading: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppColors.amber500,
+                      ),
+                      title: Row(
+                        children: [
+                          BloodGroupBadge(i.bloodGroup),
+                          const SizedBox(width: 8),
+                          Text('${i.unitsAvailable} unit(s)'),
+                        ],
+                      ),
                       subtitle: Text('Threshold ${i.minimumThreshold}'),
-                      trailing: const Text('View', style: TextStyle(color: AppColors.red600, fontWeight: FontWeight.w600)),
+                      trailing: const Text(
+                        'View',
+                        style: TextStyle(
+                          color: AppColors.red600,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       onTap: () {
                         Navigator.of(ctx).pop();
                         context.go(inventoryGroupPath(i.bloodGroup));
@@ -214,10 +270,18 @@ class HospitalHomeScreen extends ConsumerWidget {
 }
 
 /// Inventory tab opened on one blood group.
-String inventoryGroupPath(String group) => '${AppRoutes.hospitalInventory}?group=${Uri.encodeQueryComponent(group)}';
+String inventoryGroupPath(String group) =>
+    '${AppRoutes.hospitalInventory}?group=${Uri.encodeQueryComponent(group)}';
 
 class _KpiCard extends StatelessWidget {
-  const _KpiCard({super.key, required this.label, required this.value, required this.caption, required this.color, this.onTap});
+  const _KpiCard({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.caption,
+    required this.color,
+    this.onTap,
+  });
 
   final String label;
   final String? value;
@@ -227,33 +291,51 @@ class _KpiCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.slate500)),
-                      const SizedBox(height: 6),
-                      value == null
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : Text(value!, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                      const SizedBox(height: 4),
-                      Text(caption, style: TextStyle(fontSize: 12, color: color)),
-                    ],
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.slate500,
+                    ),
                   ),
-                ),
-                if (onTap != null) const Icon(Icons.chevron_right, color: AppColors.slate400),
-              ],
+                  const SizedBox(height: 6),
+                  value == null
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          value!,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                  const SizedBox(height: 4),
+                  Text(caption, style: TextStyle(fontSize: 12, color: color)),
+                ],
+              ),
             ),
-          ),
+            if (onTap != null)
+              const Icon(Icons.chevron_right, color: AppColors.slate400),
+          ],
         ),
-      );
+      ),
+    ),
+  );
 }
 
 class _StockGrid extends StatelessWidget {
@@ -263,17 +345,23 @@ class _StockGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, c) {
-          final columns = c.maxWidth >= 600 ? 4 : 2;
-          const gap = 10.0;
-          final width = (c.maxWidth - gap * (columns - 1)) / columns;
-          return Wrap(
-            spacing: gap,
-            runSpacing: gap,
-            children: [for (final i in items) SizedBox(width: width, child: _StockTile(item: i))],
-          );
-        },
+    builder: (context, c) {
+      final columns = c.maxWidth >= 600 ? 4 : 2;
+      const gap = 10.0;
+      final width = (c.maxWidth - gap * (columns - 1)) / columns;
+      return Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        children: [
+          for (final i in items)
+            SizedBox(
+              width: width,
+              child: _StockTile(item: i),
+            ),
+        ],
       );
+    },
+  );
 }
 
 class _StockTile extends StatelessWidget {
@@ -301,17 +389,33 @@ class _StockTile extends StatelessWidget {
                 children: [
                   BloodGroupBadge(item.bloodGroup),
                   const Spacer(),
-                  StatusBadge(item.isLowStock ? 'Low' : 'Optimal',
-                      variant: item.isLowStock ? BadgeVariant.warning : BadgeVariant.success),
+                  StatusBadge(
+                    item.isLowStock ? 'Low' : 'Optimal',
+                    variant: item.isLowStock
+                        ? BadgeVariant.warning
+                        : BadgeVariant.success,
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('${item.unitsAvailable}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  Text(
+                    '${item.unitsAvailable}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const Spacer(),
-                  Text('/ $max units', style: const TextStyle(fontSize: 11, color: AppColors.slate500)),
+                  Text(
+                    '/ $max units',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.slate500,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
@@ -320,8 +424,12 @@ class _StockTile extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: fill,
                   minHeight: 6,
-                  color: item.isLowStock ? AppColors.amber500 : AppColors.emerald600,
-                  backgroundColor: dark ? AppColors.slate700 : AppColors.slate200,
+                  color: item.isLowStock
+                      ? AppColors.amber500
+                      : AppColors.emerald600,
+                  backgroundColor: dark
+                      ? AppColors.slate700
+                      : AppColors.slate200,
                 ),
               ),
             ],
@@ -333,7 +441,12 @@ class _StockTile extends StatelessWidget {
 }
 
 class _DetailSheet extends StatelessWidget {
-  const _DetailSheet({required this.title, required this.children, this.subtitle, this.footer});
+  const _DetailSheet({
+    required this.title,
+    required this.children,
+    this.subtitle,
+    this.footer,
+  });
 
   final String title;
   final String? subtitle;
@@ -342,25 +455,33 @@ class _DetailSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-              ),
-              if (subtitle != null)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(subtitle!, style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
-                ),
-              Flexible(child: ListView(shrinkWrap: true, children: children)),
-              ?footer,
-            ],
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Text(
+              title,
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
           ),
-        ),
-      );
+          if (subtitle != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                subtitle!,
+                style: const TextStyle(fontSize: 12, color: AppColors.slate500),
+              ),
+            ),
+          Flexible(child: ListView(shrinkWrap: true, children: children)),
+          ?footer,
+        ],
+      ),
+    ),
+  );
 }

@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/config/constants.dart';
-import '../../core/auth/auth_controller.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
+import '../home/shell_page_header.dart';
 import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
 
@@ -35,21 +35,8 @@ class _PublicRequestsScreenState extends ConsumerState<PublicRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     final value = ref.watch(publicBloodRequestsProvider(_filter));
-    final user = ref.watch(authControllerProvider).user;
-    final mayCreate = user?.primaryRole == Roles.user;
     final term = _query.trim().toLowerCase();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Available requests'),
-        actions: [
-          if (mayCreate)
-            IconButton(
-              tooltip: 'Create blood request',
-              onPressed: () => context.push(AppRoutes.createRequest),
-              icon: const Icon(Icons.add_circle_outline),
-            ),
-        ],
-      ),
       body: RefreshableScroll(
         onRefresh: _refresh,
         child: ContentWidth(
@@ -58,6 +45,8 @@ class _PublicRequestsScreenState extends ConsumerState<PublicRequestsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                const ShellPageHeader(title: 'Available requests'),
+                const SizedBox(height: 16),
                 SearchField(
                   hint: 'Search hospital, blood group or reason',
                   onChanged: (v) => setState(() => _query = v),

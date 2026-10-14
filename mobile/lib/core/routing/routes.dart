@@ -41,6 +41,7 @@ class AppRoutes {
   // Donor / patient (Step 2: Vidya)
   static const donorHome = '/donor';
   static const donorRequests = '/donor/requests';
+  static const donorCreate = '/donor/create';
   static const donorAcceptances = '/donor/acceptances';
   static const donorMore = '/donor/more';
   static const createRequest = '/donor/requests/create';
