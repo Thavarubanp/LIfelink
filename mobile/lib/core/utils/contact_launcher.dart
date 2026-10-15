@@ -58,7 +58,8 @@ class ContactLauncher {
     } catch (_) {
       opened = false;
     }
-    if (!opened && context.mounted)
+    if (!opened && context.mounted) {
       showSnack(context, noApp, type: SnackType.warning);
+    }
   }
 }

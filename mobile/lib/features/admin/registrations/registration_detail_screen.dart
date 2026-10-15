@@ -145,11 +145,12 @@ class _RegistrationDetailScreenState
             final h = all
                 .where((x) => x.hospitalId == widget.hospitalId)
                 .firstOrNull;
-            if (h == null)
+            if (h == null) {
               return const EmptyView(
                 icon: Icons.search_off,
                 message: 'This hospital registration was not found.',
               );
+            }
             return ContentWidth(maxWidth: 720, child: _body(h));
           },
         ),

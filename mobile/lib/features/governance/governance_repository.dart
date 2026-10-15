@@ -70,8 +70,9 @@ class GovernanceStatus {
 /// Appeal rules from CreateAppealDto: 10–2000 characters.
 String? appealReasonError(String text) {
   final t = text.trim();
-  if (t.length < 10)
+  if (t.length < 10) {
     return 'Please explain your appeal in at least 10 characters.';
+  }
   if (t.length > 2000) return 'The reason cannot exceed 2000 characters.';
   return null;
 }

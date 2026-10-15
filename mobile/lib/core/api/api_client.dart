@@ -77,8 +77,9 @@ class ApiClient {
       }
     }
     final key = options.extra['idempotencyKey'];
-    if (key is String && key.isNotEmpty)
+    if (key is String && key.isNotEmpty) {
       options.headers['Idempotency-Key'] = key;
+    }
     handler.next(options);
   }
 

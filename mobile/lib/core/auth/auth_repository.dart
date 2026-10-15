@@ -110,8 +110,9 @@ class AuthRepository {
       data['resetSessionToken'] ??
           (body is Map ? body['resetSessionToken'] : null),
     );
-    if (token.isEmpty)
+    if (token.isEmpty) {
       throw const ApiError('Verification failed. No reset token issued.');
+    }
     return token;
   }
 

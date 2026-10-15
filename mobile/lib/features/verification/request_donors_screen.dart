@@ -92,12 +92,13 @@ class RequestDonorsScreen extends ConsumerWidget {
           ref.read(verificationRepositoryProvider).release(a.id, text),
     );
     _reload(ref);
-    if (sent && context.mounted)
+    if (sent && context.mounted) {
       showSnack(
         context,
         'The slot is available to other donors again.',
         title: 'Reservation released',
       );
+    }
   }
 
   Future<void> _record(

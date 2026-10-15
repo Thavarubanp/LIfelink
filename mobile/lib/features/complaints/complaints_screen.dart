@@ -184,8 +184,9 @@ class _ComplaintsScreenState extends ConsumerState<ComplaintsScreen> {
       ref.invalidate(myComplaintsProvider);
     } catch (e) {
       if (ApiError.from(e).isConflict) ref.invalidate(myComplaintsProvider);
-      if (context.mounted)
+      if (context.mounted) {
         showSnack(context, ApiError.from(e).message, type: SnackType.error);
+      }
     } finally {
       if (mounted) setState(() => _deletingId = null);
     }

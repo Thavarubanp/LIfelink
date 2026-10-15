@@ -156,8 +156,9 @@ class _ReasonDialogState extends State<_ReasonDialog> {
       ),
       FilledButton(
         onPressed: () {
-          if (_formKey.currentState!.validate())
+          if (_formKey.currentState!.validate()) {
             Navigator.of(context).pop(_controller.text.trim());
+          }
         },
         child: Text(widget.confirmLabel),
       ),

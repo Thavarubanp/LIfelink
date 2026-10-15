@@ -246,12 +246,13 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
       helpText: from ? 'From (Sri Lanka date)' : 'To (Sri Lanka date)',
     );
     if (!mounted) return;
-    if (picked != null)
+    if (picked != null) {
       _set(
         from
             ? _q.copyWith(from: picked, page: 1)
             : _q.copyWith(to: picked, page: 1),
       );
+    }
   }
 
   @override

@@ -208,11 +208,12 @@ class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
                               ].any((s) => s.toLowerCase().contains(term)),
                         )
                         .toList();
-                    if (list.isEmpty)
+                    if (list.isEmpty) {
                       return const EmptyView(
                         icon: Icons.people_outline,
                         message: 'No users match.',
                       );
+                    }
                     return Card(
                       child: Column(
                         children: [
@@ -375,11 +376,12 @@ class AdminUserProfileScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(adminUsersProvider),
           data: (all) {
             final u = all.where((x) => x.userId == userId).firstOrNull;
-            if (u == null)
+            if (u == null) {
               return const EmptyView(
                 icon: Icons.search_off,
                 message: 'This user was not found.',
               );
+            }
             final extra = actions?.call(context, ref, u) ?? const <Widget>[];
             return ContentWidth(
               maxWidth: 720,
@@ -534,11 +536,12 @@ class _AdminHospitalsScreenState extends ConsumerState<AdminHospitalsScreen> {
                               b.name.toLowerCase(),
                             ),
                           );
-                    if (list.isEmpty)
+                    if (list.isEmpty) {
                       return const EmptyView(
                         icon: Icons.local_hospital_outlined,
                         message: 'No hospitals match.',
                       );
+                    }
                     return Card(
                       child: Column(
                         children: [
@@ -605,11 +608,12 @@ class AdminHospitalProfileScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(adminHospitalsProvider),
           data: (all) {
             final h = all.where((x) => x.hospitalId == hospitalId).firstOrNull;
-            if (h == null)
+            if (h == null) {
               return const EmptyView(
                 icon: Icons.search_off,
                 message: 'This hospital was not found.',
               );
+            }
             final extra = actions?.call(context, ref, h) ?? const <Widget>[];
             return ContentWidth(
               maxWidth: 720,

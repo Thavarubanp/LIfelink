@@ -299,11 +299,12 @@ class AdminAppealDetailScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(adminAppealsProvider(status)),
           data: (list) {
             final a = list.where((x) => x.id == appealId).firstOrNull;
-            if (a == null)
+            if (a == null) {
               return const EmptyView(
                 icon: Icons.search_off,
                 message: 'This appeal was not found.',
               );
+            }
             return ContentWidth(
               maxWidth: 720,
               child: Padding(

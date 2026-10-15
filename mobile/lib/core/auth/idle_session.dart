@@ -160,15 +160,17 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard>
     // While the warning is open only its buttons count
     if (_remaining != null ||
         _paused ||
-        !ref.read(authControllerProvider).isSignedIn)
+        !ref.read(authControllerProvider).isSignedIn) {
       return;
+    }
     final activity = ref.read(sessionActivityProvider);
     final now = activity.nowMs;
     if (now - _lastTouchMs < 1000) return;
     _lastTouchMs = now;
     if (now - activity.lastConfirmedMs >=
-        AppConstants.heartbeatInterval.inMilliseconds)
+        AppConstants.heartbeatInterval.inMilliseconds) {
       _heartbeat();
+    }
   }
 
   Future<void> _signOutForInactivity() async {

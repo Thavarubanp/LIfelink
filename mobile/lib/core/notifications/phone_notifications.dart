@@ -73,8 +73,9 @@ class PhoneNotifications {
       },
     );
     final launch = await _plugin.getNotificationAppLaunchDetails();
-    if (launch?.didNotificationLaunchApp == true)
+    if (launch?.didNotificationLaunchApp == true) {
       launchRoute = launch?.notificationResponse?.payload;
+    }
     _ready = true;
   }
 
@@ -203,13 +204,15 @@ class PhoneNotifications {
           routeForNotificationType(n.type),
         );
       }
-      if (result.marker.lastSeenId != null)
+      if (result.marker.lastSeenId != null) {
         await prefs.setString(_markerIdKey, result.marker.lastSeenId!);
-      if (result.marker.lastSeenAt != null)
+      }
+      if (result.marker.lastSeenAt != null) {
         await prefs.setString(
           _markerAtKey,
           result.marker.lastSeenAt!.toIso8601String(),
         );
+      }
 
       if (prefs.getBool(_isAdminKey) == true) {
         var now = adminAttention;
@@ -231,13 +234,14 @@ class PhoneNotifications {
             ? AttentionSnapshot.fromList(saved.map(int.parse).toList())
             : null;
         final summary = attentionIncrease(before, now);
-        if (summary != null)
+        if (summary != null) {
           await show(
             9001,
             'Needs your attention',
             summary,
             routeForNotificationType('AdminAttention'),
           );
+        }
         await prefs.setStringList(
           _attentionKey,
           now.toList().map((e) => '$e').toList(),

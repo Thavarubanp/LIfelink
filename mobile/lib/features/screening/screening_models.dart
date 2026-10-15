@@ -134,8 +134,9 @@ class AssistantReply {
 }
 
 bool screeningPartApplies(ScreeningPart part, Map<String, dynamic> values) {
-  if (part.femaleOnly && '${values['P_GENDER']}'.toLowerCase() != 'female')
+  if (part.femaleOnly && '${values['P_GENDER']}'.toLowerCase() != 'female') {
     return false;
+  }
   final rule = part.showIf;
   if (rule == null) return true;
   final parent = values[rule['field']];

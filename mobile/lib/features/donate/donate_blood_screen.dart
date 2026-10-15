@@ -67,22 +67,24 @@ class _DonateBloodScreenState extends ConsumerState<DonateBloodScreen> {
     setState(() => _withdrawing = d.id);
     try {
       await ref.read(donateRepositoryProvider).withdraw(d.id);
-      if (mounted)
+      if (mounted) {
         showSnack(
           context,
           'The packets are back in your inventory.',
           title: 'Donation withdrawn',
         );
+      }
       _reload();
     } catch (e) {
       final api = ApiError.from(e);
-      if (mounted)
+      if (mounted) {
         showSnack(
           context,
           api.message,
           type: SnackType.error,
           title: 'Could not withdraw',
         );
+      }
       // The doctor decided at the same moment: show the current status
       if (api.isConflict) _reload();
     } finally {

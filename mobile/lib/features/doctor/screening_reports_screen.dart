@@ -269,13 +269,14 @@ class _ScreeningReportDetailScreenState
           ref.read(screeningRepositoryProvider).approve(r.id, text),
     );
     _reload();
-    if (sent && mounted)
+    if (sent && mounted) {
       showSnack(
         context,
         'A donation slot is reserved for this donor.',
         type: SnackType.success,
         title: 'Donor approved',
       );
+    }
   }
 
   Future<void> _reject(ScreeningReport r) async {
@@ -293,12 +294,13 @@ class _ScreeningReportDetailScreenState
           ref.read(screeningRepositoryProvider).reject(r.id, text),
     );
     _reload();
-    if (sent && mounted)
+    if (sent && mounted) {
       showSnack(
         context,
         'The donor will see your reason. The request stays open.',
         title: 'Donor not approved',
       );
+    }
   }
 
   Future<void> _record(ScreeningReport r) async {
@@ -341,12 +343,13 @@ class _ScreeningReportDetailScreenState
           .release(r.acceptanceId, text),
     );
     _reload();
-    if (sent && mounted)
+    if (sent && mounted) {
       showSnack(
         context,
         'The slot is available to other donors again.',
         title: 'Reservation released',
       );
+    }
   }
 
   @override
@@ -368,11 +371,12 @@ class _ScreeningReportDetailScreenState
             final versions =
                 all.where((r) => r.acceptanceId == widget.acceptanceId).toList()
                   ..sort((a, b) => a.version.compareTo(b.version));
-            if (versions.isEmpty)
+            if (versions.isEmpty) {
               return const EmptyView(
                 icon: Icons.search_off,
                 message: 'This screening report was not found.',
               );
+            }
             final selected = versions.firstWhere(
               (v) => v.version == _selectedVersion,
               orElse: () => versions.last,

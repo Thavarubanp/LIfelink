@@ -3,19 +3,21 @@ library;
 
 /// The payload of a response: `data` when the body is an ApiResponse wrapper, otherwise the body.
 Object? unwrap(Object? body) {
-  if (body is Map && body.containsKey('success') && body.containsKey('data'))
+  if (body is Map && body.containsKey('success') && body.containsKey('data')) {
     return body['data'];
+  }
   return body;
 }
 
 /// A list payload (empty when missing).
 List<Map<String, dynamic>> unwrapList(Object? body) {
   final data = unwrap(body);
-  if (data is List)
+  if (data is List) {
     return data
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+  }
   return const [];
 }
 

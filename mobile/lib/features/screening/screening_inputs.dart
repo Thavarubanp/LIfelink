@@ -79,13 +79,14 @@ class _PartInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (part.type == 'date')
+    if (part.type == 'date') {
       return _DateInput(
         part: part,
         value: value,
         disabled: disabled,
         onChanged: onChanged,
       );
+    }
     if (part.type == 'number') {
       return TextFormField(
         initialValue: value?.toString(),
@@ -145,12 +146,13 @@ class _PartInput extends StatelessWidget {
         ],
       );
     }
-    if (part.type == 'trips')
+    if (part.type == 'trips') {
       return _TripsInput(
         value: value,
         disabled: disabled,
         onChanged: onChanged,
       );
+    }
     if (part.type == 'confirm') {
       return CheckboxListTile(
         contentPadding: EdgeInsets.zero,

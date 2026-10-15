@@ -143,8 +143,9 @@ class DoctorForm {
 
     put('firstName', Validators.name(firstName, 'First name'));
     put('lastName', Validators.name(lastName, 'Last name'));
-    if (!RegExp(r'^\d{10}$').hasMatch(phoneNumber.trim()))
+    if (!RegExp(r'^\d{10}$').hasMatch(phoneNumber.trim())) {
       e['phoneNumber'] = 'Phone number must be exactly 10 digits.';
+    }
     final slmc = licenseNumber.trim();
     if (slmc.isEmpty) {
       e['licenseNumber'] = 'SLMC number is required.';
@@ -155,8 +156,9 @@ class DoctorForm {
     )) {
       e['licenseNumber'] = 'A doctor with this SLMC number already exists.';
     }
-    if (specialization.trim().length > 100)
+    if (specialization.trim().length > 100) {
       e['specialization'] = 'Specialization cannot exceed 100 characters.';
+    }
     if (isNew) {
       put('email', Validators.email(email));
       put('password', Validators.strongPassword(password));

@@ -192,13 +192,14 @@ Future<void> _suspend(
   if (done == true) {
     onDone();
     ref.read(adminAttentionProvider.notifier).refresh();
-    if (context.mounted)
+    if (context.mounted) {
       showSnack(
         context,
         '$name is suspended and has been notified.',
         type: SnackType.success,
         title: 'Suspended',
       );
+    }
   }
 }
 
@@ -236,12 +237,13 @@ class _ReinstateButtonState extends ConsumerState<_ReinstateButton> {
       await ref
           .read(adminAccountRepositoryProvider)
           .reinstate(widget.kind, widget.id);
-      if (mounted)
+      if (mounted) {
         showSnack(
           context,
           '${widget.name} has been reinstated.',
           type: SnackType.success,
         );
+      }
     } catch (e) {
       if (mounted) showErrorSnack(context, e, title: 'Not reinstated');
     } finally {

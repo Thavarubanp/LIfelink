@@ -221,13 +221,14 @@ class _DoctorRequestsScreenState extends ConsumerState<DoctorRequestsScreen> {
           ref.read(verificationRepositoryProvider).approve(r.id, text),
     );
     _reload();
-    if (sent && mounted)
+    if (sent && mounted) {
       showSnack(
         context,
         'The request is now open to eligible donors.',
         type: SnackType.success,
         title: 'Request approved',
       );
+    }
   }
 
   Future<void> _reject(ClinicalRequest r) async {
@@ -245,12 +246,13 @@ class _DoctorRequestsScreenState extends ConsumerState<DoctorRequestsScreen> {
           ref.read(verificationRepositoryProvider).reject(r.id, text),
     );
     _reload();
-    if (sent && mounted)
+    if (sent && mounted) {
       showSnack(
         context,
         'The creator will see your rejection message.',
         title: 'Request rejected',
       );
+    }
   }
 
   @override

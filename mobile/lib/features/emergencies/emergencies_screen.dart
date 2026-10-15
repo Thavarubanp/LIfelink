@@ -69,18 +69,20 @@ class _EmergenciesScreenState extends ConsumerState<EmergenciesScreen> {
     setState(() => _acting = true);
     try {
       await action();
-      if (mounted)
+      if (mounted) {
         showSnack(context, 'Emergency $label.', type: SnackType.success);
+      }
       _reload();
     } catch (e) {
       final api = ApiError.from(e);
-      if (mounted)
+      if (mounted) {
         showSnack(
           context,
           api.message,
           type: SnackType.error,
           title: 'Action failed',
         );
+      }
       if (api.isConflict) _reload();
     } finally {
       if (mounted) setState(() => _acting = false);
@@ -163,11 +165,12 @@ class _EmergenciesScreenState extends ConsumerState<EmergenciesScreen> {
                           },
                         )
                         .toList();
-                    if (list.isEmpty)
+                    if (list.isEmpty) {
                       return const EmptyView(
                         icon: Icons.emergency_outlined,
                         message: 'No emergencies here.',
                       );
+                    }
                     return Column(
                       children: [
                         for (final e in list)

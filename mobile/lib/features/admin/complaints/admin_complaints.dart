@@ -330,11 +330,12 @@ class _AdminComplaintsScreenState extends ConsumerState<AdminComplaintsScreen> {
                           ),
                         )
                         .toList();
-                    if (list.isEmpty)
+                    if (list.isEmpty) {
                       return const EmptyView(
                         icon: Icons.report_outlined,
                         message: 'No complaints match these filters.',
                       );
+                    }
                     return Column(
                       children: [
                         for (final c in list)
@@ -419,13 +420,14 @@ class AdminComplaintDetailScreen extends ConsumerWidget {
       ref.invalidate(adminComplaintProvider(complaintId));
       ref.invalidate(adminComplaintsProvider);
       ref.read(adminAttentionProvider.notifier).refresh();
-      if (context.mounted)
+      if (context.mounted) {
         showSnack(
           context,
           'The complainant has been notified.',
           type: SnackType.success,
           title: 'Reply sent',
         );
+      }
     }
   }
 

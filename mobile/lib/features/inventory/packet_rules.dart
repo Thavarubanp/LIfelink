@@ -27,8 +27,9 @@ String? collectedDateError(
 /// Earliest collected date the date picker offers (the oldest date that is not already expired).
 DateTime earliestCollectedDate(int? shelfLifeDays, DateTime today) {
   final t = DateTime(today.year, today.month, today.day);
-  if (shelfLifeDays == null || shelfLifeDays <= 0)
+  if (shelfLifeDays == null || shelfLifeDays <= 0) {
     return DateTime(t.year - 1, t.month, t.day);
+  }
   return t.subtract(Duration(days: shelfLifeDays - 1));
 }
 

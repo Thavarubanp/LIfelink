@@ -69,13 +69,14 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
       _reload();
     } catch (e) {
       final api = ApiError.from(e);
-      if (mounted)
+      if (mounted) {
         showSnack(
           context,
           api.message,
           type: SnackType.error,
           title: 'Action failed',
         );
+      }
       // Accepted, rejected or withdrawn by the other side at the same moment: show the current state
       if (api.isConflict) _reload();
     } finally {
@@ -108,12 +109,13 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
             'Accept ${t.unitsRequested} x ${t.bloodGroup} from ${t.senderHospitalName}?',
         confirmLabel: 'Accept',
       );
-      if (ok)
+      if (ok) {
         await _act(
           () => repo.approve(t.id),
           'Transfer accepted',
           'Packets moved and both inventories updated.',
         );
+      }
     }
   }
 
