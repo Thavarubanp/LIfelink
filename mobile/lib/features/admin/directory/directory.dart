@@ -136,7 +136,9 @@ typedef HospitalActions = List<Widget> Function(
 
 /// Users directory: search and a status filter; each opens the user's profile.
 class AdminUsersScreen extends ConsumerStatefulWidget {
-  const AdminUsersScreen({super.key});
+  const AdminUsersScreen({super.key, this.initialFilter = 'all'});
+
+  final String initialFilter;
 
   @override
   ConsumerState<AdminUsersScreen> createState() => _AdminUsersScreenState();
@@ -144,7 +146,7 @@ class AdminUsersScreen extends ConsumerStatefulWidget {
 
 class _AdminUsersScreenState extends ConsumerState<AdminUsersScreen> {
   String _search = '';
-  String _filter = 'all';
+  late String _filter = widget.initialFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -457,7 +459,9 @@ class AdminUserProfileScreen extends ConsumerWidget {
 
 /// Hospitals directory (approved and suspended hospitals); registrations are on their own screen.
 class AdminHospitalsScreen extends ConsumerStatefulWidget {
-  const AdminHospitalsScreen({super.key});
+  const AdminHospitalsScreen({super.key, this.initialFilter = 'all'});
+
+  final String initialFilter;
 
   @override
   ConsumerState<AdminHospitalsScreen> createState() =>
@@ -466,7 +470,7 @@ class AdminHospitalsScreen extends ConsumerStatefulWidget {
 
 class _AdminHospitalsScreenState extends ConsumerState<AdminHospitalsScreen> {
   String _search = '';
-  String _filter = 'all';
+  late String _filter = widget.initialFilter;
 
   @override
   Widget build(BuildContext context) {

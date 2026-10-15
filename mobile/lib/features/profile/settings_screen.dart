@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -120,7 +121,9 @@ class _PhoneNotificationsTileState extends State<PhoneNotificationsTile> {
               if (!allowed && context.mounted) {
                 showSnack(
                   context,
-                  'Notifications are blocked. Allow them in Settings → Apps → LifeLink → Notifications.',
+                  defaultTargetPlatform == TargetPlatform.iOS
+                      ? 'Notifications are blocked. Open Settings, select LifeLink, and allow Notifications.'
+                      : 'Notifications are blocked. Allow them in Settings → Apps → LifeLink → Notifications.',
                   type: SnackType.warning,
                 );
               }

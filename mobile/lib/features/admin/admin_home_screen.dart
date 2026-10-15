@@ -10,6 +10,19 @@ import '../home/shell_page_header.dart';
 import 'admin_repository.dart';
 import 'attention_controller.dart';
 
+String? adminStatisticDestination(String label) => switch (label) {
+  'Donors / patients' => AppRoutes.adminUsers,
+  'Hospitals' => AppRoutes.adminHospitals,
+  'Doctors' => AppRoutes.adminDoctors,
+  'Active requests' => '${AppRoutes.adminActivity}?tab=blood-requests',
+  'Pending complaints' => AppRoutes.adminComplaints,
+  'Pending registrations' => AppRoutes.adminRegistrations,
+  'Pending appeals' => AppRoutes.adminAppeals,
+  'Suspended users' => '${AppRoutes.adminUsers}?filter=suspended',
+  'Suspended hospitals' => '${AppRoutes.adminHospitals}?filter=suspended',
+  _ => null,
+};
+
 /// Admin home: the nine dashboard numbers.
 class AdminHomeScreen extends ConsumerWidget {
   const AdminHomeScreen({super.key});
@@ -45,11 +58,29 @@ class AdminHomeScreen extends ConsumerWidget {
                     loadingMessage: 'Loading statistics...',
                     data: (s) => StatGrid(
                       actions: {
-                        'Donors / patients': () =>
-                            context.push(AppRoutes.adminUsers),
-                        'Hospitals': () =>
-                            context.push(AppRoutes.adminHospitals),
-                        'Doctors': () => context.push(AppRoutes.adminDoctors),
+                        for (final label in const [
+                          'Donors / patients',
+                          'Hospitals',
+                          'Doctors',
+                          'Active requests',
+                          'Pending complaints',
+                          'Pending registrations',
+                          'Pending appeals',
+                          'Suspended users',
+                          'Suspended hospitals',
+                        ])
+                          label: () {
+                            final destination = adminStatisticDestination(
+                              label,
+                            )!;
+                            if (destination.startsWith(
+                              AppRoutes.adminActivity,
+                            )) {
+                              context.go(destination);
+                            } else {
+                              context.push(destination);
+                            }
+                          },
                       },
                       stats: [
                         (
@@ -119,7 +150,7 @@ class AdminHomeScreen extends ConsumerWidget {
   }
 }
 
-/// Grid of number tiles (2 columns on phones, 3 on tablets).
+/// Equal-size number tiles (2 columns on phones, 3 on tablets).
 class StatGrid extends StatelessWidget {
   const StatGrid({super.key, required this.stats, this.actions = const {}});
 
@@ -131,65 +162,80 @@ class StatGrid extends StatelessWidget {
     builder: (context, c) {
       final columns = c.maxWidth >= 600 ? 3 : 2;
       const gap = 10.0;
-      final width = (c.maxWidth - gap * (columns - 1)) / columns;
       final dark = Theme.of(context).brightness == Brightness.dark;
-      return Wrap(
-        spacing: gap,
-        runSpacing: gap,
-        children: [
-          for (final (label, value, icon, color) in stats)
-            SizedBox(
-              width: width,
-              child: Material(
-                color: dark ? AppColors.slate800 : AppColors.slate50,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  key: actions[label] == null
-                      ? null
-                      : Key('admin-directory-$label'),
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: actions[label],
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Row(
-                      children: [
-                        Icon(icon, color: color),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
+      final textScale = MediaQuery.textScalerOf(context).scale(1);
+      final tileHeight = (104 + (textScale - 1) * 40).clamp(104.0, 152.0);
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          crossAxisSpacing: gap,
+          mainAxisSpacing: gap,
+          mainAxisExtent: tileHeight,
+        ),
+        itemCount: stats.length,
+        itemBuilder: (context, index) {
+          final (label, value, icon, color) = stats[index];
+          return Material(
+            color: dark ? AppColors.slate800 : AppColors.slate50,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              key: actions[label] == null
+                  ? null
+                  : Key('admin-directory-$label'),
+              borderRadius: BorderRadius.circular(12),
+              onTap: actions[label],
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Icon(icon, color: color),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
                                 '$value',
+                                maxLines: 1,
                                 style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
-                              Text(
-                                label,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.slate500,
-                                ),
-                                maxLines: 2,
-                              ),
-                            ],
+                            ),
                           ),
-                        ),
-                        if (actions[label] != null)
-                          const Icon(
-                            Icons.chevron_right,
-                            size: 18,
-                            color: AppColors.slate500,
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.slate500,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
+                    if (actions[label] != null)
+                      const Icon(
+                        Icons.chevron_right,
+                        size: 18,
+                        color: AppColors.slate500,
+                      ),
+                  ],
                 ),
               ),
             ),
-        ],
+          );
+        },
       );
     },
   );

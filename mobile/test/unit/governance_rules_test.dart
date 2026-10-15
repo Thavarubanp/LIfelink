@@ -445,6 +445,10 @@ void main() {
         AppRoutes.donorAcceptances,
       );
       expect(
+        routeForNotificationType('BloodRequestReviewAssigned'),
+        AppRoutes.doctorRequests,
+      );
+      expect(
         routeForNotificationType('TransferAccepted'),
         AppRoutes.hospitalTransfers,
       );

@@ -76,7 +76,9 @@ List<RouteBase> adminRoutes() => [
   GoRoute(
     path: AppRoutes.adminUsers,
     parentNavigatorKey: rootNavigatorKey,
-    builder: (_, _) => const AdminUsersScreen(),
+    builder: (_, state) => AdminUsersScreen(
+      initialFilter: state.uri.queryParameters['filter'] ?? 'all',
+    ),
     routes: [
       GoRoute(
         path: ':userId',
@@ -99,7 +101,9 @@ List<RouteBase> adminRoutes() => [
   GoRoute(
     path: AppRoutes.adminHospitals,
     parentNavigatorKey: rootNavigatorKey,
-    builder: (_, _) => const AdminHospitalsScreen(),
+    builder: (_, state) => AdminHospitalsScreen(
+      initialFilter: state.uri.queryParameters['filter'] ?? 'all',
+    ),
     routes: [
       GoRoute(
         path: ':hospitalId',

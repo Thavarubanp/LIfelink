@@ -17,6 +17,7 @@ import 'package:lifelink_mobile/features/governance/governance_repository.dart';
 import 'package:lifelink_mobile/features/blood_requests/blood_request_models.dart';
 import 'package:lifelink_mobile/features/blood_requests/blood_request_repository.dart';
 import 'package:lifelink_mobile/features/doctors/doctor_repository.dart';
+import 'package:lifelink_mobile/features/doctor/screening_models.dart';
 import 'package:lifelink_mobile/features/emergencies/emergency_repository.dart';
 import 'package:lifelink_mobile/features/inventory/inventory_repository.dart';
 import 'package:lifelink_mobile/features/profile/profile_repository.dart';
@@ -311,6 +312,7 @@ void main() {
             (ref) async => AdminStats.fromJson({'totalHospitals': 1}),
           ),
           assignedRequestsProvider.overrideWith((ref) async => []),
+          screeningReportsProvider.overrideWith((ref) async => []),
           adminDoctorsProvider.overrideWith((ref) async => []),
           hospitalDoctorsProvider.overrideWith((ref) async => []),
           myHospitalProvider.overrideWith(
@@ -507,15 +509,43 @@ void main() {
       expect(find.text('Scan packet'), findsNothing);
     });
 
-    testWidgets('doctor badges appear on Requests and Reports', (tester) async {
+    testWidgets('doctor tabs fit at 360px with badges on the right branches', (
+      tester,
+    ) async {
       await pumpRouter(
         tester,
         signedIn(roles: ['Doctor']),
         initialPath: AppRoutes.doctorHome,
       );
+      final navigation = tester.widget<NavigationBar>(
+        find.byType(NavigationBar),
+      );
+      expect(navigation.selectedIndex, 0);
+      expect(
+        navigation.destinations.map(
+          (destination) => (destination as NavigationDestination).label,
+        ),
+        ['Home', 'Requests', 'Reports', 'More'],
+      );
       expect(find.text('31'), findsOneWidget);
       expect(find.text('32'), findsOneWidget);
       expect(find.text('21'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.widgetWithText(NavigationDestination, 'Requests'),
+          matching: find.text('31'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.widgetWithText(NavigationDestination, 'Reports'),
+          matching: find.text('32'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Doctor dashboard'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets(
@@ -585,12 +615,12 @@ void main() {
       },
     );
 
-    testWidgets('doctor lands on the doctor shell: assigned requests', (
+    testWidgets('doctor lands on Home and the logo returns there', (
       tester,
     ) async {
       await pumpRouter(tester, signedIn(roles: ['Doctor']));
-      expect(find.text('Assigned requests'), findsOneWidget);
-      for (final tab in ['Requests', 'Reports', 'More']) {
+      expect(find.text('Doctor dashboard'), findsOneWidget);
+      for (final tab in ['Home', 'Requests', 'Reports', 'More']) {
         expect(
           find.descendant(
             of: find.byType(NavigationBar),
@@ -599,6 +629,83 @@ void main() {
           findsOneWidget,
         );
       }
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('Requests'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Assigned requests'), findsOneWidget);
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        1,
+      );
+
+      await tester.tap(find.bySemanticsLabel('LifeLink, go to home'));
+      await tester.pumpAndSettle();
+      expect(find.text('Doctor dashboard'), findsOneWidget);
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        0,
+      );
+    });
+
+    testWidgets('doctor dashboard cards open visibly selected filters', (
+      tester,
+    ) async {
+      await pumpRouter(tester, signedIn(roles: ['Doctor']));
+
+      await tester.tap(find.byKey(const Key('doctor-stat-assigned')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Awaiting you'))
+            .selected,
+        isTrue,
+      );
+
+      await tester.tap(find.bySemanticsLabel('LifeLink, go to home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('doctor-stat-screened')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.widgetWithText(ChoiceChip, 'All screened (0)'),
+            )
+            .selected,
+        isTrue,
+      );
+
+      await tester.tap(find.bySemanticsLabel('LifeLink, go to home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('doctor-stat-pending')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.widgetWithText(ChoiceChip, 'Waiting for review (0)'),
+            )
+            .selected,
+        isTrue,
+      );
+
+      await tester.tap(find.bySemanticsLabel('LifeLink, go to home'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('doctor-stat-awaiting')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<ChoiceChip>(
+              find.widgetWithText(
+                ChoiceChip,
+                'Approved – awaiting donation (0)',
+              ),
+            )
+            .selected,
+        isTrue,
+      );
     });
 
     testWidgets('admin five-tab shell reuses donor screens without duplicates', (

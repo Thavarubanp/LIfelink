@@ -51,7 +51,8 @@ class _AssistantLauncherState extends ConsumerState<AssistantLauncher> {
 
         return NotificationListener<BottomNavigationBarHeightNotification>(
           onNotification: (notification) {
-            if (_bottomNavigationHeight != notification.height) {
+            if (notification.height > 0 &&
+                _bottomNavigationHeight != notification.height) {
               setState(() => _bottomNavigationHeight = notification.height);
             }
             return false;

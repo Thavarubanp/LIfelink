@@ -12,19 +12,288 @@ import '../attention/tab_attention_controller.dart';
 import '../verification/verification_models.dart';
 import '../verification/verification_repository.dart';
 import '../verification/verify_requests_screen.dart' show RequestCard;
+import 'screening_models.dart';
 
-/// Doctor home: the blood requests assigned to the signed-in doctor. Verified ones wait for the doctor's decision:
-/// approve (optional notes, the request opens to donors) or reject (a message the creator sees).
-class DoctorHomeScreen extends ConsumerStatefulWidget {
-  const DoctorHomeScreen({super.key});
+class DoctorDashboardData {
+  const DoctorDashboardData({
+    required this.assignedDecisions,
+    required this.screenedDonors,
+    required this.pendingReviews,
+    required this.awaitingDonation,
+  });
 
-  @override
-  ConsumerState<DoctorHomeScreen> createState() => _DoctorHomeScreenState();
+  final int assignedDecisions;
+  final int screenedDonors;
+  final int pendingReviews;
+  final int awaitingDonation;
+
+  bool get isEmpty =>
+      assignedDecisions == 0 &&
+      screenedDonors == 0 &&
+      pendingReviews == 0 &&
+      awaitingDonation == 0;
 }
 
-class _DoctorHomeScreenState extends ConsumerState<DoctorHomeScreen> {
-  String? _status = 'Verified';
+/// Both shell tabs watch these same providers, so their successful responses
+/// remain shared while the indexed doctor shell is alive.
+final doctorDashboardProvider = FutureProvider.autoDispose<DoctorDashboardData>(
+  (ref) async {
+    final requestsFuture = ref.watch(assignedRequestsProvider.future);
+    final reportsFuture = ref.watch(screeningReportsProvider.future);
+    final requests = await requestsFuture;
+    final reports = await reportsFuture;
+    final grouped = groupReports(reports);
+    return DoctorDashboardData(
+      assignedDecisions: requests.where((r) => r.canDoctorDecide).length,
+      screenedDonors: grouped[ReportTab.all]!.length,
+      pendingReviews: grouped[ReportTab.review]!.length,
+      awaitingDonation: grouped[ReportTab.awaiting]!.length,
+    );
+  },
+);
+
+class DoctorDashboardScreen extends ConsumerWidget {
+  const DoctorDashboardScreen({super.key});
+
+  Future<void> _reload(WidgetRef ref) async {
+    ref.invalidate(assignedRequestsProvider);
+    ref.invalidate(screeningReportsProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
+    await ref
+        .read(doctorDashboardProvider.future)
+        .then((_) {}, onError: (_) {});
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final value = ref.watch(doctorDashboardProvider);
+    return Scaffold(
+      body: RefreshableScroll(
+        onRefresh: () => _reload(ref),
+        child: ContentWidth(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const ShellPageHeader(title: 'Doctor dashboard'),
+                const SizedBox(height: 6),
+                const Text(
+                  'Review assigned requests and complete clinical donor screening.',
+                  style: TextStyle(fontSize: 12, color: AppColors.slate500),
+                ),
+                const SizedBox(height: 16),
+                AsyncView(
+                  value: value,
+                  onRetry: () => ref.invalidate(doctorDashboardProvider),
+                  loadingMessage: 'Loading your dashboard...',
+                  data: (data) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _DoctorStatGrid(data: data),
+                      if (data.isEmpty) ...[
+                        const SizedBox(height: 16),
+                        const Text(
+                          'No work has been assigned yet. New requests and screening reports will appear here.',
+                          key: Key('doctor-dashboard-empty'),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.slate500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DoctorStatGrid extends StatelessWidget {
+  const _DoctorStatGrid({required this.data});
+
+  final DoctorDashboardData data;
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = [
+      _DoctorStat(
+        key: const Key('doctor-stat-assigned'),
+        label: 'Assigned decisions',
+        value: data.assignedDecisions,
+        detail: 'Awaiting your decision',
+        icon: Icons.assignment_outlined,
+        color: AppColors.blue600,
+        onTap: () => context.go('${AppRoutes.doctorRequests}?status=Verified'),
+      ),
+      _DoctorStat(
+        key: const Key('doctor-stat-screened'),
+        label: 'Screened donors',
+        value: data.screenedDonors,
+        detail: 'Latest screening cases',
+        icon: Icons.people_outline,
+        color: AppColors.violet600,
+        onTap: () => context.go('${AppRoutes.doctorReports}?view=all'),
+      ),
+      _DoctorStat(
+        key: const Key('doctor-stat-pending'),
+        label: 'Pending reviews',
+        value: data.pendingReviews,
+        detail: 'Awaiting clinical review',
+        icon: Icons.fact_check_outlined,
+        color: AppColors.amber600,
+        onTap: () => context.go('${AppRoutes.doctorReports}?view=review'),
+      ),
+      _DoctorStat(
+        key: const Key('doctor-stat-awaiting'),
+        label: 'Awaiting donation',
+        value: data.awaitingDonation,
+        detail: 'Donation slots reserved',
+        icon: Icons.volunteer_activism_outlined,
+        color: AppColors.emerald600,
+        onTap: () => context.go('${AppRoutes.doctorReports}?view=awaiting'),
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 700 ? 4 : 2;
+        final scale = MediaQuery.textScalerOf(context).scale(1);
+        final height = (142 + (scale - 1) * 42).clamp(142.0, 184.0);
+        return GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columns,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            mainAxisExtent: height,
+          ),
+          itemCount: cards.length,
+          itemBuilder: (_, index) => cards[index],
+        );
+      },
+    );
+  }
+}
+
+class _DoctorStat extends StatelessWidget {
+  const _DoctorStat({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.detail,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final int value;
+  final String detail;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: dark ? AppColors.slate800 : AppColors.slate50,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, color: color, size: 22),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.slate500,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: AppColors.slate500,
+                  ),
+                ],
+              ),
+              const Spacer(),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '$value',
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                detail,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: AppColors.slate500),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Doctor requests: blood requests assigned to the signed-in doctor. Verified ones wait for the doctor's decision:
+/// approve (optional notes, the request opens to donors) or reject (a message the creator sees).
+class DoctorRequestsScreen extends ConsumerStatefulWidget {
+  const DoctorRequestsScreen({super.key, this.initialStatus = 'Verified'});
+
+  final String? initialStatus;
+
+  @override
+  ConsumerState<DoctorRequestsScreen> createState() =>
+      _DoctorRequestsScreenState();
+}
+
+class _DoctorRequestsScreenState extends ConsumerState<DoctorRequestsScreen> {
+  late String? _status = widget.initialStatus;
   String _search = '';
+
+  @override
+  void didUpdateWidget(covariant DoctorRequestsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialStatus != widget.initialStatus) {
+      _status = widget.initialStatus;
+    }
+  }
+
+  void _selectStatus(String? status) {
+    setState(() => _status = status);
+    final value = status ?? 'all';
+    context.go(
+      '${AppRoutes.doctorRequests}?status=${Uri.encodeQueryComponent(value)}',
+    );
+  }
 
   void _reload() {
     ref.invalidate(assignedRequestsProvider);
@@ -107,7 +376,7 @@ class _DoctorHomeScreenState extends ConsumerState<DoctorHomeScreen> {
                       (s, s == 'Verified' ? 'Awaiting you' : l),
                   ],
                   selected: _status,
-                  onSelected: (s) => setState(() => _status = s),
+                  onSelected: _selectStatus,
                 ),
                 const SizedBox(height: 12),
                 AsyncView(

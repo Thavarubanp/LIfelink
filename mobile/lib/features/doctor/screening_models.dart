@@ -242,7 +242,7 @@ class ReportGroup {
   ScreeningReport get latest => versions.last;
 }
 
-enum ReportTab { review, awaiting, history }
+enum ReportTab { all, review, awaiting, history }
 
 /// Groups versions by acceptance and splits them into the web's three tabs. "Waiting for review": assigned to me
 /// first, then highest risk, then oldest.
@@ -277,6 +277,7 @@ Map<ReportTab, List<ReportGroup>> groupReports(List<ScreeningReport> reports) {
           ),
         );
   return {
+    ReportTab.all: groups,
     ReportTab.review: review,
     ReportTab.awaiting: awaiting,
     ReportTab.history: history,

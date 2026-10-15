@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,8 +13,8 @@ import '../../features/admin/attention_controller.dart';
 import 'notification_rules.dart';
 import 'phone_notifications.dart';
 
-/// Connects phone notifications to the session: after sign-in it explains and asks for the Android 13+ permission
-/// once, starts the background task and polls every 30 s while the app is open; sign-out stops everything.
+/// Connects phone notifications to the session: after sign-in it explains and asks for platform permission once,
+/// starts Android-only background polling, and polls every 30 s while the app is open; sign-out stops everything.
 /// Tapping a notification opens its screen.
 class PhoneNotificationsGuard extends ConsumerStatefulWidget {
   const PhoneNotificationsGuard({
@@ -111,7 +112,7 @@ class _PhoneNotificationsGuardState
     }
   }
 
-  /// Explains why before Android shows its permission prompt (asked once; later from the profile screen).
+  /// Explains why before the OS shows its permission prompt (asked once; later from the profile screen).
   Future<void> _askOnce() async {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(PhoneNotifications.askedKey) == true) return;
@@ -126,9 +127,10 @@ class _PhoneNotificationsGuardState
       builder: (ctx) => AlertDialog(
         icon: const Icon(Icons.notifications_active_outlined),
         title: const Text('Phone notifications'),
-        content: const Text(
-          'LifeLink can notify you about messages from the administrator, alerts and decisions, even when the app is closed. '
-          'It checks about every 15 minutes and never keeps your session signed in.',
+        content: Text(
+          defaultTargetPlatform == TargetPlatform.iOS
+              ? 'LifeLink can notify you about messages from the administrator, alerts and decisions while the app is open. Background polling remains Android-only because iOS cannot guarantee the same 15-minute schedule.'
+              : 'LifeLink can notify you about messages from the administrator, alerts and decisions, even when the app is closed. It checks about every 15 minutes and never keeps your session signed in.',
         ),
         actions: [
           TextButton(

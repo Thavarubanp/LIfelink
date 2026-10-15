@@ -22,7 +22,6 @@ class BottomNavigationBarSizeReporter extends StatefulWidget {
 
 class _BottomNavigationBarSizeReporterState
     extends State<BottomNavigationBarSizeReporter> {
-  double? _lastHeight;
   bool _reportScheduled = false;
 
   void _scheduleReport() {
@@ -32,8 +31,11 @@ class _BottomNavigationBarSizeReporterState
       _reportScheduled = false;
       if (!mounted) return;
       final height = context.size?.height;
-      if (height == null || height == _lastHeight) return;
-      _lastHeight = height;
+      if (height == null || height <= 0) return;
+      // Report even when the numeric height is unchanged. The listener above
+      // the router can be replaced while this shell stays alive underneath a
+      // pushed root route, so suppressing equal values leaves the new listener
+      // without a measurement when that route is popped.
       BottomNavigationBarHeightNotification(height).dispatch(context);
     });
   }

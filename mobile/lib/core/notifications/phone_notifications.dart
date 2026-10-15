@@ -16,7 +16,10 @@ import 'notification_rules.dart';
 /// Device feature: local phone notifications for new LifeLink notifications (admin messages, alerts, decisions) and,
 /// for the admin, new items that need attention. No push service: the app polls the existing API
 /// - while it is open, every 30 s (with the unread count), and
-/// - when it is closed, with an Android WorkManager periodic task (about every 15 minutes, the Android minimum).
+/// - when it is closed on Android, with a WorkManager periodic task (about every 15 minutes, the Android minimum).
+///
+/// iOS receives local notifications from foreground polling only. Its background execution is opportunistic, so the
+/// Android 15-minute poll is intentionally not registered there.
 /// Every poll is a BACKGROUND request (no X-LifeLink-Activity header), so it never extends the session.
 class PhoneNotifications {
   PhoneNotifications._();
@@ -44,11 +47,25 @@ class PhoneNotifications {
   String? launchRoute;
 
   Future<void> init() async {
-    if (_ready || kIsWeb || defaultTargetPlatform != TargetPlatform.android)
+    if (_ready ||
+        kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
       return;
+    }
     await _plugin.initialize(
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(
+          requestAlertPermission: false,
+          requestBadgePermission: false,
+          requestSoundPermission: false,
+          defaultPresentAlert: true,
+          defaultPresentBadge: true,
+          defaultPresentSound: true,
+          defaultPresentBanner: true,
+          defaultPresentList: true,
+        ),
       ),
       onDidReceiveNotificationResponse: (r) {
         final route = r.payload;
@@ -66,21 +83,44 @@ class PhoneNotifications {
         AndroidFlutterLocalNotificationsPlugin
       >();
 
-  Future<bool> areEnabled() async =>
-      await _android?.areNotificationsEnabled() ?? false;
+  IOSFlutterLocalNotificationsPlugin? get _iOS => _plugin
+      .resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin
+      >();
 
-  /// Android 13+ asks the user; older versions allow notifications by default. Returns whether they are allowed.
+  Future<bool> areEnabled() async {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return (await _iOS?.checkPermissions())?.isEnabled ?? false;
+    }
+    return await _android?.areNotificationsEnabled() ?? false;
+  }
+
+  /// Requests notification permission on Android 13+ or iOS. Returns whether notifications are allowed.
   Future<bool> requestPermission() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(askedKey, true);
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return await _iOS?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+    }
     return await _android?.requestNotificationsPermission() ?? false;
   }
 
-  /// Starts the background poll for the signed-in account (kept if it already runs).
+  /// Starts Android-only background polling for the signed-in account (kept if it already runs).
+  /// iOS is deliberately excluded: its opportunistic background execution cannot provide this 15-minute cadence.
   Future<void> start({required bool isAdmin}) async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_isAdminKey, isAdmin);
+    if (defaultTargetPlatform == TargetPlatform.iOS) return;
     await Workmanager().initialize(notificationTaskDispatcher);
     await Workmanager().registerPeriodicTask(
       _uniqueName,
@@ -93,11 +133,17 @@ class PhoneNotifications {
 
   /// Signed out: stop the background poll and forget what was seen (the next account starts fresh).
   Future<void> stop() async {
-    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
-    try {
-      await Workmanager().cancelByUniqueName(_uniqueName);
-    } catch (_) {
-      // Not registered
+    if (kIsWeb ||
+        (defaultTargetPlatform != TargetPlatform.android &&
+            defaultTargetPlatform != TargetPlatform.iOS)) {
+      return;
+    }
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        await Workmanager().cancelByUniqueName(_uniqueName);
+      } catch (_) {
+        // Not registered
+      }
     }
     final prefs = await SharedPreferences.getInstance();
     for (final k in [_markerIdKey, _markerAtKey, _attentionKey, _isAdminKey]) {
@@ -222,6 +268,13 @@ class PhoneNotifications {
           importance: Importance.high,
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(''),
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          presentBanner: true,
+          presentList: true,
         ),
       ),
     );

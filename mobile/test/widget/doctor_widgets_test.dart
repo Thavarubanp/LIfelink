@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lifelink_mobile/features/doctor/doctor_home_screen.dart';
 import 'package:lifelink_mobile/features/doctor/screening_models.dart';
@@ -121,7 +122,7 @@ void main() {
       phone(tester);
       await tester.pumpWidget(
         testApp(
-          const DoctorHomeScreen(),
+          const DoctorRequestsScreen(),
           overrides: [
             assignedRequestsProvider.overrideWith(
               (ref) async => [
@@ -151,6 +152,108 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'doctor dashboard is 2x2 on phones and has a useful empty state',
+    (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        testApp(
+          const DoctorDashboardScreen(),
+          overrides: [
+            assignedRequestsProvider.overrideWith((ref) async => const []),
+            screeningReportsProvider.overrideWith((ref) async => const []),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final assigned = tester.getTopLeft(
+        find.byKey(const Key('doctor-stat-assigned')),
+      );
+      final screened = tester.getTopLeft(
+        find.byKey(const Key('doctor-stat-screened')),
+      );
+      final pending = tester.getTopLeft(
+        find.byKey(const Key('doctor-stat-pending')),
+      );
+      final awaiting = tester.getTopLeft(
+        find.byKey(const Key('doctor-stat-awaiting')),
+      );
+      expect(assigned.dy, screened.dy);
+      expect(pending.dy, awaiting.dy);
+      expect(pending.dy, greaterThan(assigned.dy));
+      for (final label in [
+        'Assigned decisions',
+        'Screened donors',
+        'Pending reviews',
+        'Awaiting donation',
+      ]) {
+        expect(find.text(label), findsOneWidget);
+      }
+      expect(find.text('0'), findsNWidgets(4));
+      expect(find.byKey(const Key('doctor-dashboard-empty')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('doctor dashboard uses four columns on wide layouts', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      testApp(
+        const DoctorDashboardScreen(),
+        overrides: [
+          assignedRequestsProvider.overrideWith((ref) async => const []),
+          screeningReportsProvider.overrideWith((ref) async => const []),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final positions = [
+      for (final key in [
+        'doctor-stat-assigned',
+        'doctor-stat-screened',
+        'doctor-stat-pending',
+        'doctor-stat-awaiting',
+      ])
+        tester.getTopLeft(find.byKey(Key(key))),
+    ];
+    expect(positions.map((p) => p.dy).toSet(), hasLength(1));
+    expect(positions.map((p) => p.dx).toSet(), hasLength(4));
+    expect(tester.takeException(), isNull);
+  });
+
+  test('dashboard and Reports share one screening provider load', () async {
+    var reportLoads = 0;
+    final container = ProviderContainer(
+      overrides: [
+        assignedRequestsProvider.overrideWith((ref) async => const []),
+        screeningReportsProvider.overrideWith((ref) async {
+          reportLoads++;
+          return const [];
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(
+      doctorDashboardProvider,
+      (_, _) {},
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+
+    await container.read(doctorDashboardProvider.future);
+    await container.read(screeningReportsProvider.future);
+
+    expect(reportLoads, 1);
+  });
 
   group('screening report detail', () {
     Future<void> pump(

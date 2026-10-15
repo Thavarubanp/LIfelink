@@ -239,6 +239,7 @@ void main() {
           acceptanceStatus: 'Rejected',
         ),
       ]);
+      expect(tabs[ReportTab.all], hasLength(6));
       expect(tabs[ReportTab.review]!.map((g) => g.latest.acceptanceId), [
         'mine',
         'high',

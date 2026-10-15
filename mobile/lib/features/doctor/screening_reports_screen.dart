@@ -18,7 +18,9 @@ import 'screening_models.dart';
 /// Donor screening queue (web ScreeningReportsPage): AI-prepared reports for the hospital's requests. Reports assigned
 /// to the doctor come first; any doctor of the hospital can act as a fallback. The doctor makes every decision.
 class ScreeningReportsScreen extends ConsumerStatefulWidget {
-  const ScreeningReportsScreen({super.key});
+  const ScreeningReportsScreen({super.key, this.initialTab = ReportTab.review});
+
+  final ReportTab initialTab;
 
   @override
   ConsumerState<ScreeningReportsScreen> createState() =>
@@ -27,8 +29,27 @@ class ScreeningReportsScreen extends ConsumerStatefulWidget {
 
 class _ScreeningReportsScreenState
     extends ConsumerState<ScreeningReportsScreen> {
-  ReportTab _tab = ReportTab.review;
+  late ReportTab _tab = widget.initialTab;
   String _search = '';
+
+  @override
+  void didUpdateWidget(covariant ScreeningReportsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialTab != widget.initialTab) {
+      _tab = widget.initialTab;
+    }
+  }
+
+  void _selectTab(ReportTab tab) {
+    setState(() => _tab = tab);
+    final view = switch (tab) {
+      ReportTab.all => 'all',
+      ReportTab.review => 'review',
+      ReportTab.awaiting => 'awaiting',
+      ReportTab.history => 'history',
+    };
+    context.go('${AppRoutes.doctorReports}?view=$view');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -83,6 +104,10 @@ class _ScreeningReportsScreenState
                         FilterChips<ReportTab>(
                           options: [
                             (
+                              ReportTab.all,
+                              'All screened (${tabs[ReportTab.all]!.length})',
+                            ),
+                            (
                               ReportTab.review,
                               'Waiting for review (${tabs[ReportTab.review]!.length})',
                             ),
@@ -96,7 +121,7 @@ class _ScreeningReportsScreenState
                             ),
                           ],
                           selected: _tab,
-                          onSelected: (t) => setState(() => _tab = t),
+                          onSelected: _selectTab,
                         ),
                         const SizedBox(height: 12),
                         if (list.isEmpty)

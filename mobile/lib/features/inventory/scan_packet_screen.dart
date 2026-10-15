@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -211,8 +213,9 @@ class _CameraError extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 denied
-                    ? 'Camera permission was denied. Allow the camera for LifeLink in your phone\'s Settings → Apps → LifeLink → Permissions, '
-                          'or type the tracking number below.'
+                    ? Platform.isIOS
+                          ? 'Camera permission was denied. Open Settings, select LifeLink, and allow Camera access, or type the tracking number below.'
+                          : 'Camera permission was denied. Allow the camera for LifeLink in Settings → Apps → LifeLink → Permissions, or type the tracking number below.'
                     : unsupported
                     ? 'This device has no usable camera. Type the tracking number below.'
                     : 'The camera could not start. Type the tracking number below or try again.',

@@ -41,8 +41,10 @@ Future<Attachment?> takePhoto() async {
     return Attachment.fromBytes(name, await photo.readAsBytes());
   } on PlatformException catch (e) {
     if (e.code.contains('denied')) {
-      throw const AttachmentException(
-        'Camera permission was denied. Allow the camera for LifeLink in Settings → Apps → LifeLink → Permissions, or attach a file instead.',
+      throw AttachmentException(
+        Platform.isIOS
+            ? 'Camera permission was denied. Open Settings, select LifeLink, and allow Camera access, or attach a file instead.'
+            : 'Camera permission was denied. Allow the camera for LifeLink in Settings → Apps → LifeLink → Permissions, or attach a file instead.',
       );
     }
     throw AttachmentException(e.message ?? 'The camera could not be opened.');
@@ -69,8 +71,10 @@ Future<Attachment?> pickGalleryImage() async {
     return Attachment.fromBytes(name, await photo.readAsBytes());
   } on PlatformException catch (e) {
     if (e.code.contains('denied')) {
-      throw const AttachmentException(
-        'Photo access was denied. Allow photos for LifeLink in Settings, or attach a file instead.',
+      throw AttachmentException(
+        Platform.isIOS
+            ? 'Photo access was denied. Open Settings, select LifeLink, and allow Photos access, or attach a file instead.'
+            : 'Photo access was denied. Allow photos for LifeLink in Settings → Apps → LifeLink → Permissions, or attach a file instead.',
       );
     }
     throw AttachmentException(

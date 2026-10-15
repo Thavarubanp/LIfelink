@@ -123,19 +123,103 @@ void main() {
     }
     expect(find.text('Needs attention'), findsNothing);
     expect(find.byKey(const Key('attention-Complaints')), findsNothing);
-    expect(
-      find.byKey(const Key('admin-directory-Donors / patients')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const Key('admin-directory-Hospitals')), findsOneWidget);
-    expect(find.byKey(const Key('admin-directory-Doctors')), findsOneWidget);
-    for (final label in ['Donors / patients', 'Hospitals', 'Doctors']) {
+    for (final label in [
+      'Donors / patients',
+      'Hospitals',
+      'Doctors',
+      'Active requests',
+      'Pending complaints',
+      'Pending registrations',
+      'Pending appeals',
+      'Suspended users',
+      'Suspended hospitals',
+    ]) {
+      expect(find.byKey(Key('admin-directory-$label')), findsOneWidget);
       expect(
         tester.widget<InkWell>(find.byKey(Key('admin-directory-$label'))).onTap,
         isNotNull,
       );
     }
   });
+
+  test('all statistics map to existing useful destinations', () {
+    expect(adminStatisticDestination('Donors / patients'), '/admin/users');
+    expect(adminStatisticDestination('Hospitals'), '/admin/hospitals');
+    expect(adminStatisticDestination('Doctors'), '/admin/doctors');
+    expect(
+      adminStatisticDestination('Active requests'),
+      '/admin/activity?tab=blood-requests',
+    );
+    expect(
+      adminStatisticDestination('Pending complaints'),
+      '/admin/complaints',
+    );
+    expect(
+      adminStatisticDestination('Pending registrations'),
+      '/admin/registrations',
+    );
+    expect(adminStatisticDestination('Pending appeals'), '/admin/appeals');
+    expect(
+      adminStatisticDestination('Suspended users'),
+      '/admin/users?filter=suspended',
+    );
+    expect(
+      adminStatisticDestination('Suspended hospitals'),
+      '/admin/hospitals?filter=suspended',
+    );
+  });
+
+  for (final width in [360.0, 900.0]) {
+    testWidgets('statistics use a uniform overflow-safe grid at $width px', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = Size(width * 3, 2400);
+      addTearDown(tester.view.reset);
+      final labels = [
+        'Donors / patients',
+        'Hospitals',
+        'Doctors',
+        'Active requests',
+        'Pending complaints',
+        'Pending registrations with an exceptionally long label',
+        'Pending appeals',
+        'Suspended users',
+        'Suspended hospitals',
+      ];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: StatGrid(
+                stats: [
+                  for (var i = 0; i < labels.length; i++)
+                    (
+                      labels[i],
+                      i == 0 ? 999999999999 : i,
+                      Icons.insights,
+                      Colors.red,
+                    ),
+                ],
+                actions: {for (final label in labels) label: () {}},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final rects = [
+        for (final label in labels)
+          tester.getRect(find.byKey(Key('admin-directory-$label'))),
+      ];
+      for (final rect in rects.skip(1)) {
+        expect(rect.height, closeTo(rects.first.height, 0.001));
+        expect(rect.width, closeTo(rects.first.width, 0.001));
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('attention contains only its three reachable governance queues', (
     tester,

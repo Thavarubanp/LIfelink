@@ -238,9 +238,12 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
   @override
   void didUpdateWidget(covariant AdminActivityScreen old) {
     super.didUpdateWidget(old);
-    if (widget.initialTab != old.initialTab &&
-        widget.initialTab == 'transfers') {
-      _select(OversightKind.transfer);
+    if (widget.initialTab != old.initialTab) {
+      _select(
+        widget.initialTab == 'transfers'
+            ? OversightKind.transfer
+            : OversightKind.request,
+      );
     }
   }
 

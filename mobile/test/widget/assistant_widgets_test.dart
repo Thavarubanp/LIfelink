@@ -281,6 +281,89 @@ void main() {
     });
   }
 
+  testWidgets('launcher remeasures the bottom bar after a pushed route pops', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 3;
+    tester.view.physicalSize = const Size(1080, 2340);
+    addTearDown(tester.view.reset);
+
+    final router = GoRouter(
+      navigatorKey: rootNavigatorKey,
+      initialLocation: AppRoutes.donorHome,
+      routes: [
+        ShellRoute(
+          builder: (context, state, child) => Scaffold(
+            body: child,
+            bottomNavigationBar: BottomNavigationBarSizeReporter(
+              child: NavigationBar(
+                height: 104,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    label: 'Home',
+                  ),
+                  NavigationDestination(icon: Icon(Icons.menu), label: 'More'),
+                ],
+              ),
+            ),
+          ),
+          routes: [
+            GoRoute(
+              path: AppRoutes.donorHome,
+              builder: (context, state) => Center(
+                child: FilledButton(
+                  onPressed: () => context.push(AppRoutes.profile),
+                  child: const Text('Open profile'),
+                ),
+              ),
+            ),
+          ],
+        ),
+        GoRoute(
+          path: AppRoutes.profile,
+          parentNavigatorKey: rootNavigatorKey,
+          builder: (context, state) => Scaffold(
+            appBar: AppBar(title: Text('Profile')),
+            body: const SizedBox.shrink(),
+          ),
+        ),
+      ],
+    );
+    addTearDown(router.dispose);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          routerProvider.overrideWithValue(router),
+          authControllerProvider.overrideWith(
+            () => FakeAuthController(AuthState.signedIn(testUser())),
+          ),
+        ],
+        child: MaterialApp.router(
+          theme: AppTheme.light(),
+          routerConfig: router,
+          builder: (context, child) => AssistantLauncher(child: child!),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Open profile'));
+    await tester.pumpAndSettle();
+    expect(find.text('Profile'), findsOneWidget);
+
+    router.pop();
+    await tester.pumpAndSettle();
+
+    final assistant = tester.getRect(
+      find.byKey(const Key('assistant-launcher')),
+    );
+    final navigation = tester.getRect(find.byType(NavigationBar));
+    expect(assistant.bottom, lessThanOrEqualTo(navigation.top - 16));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('launcher stacks 12px above a page FAB and measured bar', (
     tester,
   ) async {

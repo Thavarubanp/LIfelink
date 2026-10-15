@@ -55,6 +55,7 @@ class AppRoutes {
 
   // Doctor (Step 3: Ahamed)
   static const doctorHome = '/doctor';
+  static const doctorRequests = '/doctor/requests';
   static const doctorReports = '/doctor/reports';
   static const doctorMore = '/doctor/more';
   static const doctorHospitalDonations = '/doctor/hospital-donations';
@@ -104,6 +105,7 @@ class AppRoutes {
     donorAcceptances,
     donorMore,
     doctorHome,
+    doctorRequests,
     doctorReports,
     doctorMore,
     adminHome,
