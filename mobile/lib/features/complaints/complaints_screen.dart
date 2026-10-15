@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -23,6 +25,7 @@ class ComplaintsScreen extends ConsumerStatefulWidget {
 class _ComplaintsScreenState extends ConsumerState<ComplaintsScreen> {
   String _status = 'OPEN';
   String _search = '';
+  String? _deletingId;
   @override
   Widget build(BuildContext context) {
     final value = ref.watch(myComplaintsProvider);
@@ -95,7 +98,10 @@ class _ComplaintsScreenState extends ConsumerState<ComplaintsScreen> {
                                   complaint: c,
                                   onReply: () => _reply(context, c),
                                   onSolve: () => _solve(context, c),
-                                  onDelete: () => _delete(context, c),
+                                  deleting: _deletingId == c.id,
+                                  onDelete: _deletingId == null
+                                      ? () => _delete(context, c)
+                                      : null,
                                 ),
                             ],
                           );
@@ -153,6 +159,7 @@ class _ComplaintsScreenState extends ConsumerState<ComplaintsScreen> {
   }
 
   Future<void> _delete(BuildContext context, Complaint c) async {
+    if (_deletingId != null) return;
     final yes = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -170,7 +177,8 @@ class _ComplaintsScreenState extends ConsumerState<ComplaintsScreen> {
         ],
       ),
     );
-    if (yes != true) return;
+    if (yes != true || !mounted) return;
+    setState(() => _deletingId = c.id);
     try {
       await ref.read(complaintsRepositoryProvider).delete(c.id);
       ref.invalidate(myComplaintsProvider);
@@ -178,6 +186,8 @@ class _ComplaintsScreenState extends ConsumerState<ComplaintsScreen> {
       if (ApiError.from(e).isConflict) ref.invalidate(myComplaintsProvider);
       if (context.mounted)
         showSnack(context, ApiError.from(e).message, type: SnackType.error);
+    } finally {
+      if (mounted) setState(() => _deletingId = null);
     }
   }
 }
@@ -188,9 +198,12 @@ class _ComplaintCard extends StatelessWidget {
     required this.onReply,
     required this.onSolve,
     required this.onDelete,
+    required this.deleting,
   });
   final Complaint complaint;
-  final VoidCallback onReply, onSolve, onDelete;
+  final VoidCallback onReply, onSolve;
+  final VoidCallback? onDelete;
+  final bool deleting;
   @override
   Widget build(BuildContext context) {
     final canReply = complaint.isOpen && complaint.canCreatorReply;
@@ -221,8 +234,7 @@ class _ComplaintCard extends StatelessWidget {
               'Waiting for the administrator.',
               color: Colors.blue,
             ),
-          Wrap(
-            spacing: 8,
+          AdaptiveActions(
             children: [
               if (canReply)
                 FilledButton.icon(
@@ -235,7 +247,17 @@ class _ComplaintCard extends StatelessWidget {
                   onPressed: onSolve,
                   child: const Text('Mark solved'),
                 ),
-              TextButton(onPressed: onDelete, child: const Text('Delete')),
+              TextButton.icon(
+                onPressed: onDelete,
+                icon: deleting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.delete_outline, size: 18),
+                label: const Text('Delete'),
+              ),
             ],
           ),
         ],
@@ -260,6 +282,9 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
   String _targetKind = 'NONE';
   HospitalChoice? _hospital;
   ComplaintUserChoice? _targetUser;
+  Timer? _userSearchTimer;
+  int _userSearchGeneration = 0;
+  String _userQuery = '';
   bool _busy = false;
   String? _error;
   String _key = newIdempotencyKey();
@@ -290,10 +315,26 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
 
   @override
   void dispose() {
+    _userSearchTimer?.cancel();
     _subject.dispose();
     _description.dispose();
     _userSearch.dispose();
     super.dispose();
+  }
+
+  void _onUserSearchChanged(String value) {
+    _userSearchTimer?.cancel();
+    final generation = ++_userSearchGeneration;
+    final query = value.trim();
+    setState(() {
+      _targetUser = null;
+      if (query.length < 2) _userQuery = '';
+    });
+    if (query.length < 2) return;
+    _userSearchTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted || generation != _userSearchGeneration) return;
+      setState(() => _userQuery = query);
+    });
   }
 
   Future<void> _submit() async {
@@ -340,7 +381,7 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
         ref.watch(complaintHospitalsProvider).value ?? const <HospitalChoice>[];
     final ownId = ref.watch(authControllerProvider).user?.userId;
     final users =
-        (ref.watch(complaintUsersProvider(_userSearch.text)).value ??
+        (ref.watch(complaintUsersProvider(_userQuery)).value ??
                 const <ComplaintUserChoice>[])
             .where(
               (u) =>
@@ -370,6 +411,7 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
           ),
           children: [
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _type,
               decoration: const InputDecoration(
                 labelText: 'Complaint category',
@@ -392,11 +434,15 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
                 _targetKind = v.first;
                 _hospital = null;
                 _targetUser = null;
+                _userSearchTimer?.cancel();
+                _userSearchGeneration++;
+                _userQuery = '';
               }),
             ),
             const SizedBox(height: 12),
             if (_targetKind == 'HOSPITAL')
               DropdownButtonFormField<HospitalChoice>(
+                isExpanded: true,
                 initialValue: _hospital,
                 decoration: const InputDecoration(
                   labelText: 'Registered hospital (optional)',
@@ -413,12 +459,11 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
                 decoration: const InputDecoration(
                   labelText: 'Search registered users',
                 ),
-                onChanged: (_) => setState(() {
-                  _targetUser = null;
-                }),
+                onChanged: _onUserSearchChanged,
               ),
               if (users.isNotEmpty)
                 DropdownButtonFormField<ComplaintUserChoice>(
+                  isExpanded: true,
                   initialValue: _targetUser,
                   decoration: const InputDecoration(
                     labelText: 'Choose a result',
@@ -455,9 +500,11 @@ class _CreateComplaintSheetState extends ConsumerState<_CreateComplaintSheet> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             const SizedBox(height: 12),
-            FilledButton(
-              onPressed: _busy ? null : _submit,
-              child: Text(_busy ? 'Submitting...' : 'Submit complaint'),
+            BusyButton(
+              label: 'Submit complaint',
+              busy: _busy,
+              onPressed: _submit,
+              icon: Icons.send_outlined,
             ),
           ],
         ),

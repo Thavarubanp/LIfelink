@@ -233,6 +233,43 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('assistant failures are explicit and retry is user-controlled', (
+    tester,
+  ) async {
+    final api = MockedApi(token: 'jwt');
+    api.adapter.onPost(
+      '/assistant/chat',
+      (server) => server.reply(503, {'message': 'Assistant unavailable'}),
+      data: {'message': 'Help me', 'history': []},
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ...api.overrides,
+          authControllerProvider.overrideWith(
+            () => FakeAuthController(AuthState.signedIn(testUser())),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: AssistantSheet())),
+      ),
+    );
+
+    await tester.enterText(find.byKey(const Key('assistant-input')), 'Help me');
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Help me'), findsOneWidget);
+    expect(
+      find.textContaining('The assistant could not respond:'),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('assistant-retry')), findsOneWidget);
+    expect(
+      api.sent.where((request) => request.path == '/assistant/chat'),
+      hasLength(1),
+    );
+  });
+
   for (final testCase in const [
     (
       label: '360x780, default text, button navigation',

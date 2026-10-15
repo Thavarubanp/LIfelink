@@ -68,20 +68,31 @@ class AuthPage extends StatelessWidget {
   final String? title;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: title == null ? null : AppBar(title: Text(title!)),
-    body: SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: child,
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 520;
+    return Scaffold(
+      appBar: title == null ? null : AppBar(title: Text(title!)),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.all(wide ? AppSpacing.xl : AppSpacing.lg),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(
+                    wide ? AppSpacing.xxl : AppSpacing.lg,
+                  ),
+                  child: FocusTraversalGroup(child: child),
+                ),
+              ),
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// Password field with a show/hide button.
@@ -145,14 +156,31 @@ class FormErrorBox extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: AppColors.rose600.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: AppColors.rose600.withValues(alpha: 0.4)),
-    ),
-    child: Text(message, style: const TextStyle(color: AppColors.rose600)),
-  );
+  Widget build(BuildContext context) {
+    final foreground = AppColors.readableAccent(context, AppColors.rose600);
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Error: $message',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: foreground.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: foreground.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, size: 20, color: foreground),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(message, style: TextStyle(color: foreground)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

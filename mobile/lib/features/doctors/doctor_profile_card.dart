@@ -179,11 +179,10 @@ class _EditDoctorProfileSheetState
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 14),
-          Row(
+          AdaptiveFormRow(
             children: [
-              Expanded(child: _field('firstName', 'First name', _first)),
-              const SizedBox(width: 12),
-              Expanded(child: _field('lastName', 'Last name', _last)),
+              _field('firstName', 'First name', _first),
+              _field('lastName', 'Last name', _last),
             ],
           ),
           _field(

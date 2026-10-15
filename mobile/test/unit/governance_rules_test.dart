@@ -234,6 +234,21 @@ void main() {
       );
     });
 
+    test('active request filter matches the dashboard count definition', () {
+      for (final status in ['Pending', 'Verified', 'Approved']) {
+        final item = OversightItem.request(
+          AdminBloodRequest.fromJson({'status': status}),
+        );
+        expect(oversightMatches(item, status: activeRequestFilter), isTrue);
+      }
+      for (final status in ['Rejected', 'Completed', 'Cancelled', 'Deleted']) {
+        final item = OversightItem.request(
+          AdminBloodRequest.fromJson({'status': status}),
+        );
+        expect(oversightMatches(item, status: activeRequestFilter), isFalse);
+      }
+    });
+
     test('"New" since last seen; filters by status, suspension, type and Sri Lanka date', () {
       final item = OversightItem.transfer(
         Transfer.fromJson({

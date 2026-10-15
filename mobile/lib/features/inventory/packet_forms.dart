@@ -118,6 +118,7 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
       lastDate: _today,
       helpText: 'Collected date',
     );
+    if (!mounted) return;
     if (picked != null) setState(() => _collected = picked);
   }
 
@@ -208,6 +209,7 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
                 const SizedBox(height: 12),
               ],
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 key: const Key('packet-group'),
                 initialValue: _group,
                 decoration: const InputDecoration(labelText: 'Blood group'),

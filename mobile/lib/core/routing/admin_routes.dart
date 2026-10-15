@@ -69,8 +69,10 @@ List<RouteBase> adminRoutes() => [
       ),
     ],
     builders: {
-      AppRoutes.adminActivity: (state) =>
-          AdminActivityScreen(initialTab: state.uri.queryParameters['tab']),
+      AppRoutes.adminActivity: (state) => AdminActivityScreen(
+        initialTab: state.uri.queryParameters['tab'],
+        initialStatus: state.uri.queryParameters['status'],
+      ),
     },
   ),
   GoRoute(

@@ -489,6 +489,7 @@ class _SuspendSheetState extends ConsumerState<SuspendSheet> {
                 firstDate: today,
                 lastDate: today.add(const Duration(days: 3650)),
               );
+              if (!mounted) return;
               if (picked != null) setState(() => _until = picked);
             },
             onDeleted: _until == null

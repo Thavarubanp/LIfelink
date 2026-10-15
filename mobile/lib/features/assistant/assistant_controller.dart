@@ -9,10 +9,14 @@ class AssistantConversationState {
   const AssistantConversationState({
     this.messages = const [],
     this.thinking = false,
+    this.error,
+    this.failedMessage,
   });
 
   final List<AssistantMessage> messages;
   final bool thinking;
+  final String? error;
+  final String? failedMessage;
 }
 
 final assistantConversationProvider =
@@ -33,13 +37,38 @@ class AssistantConversationController
 
   void clear() => state = const AssistantConversationState();
 
+  void dismissError() {
+    if (state.error == null) return;
+    state = AssistantConversationState(messages: state.messages);
+  }
+
+  Future<void> retry() async {
+    final message = state.failedMessage;
+    if (message == null || state.thinking) return;
+    await _request(message, appendUserMessage: false);
+  }
+
   Future<void> send(String text) async {
     final message = text.trim();
     if (message.isEmpty || state.thinking) return;
 
-    final history = state.messages;
+    await _request(message, appendUserMessage: true);
+  }
+
+  Future<void> _request(
+    String message, {
+    required bool appendUserMessage,
+  }) async {
+    final history = appendUserMessage
+        ? state.messages
+        : state.messages.isNotEmpty && state.messages.last.isUser
+        ? state.messages.sublist(0, state.messages.length - 1)
+        : state.messages;
+
     state = AssistantConversationState(
-      messages: _limited([...history, AssistantMessage.user(message)]),
+      messages: appendUserMessage
+          ? _limited([...history, AssistantMessage.user(message)])
+          : state.messages,
       thinking: true,
     );
     try {
@@ -60,10 +89,9 @@ class AssistantConversationController
     } catch (error) {
       if (!ref.mounted) return;
       state = AssistantConversationState(
-        messages: _limited([
-          ...state.messages,
-          AssistantMessage.assistant(text: ApiError.from(error).message),
-        ]),
+        messages: state.messages,
+        error: ApiError.from(error).message,
+        failedMessage: message,
       );
     }
   }

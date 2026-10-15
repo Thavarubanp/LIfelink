@@ -99,11 +99,15 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                     icon: Icons.contact_page_outlined,
                     child: Column(
                       children: [
+                        if (_privacyBusy) ...[
+                          const LinearProgressIndicator(),
+                          const SizedBox(height: 8),
+                        ],
                         _ContactRow(
                           label: 'Email',
                           value: profile.email,
                           isPublic: profile.isEmailPublic,
-                          editable: profile.canEdit,
+                          editable: profile.canEdit && !_privacyBusy,
                           onChanged: (v) =>
                               _setPrivacy(context, ref, profile, email: v),
                         ),
@@ -112,7 +116,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                           label: 'Phone',
                           value: profile.phoneNumber,
                           isPublic: profile.isPhonePublic,
-                          editable: profile.canEdit,
+                          editable: profile.canEdit && !_privacyBusy,
                           onChanged: (v) =>
                               _setPrivacy(context, ref, profile, phone: v),
                         ),
@@ -121,7 +125,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                           label: 'Address',
                           value: profile.address,
                           isPublic: profile.isAddressPublic,
-                          editable: profile.canEdit,
+                          editable: profile.canEdit && !_privacyBusy,
                           onChanged: (v) =>
                               _setPrivacy(context, ref, profile, address: v),
                         ),
@@ -222,21 +226,23 @@ class _ContactRow extends StatelessWidget {
       value == null ? Icons.lock_outline : Icons.contact_mail_outlined,
     ),
     title: Text(label),
-    subtitle: Text(value?.isNotEmpty == true ? value! : 'Private'),
+    subtitle: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value?.isNotEmpty == true ? value! : 'Private'),
+        if (editable)
+          Text(
+            isPublic ? 'Public' : 'Private',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+      ],
+    ),
     trailing: editable
         ? Semantics(
-            label: '$label visibility: ${isPublic ? 'Public' : 'Private'}',
-            child: FilterChip(
-              avatar: Icon(
-                isPublic
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                size: 18,
-              ),
-              label: Text(isPublic ? 'Public' : 'Private'),
-              selected: isPublic,
-              onSelected: onChanged,
-            ),
+            label: '$label visibility',
+            value: isPublic ? 'Public' : 'Private',
+            toggled: isPublic,
+            child: Switch(value: isPublic, onChanged: onChanged),
           )
         : null,
   );
@@ -343,6 +349,7 @@ class _EditUserProfileSheetState extends ConsumerState<_EditUserProfileSheet> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: {'Male', 'Female', 'Other'}.contains(_gender)
                   ? _gender
                   : 'Other',
@@ -364,6 +371,7 @@ class _EditUserProfileSheetState extends ConsumerState<_EditUserProfileSheet> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: AppConstants.bloodGroups.contains(_bloodGroup)
                   ? _bloodGroup
                   : null,
@@ -396,6 +404,7 @@ class _EditUserProfileSheetState extends ConsumerState<_EditUserProfileSheet> {
                   firstDate: DateTime(1950),
                   lastDate: Fmt.sriLankaToday(),
                 );
+                if (!mounted) return;
                 if (picked != null) setState(() => _lastDonation = picked);
               },
             ),

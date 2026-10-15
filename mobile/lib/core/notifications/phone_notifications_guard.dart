@@ -38,6 +38,10 @@ class _PhoneNotificationsGuardState
     with WidgetsBindingObserver {
   Timer? _timer;
   bool _active = false;
+  bool _polling = false;
+  bool _pollPending = false;
+  bool _askingPermission = false;
+  bool _resumed = true;
 
   PhoneNotifications get _n => widget.notifier ?? PhoneNotifications.instance;
 
@@ -45,6 +49,9 @@ class _PhoneNotificationsGuardState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _resumed =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     _n.onOpen = _open;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _sync(ref.read(authControllerProvider));
@@ -65,8 +72,23 @@ class _PhoneNotificationsGuardState
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && _active) _poll();
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    _resumed = lifecycle == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startForegroundPolling();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+      _pollPending = false;
+    }
+  }
+
+  void _startForegroundPolling() {
+    _timer?.cancel();
+    _timer = null;
+    if (!_active || !_resumed) return;
+    _poll();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _poll());
   }
 
   void _open(String route) {
@@ -80,8 +102,7 @@ class _PhoneNotificationsGuardState
       _active = true;
       await _askOnce();
       await _n.start(isAdmin: auth.user!.hasRole(Roles.admin));
-      _poll();
-      _timer = Timer.periodic(const Duration(seconds: 30), (_) => _poll());
+      _startForegroundPolling();
     } else if (!signedIn && _active) {
       _active = false;
       _timer?.cancel();
@@ -91,8 +112,13 @@ class _PhoneNotificationsGuardState
   }
 
   Future<void> _poll() async {
+    if (_polling) {
+      _pollPending = true;
+      return;
+    }
     final token = ref.read(tokenStorageProvider).token;
     if (token == null) return;
+    _polling = true;
     try {
       final admin = ref.read(adminAttentionProvider);
       await _n.poll(
@@ -109,45 +135,57 @@ class _PhoneNotificationsGuardState
       );
     } catch (_) {
       // Phone notifications are optional; the in-app list still works
+    } finally {
+      _polling = false;
+      if (_pollPending && mounted && _active && _resumed) {
+        _pollPending = false;
+        Future.microtask(_poll);
+      }
     }
   }
 
   /// Explains why before the OS shows its permission prompt (asked once; later from the profile screen).
   Future<void> _askOnce() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(PhoneNotifications.askedKey) == true) return;
-    if (await _n.areEnabled()) {
-      await prefs.setBool(PhoneNotifications.askedKey, true);
-      return;
-    }
-    final context = rootNavigatorKey.currentContext;
-    if (context == null || !context.mounted) return;
-    final allow = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(Icons.notifications_active_outlined),
-        title: const Text('Phone notifications'),
-        content: Text(
-          defaultTargetPlatform == TargetPlatform.iOS
-              ? 'LifeLink can notify you about messages from the administrator, alerts and decisions while the app is open. Background polling remains Android-only because iOS cannot guarantee the same 15-minute schedule.'
-              : 'LifeLink can notify you about messages from the administrator, alerts and decisions, even when the app is closed. It checks about every 15 minutes and never keeps your session signed in.',
+    if (_askingPermission) return;
+    _askingPermission = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getBool(PhoneNotifications.askedKey) == true) return;
+      if (await _n.areEnabled()) {
+        await prefs.setBool(PhoneNotifications.askedKey, true);
+        return;
+      }
+      final context = rootNavigatorKey.currentContext;
+      if (context == null || !context.mounted) return;
+      final allow = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.notifications_active_outlined),
+          title: const Text('Phone notifications'),
+          content: Text(
+            defaultTargetPlatform == TargetPlatform.iOS
+                ? 'LifeLink can notify you about messages from the administrator, alerts and decisions while the app is open. Background polling remains Android-only because iOS cannot guarantee the same 15-minute schedule.'
+                : 'LifeLink can notify you about messages from the administrator, alerts and decisions, even when the app is closed. It checks about every 15 minutes and never keeps your session signed in.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Allow'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Not now'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Allow'),
-          ),
-        ],
-      ),
-    );
-    if (allow == true) {
-      await _n.requestPermission();
-    } else {
-      await prefs.setBool(PhoneNotifications.askedKey, true);
+      );
+      if (allow == true) {
+        await _n.requestPermission();
+      } else {
+        await prefs.setBool(PhoneNotifications.askedKey, true);
+      }
+    } finally {
+      _askingPermission = false;
     }
   }
 

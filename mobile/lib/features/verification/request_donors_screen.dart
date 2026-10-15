@@ -201,7 +201,7 @@ class _AcceptanceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final compact = OutlinedButton.styleFrom(minimumSize: const Size(0, 40));
+    final compact = OutlinedButton.styleFrom(minimumSize: const Size(0, 48));
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -252,9 +252,7 @@ class _AcceptanceCard extends StatelessWidget {
                 ),
             ],
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            AdaptiveActions(
               children: [
                 // Device feature: contact the donor
                 OutlinedButton.icon(
@@ -284,7 +282,7 @@ class _AcceptanceCard extends StatelessWidget {
                     key: Key('hospital-approve-${a.id}'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.emerald600,
-                      minimumSize: const Size(0, 40),
+                      minimumSize: const Size(0, 48),
                     ),
                     onPressed: onApprove,
                     icon: const Icon(Icons.check, size: 18),
@@ -294,7 +292,7 @@ class _AcceptanceCard extends StatelessWidget {
                     key: Key('hospital-reject-${a.id}'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.rose600,
-                      minimumSize: const Size(0, 40),
+                      minimumSize: const Size(0, 48),
                     ),
                     onPressed: onReject,
                     icon: const Icon(Icons.close, size: 18),
@@ -306,7 +304,7 @@ class _AcceptanceCard extends StatelessWidget {
                     key: Key('record-${a.id}'),
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.emerald600,
-                      minimumSize: const Size(0, 40),
+                      minimumSize: const Size(0, 48),
                     ),
                     onPressed: onRecord,
                     icon: const Icon(
@@ -409,6 +407,7 @@ class _RecordDonationSheetState extends ConsumerState<RecordDonationSheet> {
           ),
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
+            isExpanded: true,
             key: const Key('tested-group'),
             initialValue: _group,
             decoration: const InputDecoration(labelText: 'Tested blood group'),

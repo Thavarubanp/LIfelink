@@ -102,32 +102,27 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 16),
-            Row(
+            AdaptiveFormRow(
               children: [
-                Expanded(
-                  child: TextFormField(
-                    key: const Key('reg-first'),
-                    controller: _first,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(
-                      labelText: 'First name',
-                      errorText: _fieldErrors['firstName'],
-                    ),
-                    validator: (v) => Validators.name(v, 'First name'),
+                TextFormField(
+                  key: const Key('reg-first'),
+                  controller: _first,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'First name',
+                    errorText: _fieldErrors['firstName'],
                   ),
+                  validator: (v) => Validators.name(v, 'First name'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    key: const Key('reg-last'),
-                    controller: _last,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(
-                      labelText: 'Last name',
-                      errorText: _fieldErrors['lastName'],
-                    ),
-                    validator: (v) => Validators.name(v, 'Last name'),
+                TextFormField(
+                  key: const Key('reg-last'),
+                  controller: _last,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: InputDecoration(
+                    labelText: 'Last name',
+                    errorText: _fieldErrors['lastName'],
                   ),
+                  validator: (v) => Validators.name(v, 'Last name'),
                 ),
               ],
             ),
@@ -160,40 +155,35 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               validator: Validators.phone,
             ),
             gap,
-            Row(
+            AdaptiveFormRow(
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: _gender,
-                    decoration: const InputDecoration(labelText: 'Gender'),
-                    items: const [
-                      DropdownMenuItem(value: 'Male', child: Text('Male')),
-                      DropdownMenuItem(value: 'Female', child: Text('Female')),
-                      DropdownMenuItem(value: 'Other', child: Text('Other')),
-                    ],
-                    onChanged: (v) => setState(() => _gender = v ?? 'Other'),
-                  ),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: _gender,
+                  decoration: const InputDecoration(labelText: 'Gender'),
+                  items: const [
+                    DropdownMenuItem(value: 'Male', child: Text('Male')),
+                    DropdownMenuItem(value: 'Female', child: Text('Female')),
+                    DropdownMenuItem(value: 'Other', child: Text('Other')),
+                  ],
+                  onChanged: (v) => setState(() => _gender = v ?? 'Other'),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: DropdownButtonFormField<String?>(
-                    isExpanded: true,
-                    initialValue: _bloodGroup,
-                    decoration: InputDecoration(
-                      labelText: 'Blood group',
-                      errorText: _fieldErrors['bloodGroup'],
-                    ),
-                    items: [
-                      const DropdownMenuItem<String?>(
-                        value: null,
-                        child: Text("Don't know"),
-                      ),
-                      for (final g in AppConstants.bloodGroups)
-                        DropdownMenuItem<String?>(value: g, child: Text(g)),
-                    ],
-                    onChanged: (v) => setState(() => _bloodGroup = v),
+                DropdownButtonFormField<String?>(
+                  isExpanded: true,
+                  initialValue: _bloodGroup,
+                  decoration: InputDecoration(
+                    labelText: 'Blood group',
+                    errorText: _fieldErrors['bloodGroup'],
                   ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text("Don't know"),
+                    ),
+                    for (final g in AppConstants.bloodGroups)
+                      DropdownMenuItem<String?>(value: g, child: Text(g)),
+                  ],
+                  onChanged: (v) => setState(() => _bloodGroup = v),
                 ),
               ],
             ),

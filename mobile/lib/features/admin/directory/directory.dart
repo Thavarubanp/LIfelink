@@ -426,7 +426,7 @@ class AdminUserProfileScreen extends ConsumerWidget {
                     ],
                     const SizedBox(height: 12),
                     if (extra.isNotEmpty) ...[
-                      Wrap(spacing: 8, runSpacing: 8, children: extra),
+                      AdaptiveActions(children: extra),
                       const SizedBox(height: 12),
                     ],
                     Card(
@@ -664,7 +664,7 @@ class AdminHospitalProfileScreen extends ConsumerWidget {
                     ],
                     const SizedBox(height: 12),
                     if (extra.isNotEmpty) ...[
-                      Wrap(spacing: 8, runSpacing: 8, children: extra),
+                      AdaptiveActions(children: extra),
                       const SizedBox(height: 12),
                     ],
                     Card(

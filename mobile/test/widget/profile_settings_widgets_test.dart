@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lifelink_mobile/core/api/api_client.dart';
 import 'package:lifelink_mobile/core/auth/auth_controller.dart';
 import 'package:lifelink_mobile/core/theme/app_theme.dart';
 import 'package:lifelink_mobile/features/home/lifelink_app_bar.dart';
@@ -11,7 +14,33 @@ import 'package:lifelink_mobile/features/profile/settings_screen.dart';
 
 import '../helpers.dart';
 
+class _SlowLogoutAuthController extends AuthController {
+  final release = Completer<void>();
+  int logoutCalls = 0;
+
+  @override
+  AuthState build() => AuthState.signedIn(testUser());
+
+  @override
+  Future<void> logout({SignOutReason reason = SignOutReason.signedOut}) async {
+    logoutCalls++;
+    await release.future;
+    state = AuthState.signedOut(reason: reason);
+  }
+}
+
 void main() {
+  test('notification wording reflects iOS foreground-only polling', () {
+    expect(
+      phoneNotificationsEnabledDescription(TargetPlatform.iOS),
+      contains('while LifeLink is open'),
+    );
+    expect(
+      phoneNotificationsEnabledDescription(TargetPlatform.android),
+      contains('when the app is closed'),
+    );
+  });
+
   testWidgets(
     'profile contains details and edit without settings or sign out',
     (tester) async {
@@ -66,6 +95,37 @@ void main() {
     expect(find.text('Account status and appeals'), findsOneWidget);
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Sign out'), findsOneWidget);
+  });
+
+  testWidgets('More prevents repeated sign-out while it is busy', (
+    tester,
+  ) async {
+    final auth = _SlowLogoutAuthController();
+    await tester.pumpWidget(
+      testApp(
+        const MoreScreen(entries: []),
+        overrides: [authControllerProvider.overrideWith(() => auth)],
+      ),
+    );
+
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Sign out'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Sign out'));
+    await tester.pump();
+
+    expect(auth.logoutCalls, 1);
+    expect(find.text('Signing out...'), findsOneWidget);
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.widgetWithText(OutlinedButton, 'Signing out...'),
+          )
+          .onPressed,
+      isNull,
+    );
+
+    auth.release.complete();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('wordmark uses web red variants and themed Life colour', (

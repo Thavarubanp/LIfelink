@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/format.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/dashboard_metric_card.dart';
 import '../../core/widgets/floating_overlay_padding.dart';
 import '../../core/widgets/state_views.dart';
 import '../analysis/analysis_panel.dart';
@@ -62,7 +63,7 @@ class HospitalHomeScreen extends ConsumerWidget {
                   const SizedBox(height: 16),
                   _actions(context),
                   const SizedBox(height: 16),
-                  _kpis(context, inventory, emergencies),
+                  _kpis(context, ref, inventory, emergencies),
                   const SizedBox(height: 16),
                   InventoryAnalysisPanel(
                     onRunComplete: () {
@@ -146,6 +147,7 @@ class HospitalHomeScreen extends ConsumerWidget {
 
   Widget _kpis(
     BuildContext context,
+    WidgetRef ref,
     AsyncValue<List<InventoryItem>> inventory,
     AsyncValue<List<EmergencyRequest>> emergencies,
   ) {
@@ -153,62 +155,63 @@ class HospitalHomeScreen extends ConsumerWidget {
     final total = items.fold<int>(0, (sum, i) => sum + i.unitsAvailable);
     final low = items.where((i) => i.isLowStock).toList();
     final critical = emergencies.value ?? const <EmergencyRequest>[];
+    final inventoryUnavailable = inventory.hasError && !inventory.hasValue;
+    final emergenciesUnavailable =
+        emergencies.hasError && !emergencies.hasValue;
     final cards = [
       _KpiCard(
         label: 'Blood bank stock',
-        value: inventory.isLoading && !inventory.hasValue
+        value: inventoryUnavailable
+            ? 'Unavailable'
+            : inventory.isLoading && !inventory.hasValue
             ? null
             : '$total units',
-        caption: 'Across ${items.length} blood groups',
-        color: AppColors.emerald600,
+        caption: inventoryUnavailable
+            ? 'Could not load · tap to retry'
+            : 'Across ${items.length} blood groups',
+        color: inventoryUnavailable ? AppColors.rose600 : AppColors.emerald600,
+        onTap: inventoryUnavailable
+            ? () => ref.invalidate(hospitalInventoryProvider)
+            : null,
       ),
       _KpiCard(
         key: const Key('kpi-emergencies'),
         label: 'Critical emergencies',
-        value: emergencies.isLoading && !emergencies.hasValue
+        value: emergenciesUnavailable
+            ? 'Unavailable'
+            : emergencies.isLoading && !emergencies.hasValue
             ? null
             : '${critical.length}',
-        caption: emergencies.hasError
-            ? 'Could not load'
+        caption: emergenciesUnavailable
+            ? 'Could not load · tap to retry'
             : 'Active broadcasts · details',
         color: AppColors.rose600,
-        onTap: () => _showEmergencies(context, critical),
+        onTap: emergenciesUnavailable
+            ? () => ref.invalidate(criticalEmergenciesProvider)
+            : () => _showEmergencies(context, critical),
       ),
       _KpiCard(
         key: const Key('kpi-low-stock'),
         label: 'Low stock',
-        value: inventory.isLoading && !inventory.hasValue
+        value: inventoryUnavailable
+            ? 'Unavailable'
+            : inventory.isLoading && !inventory.hasValue
             ? null
             : '${low.length}',
-        caption: 'Below threshold · details',
-        color: AppColors.amber600,
-        onTap: () => _showLowStock(context, low),
+        caption: inventoryUnavailable
+            ? 'Could not load · tap to retry'
+            : 'Below threshold · details',
+        color: inventoryUnavailable ? AppColors.rose600 : AppColors.amber600,
+        onTap: inventoryUnavailable
+            ? () => ref.invalidate(hospitalInventoryProvider)
+            : () => _showLowStock(context, low),
       ),
     ];
-    return LayoutBuilder(
-      builder: (context, c) {
-        final columns = c.maxWidth >= 600 ? 3 : 1;
-        if (columns == 1) {
-          return Column(
-            children: [
-              for (final card in cards)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: card,
-                ),
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (var i = 0; i < cards.length; i++) ...[
-              if (i > 0) const SizedBox(width: 10),
-              Expanded(child: cards[i]),
-            ],
-          ],
-        );
-      },
+    return DashboardMetricGrid(
+      narrowColumns: 1,
+      wideColumns: 3,
+      breakpoint: 600,
+      children: cards,
     );
   }
 
@@ -364,51 +367,18 @@ class _KpiCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.slate500,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  value == null
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(
-                          value!,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                  const SizedBox(height: 4),
-                  Text(caption, style: TextStyle(fontSize: 12, color: color)),
-                ],
-              ),
-            ),
-            if (onTap != null)
-              const Icon(Icons.chevron_right, color: AppColors.slate400),
-          ],
-        ),
-      ),
-    ),
+  Widget build(BuildContext context) => DashboardMetricCard(
+    label: label,
+    value: value ?? '',
+    detail: caption,
+    icon: switch (label) {
+      'Blood bank stock' => Icons.inventory_2_outlined,
+      'Critical emergencies' => Icons.emergency_outlined,
+      _ => Icons.warning_amber_outlined,
+    },
+    color: color,
+    onTap: onTap,
+    loading: value == null,
   );
 }
 

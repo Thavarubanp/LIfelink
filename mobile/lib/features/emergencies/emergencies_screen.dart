@@ -241,7 +241,7 @@ class _EmergencyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final can = emergencyActions(e);
-    final compact = OutlinedButton.styleFrom(minimumSize: const Size(0, 40));
+    final compact = OutlinedButton.styleFrom(minimumSize: const Size(0, 48));
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -287,9 +287,7 @@ class _EmergencyCard extends StatelessWidget {
             ),
             if (mine && (can.approve || can.reject || can.complete)) ...[
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              AdaptiveActions(
                 children: [
                   if (can.approve)
                     OutlinedButton.icon(
@@ -406,34 +404,31 @@ class _RaiseEmergencySheetState extends ConsumerState<RaiseEmergencySheet> {
               style: TextStyle(fontSize: 12),
             ),
             const SizedBox(height: 14),
-            Row(
+            AdaptiveFormRow(
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _group,
-                    decoration: const InputDecoration(labelText: 'Blood group'),
-                    items: [
-                      for (final g in AppConstants.bloodGroups)
-                        DropdownMenuItem(value: g, child: Text(g)),
-                    ],
-                    onChanged: (v) => setState(() => _group = v ?? _group),
-                  ),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: _group,
+                  decoration: const InputDecoration(labelText: 'Blood group'),
+                  items: [
+                    for (final g in AppConstants.bloodGroups)
+                      DropdownMenuItem(value: g, child: Text(g)),
+                  ],
+                  onChanged: (v) => setState(() => _group = v ?? _group),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    key: const Key('emergency-units'),
-                    controller: _units,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(labelText: 'Units'),
-                    validator: (v) => Validators.intRange(v, 'Units', min: 1),
-                  ),
+                TextFormField(
+                  key: const Key('emergency-units'),
+                  controller: _units,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(labelText: 'Units'),
+                  validator: (v) => Validators.intRange(v, 'Units', min: 1),
                 ),
               ],
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _priority,
               decoration: const InputDecoration(labelText: 'Priority'),
               items: const [

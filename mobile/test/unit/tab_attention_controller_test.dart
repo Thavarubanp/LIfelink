@@ -1,9 +1,19 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lifelink_mobile/core/auth/auth_controller.dart';
 import 'package:lifelink_mobile/features/attention/tab_attention_controller.dart';
 
 import '../helpers.dart';
+
+class _CountingTabAttentionController extends TabAttentionController {
+  int refreshes = 0;
+
+  @override
+  Future<void> refresh() async {
+    refreshes++;
+  }
+}
 
 void main() {
   Future<void> settle() =>
@@ -65,6 +75,44 @@ void main() {
         api.sent.every((r) => !r.headers.containsKey('X-LifeLink-Activity')),
         isTrue,
       );
+    },
+  );
+
+  testWidgets(
+    'foreground attention polling pauses and resumes with lifecycle',
+    (tester) async {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      final controller = _CountingTabAttentionController();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            authControllerProvider.overrideWith(
+              () => FakeAuthController(AuthState.signedIn(testUser())),
+            ),
+            tabAttentionProvider.overrideWith(() => controller),
+          ],
+          child: MaterialApp(
+            home: Consumer(
+              builder: (context, ref, _) {
+                ref.watch(tabAttentionProvider);
+                return const SizedBox.shrink();
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(controller.refreshes, 1);
+      final beforePause = controller.refreshes;
+
+      controller.didChangeAppLifecycleState(AppLifecycleState.paused);
+      await tester.pump(const Duration(seconds: 31));
+      expect(controller.refreshes, beforePause);
+
+      controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(controller.refreshes, beforePause + 1);
     },
   );
 }

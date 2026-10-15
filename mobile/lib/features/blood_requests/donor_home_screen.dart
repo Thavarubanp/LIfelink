@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/format.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/dashboard_metric_card.dart';
 import '../../core/widgets/state_views.dart';
 import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
@@ -150,7 +151,7 @@ class _SummaryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final eligible = data.profile.eligibleAt(DateTime.now());
     final cards = <Widget>[
-      _SummaryCard(
+      DashboardMetricCard(
         label: 'Donation status',
         value: eligible ? 'Eligible' : 'Resting',
         detail: eligible
@@ -159,21 +160,21 @@ class _SummaryGrid extends StatelessWidget {
         icon: Icons.verified_user_outlined,
         color: eligible ? AppColors.emerald600 : AppColors.amber600,
       ),
-      _SummaryCard(
+      DashboardMetricCard(
         label: 'Active requests',
         value: '${data.activeRequests.length}',
         detail: 'Requests you created',
         icon: Icons.assignment_outlined,
         color: AppColors.blue600,
       ),
-      _SummaryCard(
+      DashboardMetricCard(
         label: 'Active acceptances',
         value: '${data.activeAcceptances.length}',
         detail: 'Donation commitments',
         icon: Icons.volunteer_activism_outlined,
         color: AppColors.red600,
       ),
-      _SummaryCard(
+      DashboardMetricCard(
         label: 'Donations completed',
         value: '${data.completedDonations}',
         detail: 'Recorded donations',
@@ -181,86 +182,14 @@ class _SummaryGrid extends StatelessWidget {
         color: AppColors.violet600,
       ),
     ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth >= 600
-            ? (constraints.maxWidth - 12) / 2
-            : constraints.maxWidth;
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final card in cards) SizedBox(width: width, child: card),
-          ],
-        );
-      },
+    return DashboardMetricGrid(
+      narrowColumns: 1,
+      wideColumns: 2,
+      breakpoint: 600,
+      spacing: 12,
+      children: cards,
     );
   }
-}
-
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({
-    required this.label,
-    required this.value,
-    required this.detail,
-    required this.icon,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final String detail;
-  final IconData icon;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    margin: EdgeInsets.zero,
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.slate500,
-                  ),
-                ),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 21,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Text(
-                  detail,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.slate500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
 }
 
 class _ActiveRequests extends StatelessWidget {

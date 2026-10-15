@@ -148,7 +148,7 @@ void main() {
     expect(adminStatisticDestination('Doctors'), '/admin/doctors');
     expect(
       adminStatisticDestination('Active requests'),
-      '/admin/activity?tab=blood-requests',
+      '/admin/activity?tab=blood-requests&status=active',
     );
     expect(
       adminStatisticDestination('Pending complaints'),
@@ -167,6 +167,32 @@ void main() {
       adminStatisticDestination('Suspended hospitals'),
       '/admin/hospitals?filter=suspended',
     );
+  });
+
+  testWidgets('active-request destination visibly selects the Active filter', (
+    tester,
+  ) async {
+    phone(tester);
+    await tester.pumpWidget(
+      testApp(
+        const AdminActivityScreen(
+          initialTab: 'blood-requests',
+          initialStatus: 'active',
+        ),
+        overrides: [
+          adminAttentionProvider.overrideWith(FakeAttention.new),
+          oversightTabProvider.overrideWith(
+            (ref, kind) async => (<OversightItem>[], null),
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final active = tester.widget<ChoiceChip>(
+      find.widgetWithText(ChoiceChip, 'Active'),
+    );
+    expect(active.selected, isTrue);
   });
 
   for (final width in [360.0, 900.0]) {

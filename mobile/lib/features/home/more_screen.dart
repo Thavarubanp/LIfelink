@@ -20,13 +20,37 @@ class MoreEntry {
 }
 
 /// The "More" tab: the role's other screens, notifications, profile and sign out.
-class MoreScreen extends ConsumerWidget {
+class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key, required this.entries});
 
   final List<MoreEntry> entries;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MoreScreen> createState() => _MoreScreenState();
+}
+
+class _MoreScreenState extends ConsumerState<MoreScreen> {
+  bool _signingOut = false;
+
+  Future<void> _signOut() async {
+    if (_signingOut) return;
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Sign out',
+      message: 'Sign out of LifeLink on this phone?',
+      confirmLabel: 'Sign out',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _signingOut = true);
+    try {
+      await ref.read(authControllerProvider.notifier).logout();
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider).user;
     return Scaffold(
       body: ContentWidth(
@@ -78,7 +102,7 @@ class MoreScreen extends ConsumerWidget {
                     onTap: () => showAssistantSheet(context),
                   ),
                   const Divider(),
-                  for (final e in entries)
+                  for (final e in widget.entries)
                     ListTile(
                       leading: Icon(e.icon, color: AppColors.red600),
                       title: Text(e.label),
@@ -116,18 +140,14 @@ class MoreScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () async {
-                if (await confirmDialog(
-                  context,
-                  title: 'Sign out',
-                  message: 'Sign out of LifeLink on this phone?',
-                  confirmLabel: 'Sign out',
-                )) {
-                  await ref.read(authControllerProvider.notifier).logout();
-                }
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text('Sign out'),
+              onPressed: _signingOut ? null : _signOut,
+              icon: _signingOut
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.logout),
+              label: Text(_signingOut ? 'Signing out...' : 'Sign out'),
             ),
           ],
         ),

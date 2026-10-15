@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/dashboard_metric_card.dart';
 import '../../core/widgets/reply_sheet.dart';
 import '../../core/widgets/state_views.dart';
 import '../home/shell_page_header.dart';
@@ -123,142 +124,48 @@ class _DoctorStatGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cards = [
-      _DoctorStat(
-        key: const Key('doctor-stat-assigned'),
+      DashboardMetricCard(
+        interactionKey: const Key('doctor-stat-assigned'),
         label: 'Assigned decisions',
-        value: data.assignedDecisions,
+        value: '${data.assignedDecisions}',
         detail: 'Awaiting your decision',
         icon: Icons.assignment_outlined,
         color: AppColors.blue600,
         onTap: () => context.go('${AppRoutes.doctorRequests}?status=Verified'),
       ),
-      _DoctorStat(
-        key: const Key('doctor-stat-screened'),
+      DashboardMetricCard(
+        interactionKey: const Key('doctor-stat-screened'),
         label: 'Screened donors',
-        value: data.screenedDonors,
+        value: '${data.screenedDonors}',
         detail: 'Latest screening cases',
         icon: Icons.people_outline,
         color: AppColors.violet600,
         onTap: () => context.go('${AppRoutes.doctorReports}?view=all'),
       ),
-      _DoctorStat(
-        key: const Key('doctor-stat-pending'),
+      DashboardMetricCard(
+        interactionKey: const Key('doctor-stat-pending'),
         label: 'Pending reviews',
-        value: data.pendingReviews,
+        value: '${data.pendingReviews}',
         detail: 'Awaiting clinical review',
         icon: Icons.fact_check_outlined,
         color: AppColors.amber600,
         onTap: () => context.go('${AppRoutes.doctorReports}?view=review'),
       ),
-      _DoctorStat(
-        key: const Key('doctor-stat-awaiting'),
+      DashboardMetricCard(
+        interactionKey: const Key('doctor-stat-awaiting'),
         label: 'Awaiting donation',
-        value: data.awaitingDonation,
+        value: '${data.awaitingDonation}',
         detail: 'Donation slots reserved',
         icon: Icons.volunteer_activism_outlined,
         color: AppColors.emerald600,
         onTap: () => context.go('${AppRoutes.doctorReports}?view=awaiting'),
       ),
     ];
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 700 ? 4 : 2;
-        final scale = MediaQuery.textScalerOf(context).scale(1);
-        final height = (142 + (scale - 1) * 42).clamp(142.0, 184.0);
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            mainAxisExtent: height,
-          ),
-          itemCount: cards.length,
-          itemBuilder: (_, index) => cards[index],
-        );
-      },
-    );
-  }
-}
-
-class _DoctorStat extends StatelessWidget {
-  const _DoctorStat({
-    super.key,
-    required this.label,
-    required this.value,
-    required this.detail,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  final String label;
-  final int value;
-  final String detail;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
-      color: dark ? AppColors.slate800 : AppColors.slate50,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(icon, color: color, size: 22),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.slate500,
-                      ),
-                    ),
-                  ),
-                  const Icon(
-                    Icons.chevron_right,
-                    size: 18,
-                    color: AppColors.slate500,
-                  ),
-                ],
-              ),
-              const Spacer(),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '$value',
-                  maxLines: 1,
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              Text(
-                detail,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: AppColors.slate500),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return DashboardMetricGrid(
+      narrowColumns: 2,
+      wideColumns: 4,
+      breakpoint: 700,
+      children: cards,
     );
   }
 }
@@ -429,7 +336,7 @@ class _DoctorRequestsScreenState extends ConsumerState<DoctorRequestsScreen> {
                                       key: Key('approve-${r.id}'),
                                       style: FilledButton.styleFrom(
                                         backgroundColor: AppColors.emerald600,
-                                        minimumSize: const Size(0, 40),
+                                        minimumSize: const Size(0, 48),
                                       ),
                                       onPressed: () => _approve(r),
                                       icon: const Icon(Icons.check, size: 18),
@@ -439,7 +346,7 @@ class _DoctorRequestsScreenState extends ConsumerState<DoctorRequestsScreen> {
                                       key: Key('reject-${r.id}'),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: AppColors.rose600,
-                                        minimumSize: const Size(0, 40),
+                                        minimumSize: const Size(0, 48),
                                       ),
                                       onPressed: () => _reject(r),
                                       icon: const Icon(Icons.close, size: 18),
@@ -454,7 +361,7 @@ class _DoctorRequestsScreenState extends ConsumerState<DoctorRequestsScreen> {
                                     OutlinedButton.icon(
                                       key: Key('donors-${r.id}'),
                                       style: OutlinedButton.styleFrom(
-                                        minimumSize: const Size(0, 40),
+                                        minimumSize: const Size(0, 48),
                                       ),
                                       onPressed: () => context.push(
                                         AppRoutes.doctorRequestDonors(r.id),
@@ -542,7 +449,7 @@ class HospitalDonationsScreen extends ConsumerWidget {
                               actions: [
                                 FilledButton.icon(
                                   style: FilledButton.styleFrom(
-                                    minimumSize: const Size(0, 40),
+                                    minimumSize: const Size(0, 48),
                                   ),
                                   onPressed: () => context.push(
                                     AppRoutes.doctorRequestDonors(r.id),

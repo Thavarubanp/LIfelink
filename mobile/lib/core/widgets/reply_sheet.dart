@@ -131,13 +131,13 @@ class _ReplySheetState extends State<ReplySheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            widget.title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
+          Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
           if (widget.subtitle != null) ...[
             const SizedBox(height: 6),
-            Text(widget.subtitle!, style: const TextStyle(fontSize: 12)),
+            Text(
+              widget.subtitle!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
           const SizedBox(height: 14),
           TextField(

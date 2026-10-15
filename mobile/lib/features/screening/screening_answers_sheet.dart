@@ -160,10 +160,11 @@ class _AnswersSheetState extends State<_AnswersSheet> {
           if (widget.editing)
             Padding(
               padding: const EdgeInsets.only(top: 12),
-              child: FilledButton.icon(
-                onPressed: _busy ? null : _save,
-                icon: const Icon(Icons.send),
-                label: Text(_busy ? 'Sending...' : 'Send updated answers'),
+              child: BusyButton(
+                label: 'Send updated answers',
+                busy: _busy,
+                onPressed: _save,
+                icon: Icons.send,
               ),
             ),
         ],

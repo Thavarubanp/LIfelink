@@ -14,7 +14,7 @@ import '../attention/tab_attention_controller.dart';
 import 'screening_answers_sheet.dart';
 import 'screening_repository.dart';
 
-class MyAcceptancesScreen extends ConsumerWidget {
+class MyAcceptancesScreen extends ConsumerStatefulWidget {
   const MyAcceptancesScreen({
     super.key,
     this.browsePath = AppRoutes.donorRequests,
@@ -24,14 +24,19 @@ class MyAcceptancesScreen extends ConsumerWidget {
   final String browsePath;
   final String screeningPathPrefix;
 
-  String _screeningPath(String acceptanceId) =>
-      '$screeningPathPrefix/$acceptanceId/screening';
+  @override
+  ConsumerState<MyAcceptancesScreen> createState() =>
+      _MyAcceptancesScreenState();
+}
 
-  Future<void> _withdraw(
-    BuildContext context,
-    WidgetRef ref,
-    DonorAcceptance a,
-  ) async {
+class _MyAcceptancesScreenState extends ConsumerState<MyAcceptancesScreen> {
+  String? _withdrawingId;
+
+  String _screeningPath(String acceptanceId) =>
+      '${widget.screeningPathPrefix}/$acceptanceId/screening';
+
+  Future<void> _withdraw(DonorAcceptance a) async {
+    if (_withdrawingId != null) return;
     final yes = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -53,29 +58,29 @@ class MyAcceptancesScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (yes != true) return;
+    if (yes != true || !mounted) return;
+    setState(() => _withdrawingId = a.id);
     try {
       await ref.read(screeningRepositoryProvider).withdraw(a.id);
       ref.invalidate(myAcceptancesProvider);
       ref.read(tabAttentionProvider.notifier).refresh();
-      if (context.mounted)
+      if (mounted) {
         showSnack(context, 'You have withdrawn from this donation.');
+      }
     } catch (e) {
       if (ApiError.from(e).isConflict) ref.invalidate(myAcceptancesProvider);
-      if (context.mounted)
+      if (mounted) {
         showSnack(context, ApiError.from(e).message, type: SnackType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _withdrawingId = null);
     }
   }
 
-  Future<void> _answers(
-    BuildContext context,
-    WidgetRef ref,
-    DonorAcceptance a,
-    bool edit,
-  ) async {
+  Future<void> _answers(DonorAcceptance a, bool edit) async {
     try {
       final data = await ref.read(screeningRepositoryProvider).answers(a.id);
-      if (!context.mounted) return;
+      if (!mounted) return;
       if (edit && !data.canEdit) {
         showSnack(
           context,
@@ -106,10 +111,12 @@ class MyAcceptancesScreen extends ConsumerWidget {
             ],
           ),
         );
-        if (yes == true && context.mounted) {
+        if (yes == true && mounted) {
           await ref.read(screeningRepositoryProvider).reopen(a.id);
           ref.read(tabAttentionProvider.notifier).refresh();
-          if (context.mounted) context.push(_screeningPath(a.id));
+          if (mounted) {
+            context.push(_screeningPath(a.id));
+          }
         }
         return;
       }
@@ -120,22 +127,25 @@ class MyAcceptancesScreen extends ConsumerWidget {
         onSave: (answers) =>
             ref.read(screeningRepositoryProvider).updateAnswers(a.id, answers),
       );
+      if (!mounted) return;
       if (saved) {
         ref.invalidate(myAcceptancesProvider);
         ref.invalidate(screeningAnswersProvider(a.id));
         ref.read(tabAttentionProvider.notifier).refresh();
-        if (context.mounted)
+        if (mounted) {
           showSnack(context, 'Your updated answers were sent.');
+        }
       }
     } catch (e) {
       if (ApiError.from(e).isConflict) ref.invalidate(myAcceptancesProvider);
-      if (context.mounted)
+      if (mounted) {
         showSnack(context, ApiError.from(e).message, type: SnackType.error);
+      }
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final value = ref.watch(myAcceptancesProvider);
     return Scaffold(
       body: RefreshableScroll(
@@ -163,7 +173,7 @@ class MyAcceptancesScreen extends ConsumerWidget {
                           message:
                               'You have not accepted a donation request yet.',
                           action: FilledButton(
-                            onPressed: () => context.go(browsePath),
+                            onPressed: () => context.go(widget.browsePath),
                             child: const Text('Browse requests'),
                           ),
                         )
@@ -174,10 +184,12 @@ class MyAcceptancesScreen extends ConsumerWidget {
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: _AcceptanceCard(
                                   acceptance: a,
-                                  onWithdraw: () => _withdraw(context, ref, a),
-                                  onView: () =>
-                                      _answers(context, ref, a, false),
-                                  onEdit: () => _answers(context, ref, a, true),
+                                  withdrawing: _withdrawingId == a.id,
+                                  onWithdraw: _withdrawingId == null
+                                      ? () => _withdraw(a)
+                                      : null,
+                                  onView: () => _answers(a, false),
+                                  onEdit: () => _answers(a, true),
                                   onScreen: () =>
                                       context.push(_screeningPath(a.id)),
                                 ),
@@ -197,13 +209,16 @@ class MyAcceptancesScreen extends ConsumerWidget {
 class _AcceptanceCard extends StatelessWidget {
   const _AcceptanceCard({
     required this.acceptance,
+    required this.withdrawing,
     required this.onWithdraw,
     required this.onView,
     required this.onEdit,
     required this.onScreen,
   });
   final DonorAcceptance acceptance;
-  final VoidCallback onWithdraw, onView, onEdit, onScreen;
+  final bool withdrawing;
+  final VoidCallback? onWithdraw;
+  final VoidCallback onView, onEdit, onScreen;
   @override
   Widget build(BuildContext context) {
     final a = acceptance;
@@ -291,9 +306,7 @@ class _AcceptanceCard extends StatelessWidget {
                   ),
                 ),
             ],
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            AdaptiveActions(
               children: [
                 if (canScreen)
                   FilledButton.icon(
@@ -316,9 +329,16 @@ class _AcceptanceCard extends StatelessWidget {
                     child: const Text('Update my answers'),
                   ),
                 if (a.isActive)
-                  TextButton(
+                  TextButton.icon(
                     onPressed: onWithdraw,
-                    child: const Text('Withdraw'),
+                    icon: withdrawing
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.undo, size: 18),
+                    label: const Text('Withdraw'),
                   ),
               ],
             ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../../core/utils/format.dart';
+import '../../core/widgets/common.dart';
 import 'screening_models.dart';
 
 Object? screeningInputValue(ScreeningPart part, Object? value) {
@@ -191,6 +192,7 @@ class _DateInput extends StatelessWidget {
       firstDate: DateTime(1900),
       lastDate: today,
     );
+    if (!context.mounted) return;
     if (date != null) onChanged(Fmt.apiDate(date));
   }
 
@@ -262,49 +264,53 @@ class _TripsInput extends StatelessWidget {
         for (var i = 0; i < current.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: '${current[i]['country']}',
-                    enabled: !disabled,
-                    maxLength: 80,
-                    decoration: const InputDecoration(labelText: 'Country'),
-                    onChanged: (v) => set(i, 'country', v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _DateInput(
-                    part: const ScreeningPart(
-                      'return',
-                      'Return date',
-                      'date',
-                      [],
-                      true,
-                      true,
-                      false,
-                      false,
-                      null,
-                      null,
-                      null,
-                      null,
+                AdaptiveFormRow(
+                  breakpoint: 500,
+                  children: [
+                    TextFormField(
+                      initialValue: '${current[i]['country']}',
+                      enabled: !disabled,
+                      maxLength: 80,
+                      decoration: const InputDecoration(labelText: 'Country'),
+                      onChanged: (v) => set(i, 'country', v),
                     ),
-                    value: current[i]['return_date'],
-                    disabled: disabled,
-                    onChanged: (v) => set(i, 'return_date', v),
-                  ),
+                    _DateInput(
+                      part: const ScreeningPart(
+                        'return',
+                        'Return date',
+                        'date',
+                        [],
+                        true,
+                        true,
+                        false,
+                        false,
+                        null,
+                        null,
+                        null,
+                        null,
+                      ),
+                      value: current[i]['return_date'],
+                      disabled: disabled,
+                      onChanged: (v) => set(i, 'return_date', v),
+                    ),
+                  ],
                 ),
                 if (current.length > 1)
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: disabled
-                        ? null
-                        : () {
-                            final updated = [...current]..removeAt(i);
-                            onChanged(updated);
-                          },
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('Remove trip'),
+                      onPressed: disabled
+                          ? null
+                          : () {
+                              final updated = [...current]..removeAt(i);
+                              onChanged(updated);
+                            },
+                    ),
                   ),
               ],
             ),

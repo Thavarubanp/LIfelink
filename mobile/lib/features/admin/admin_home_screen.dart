@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/dashboard_metric_card.dart';
 import '../../core/widgets/state_views.dart';
 import '../home/shell_page_header.dart';
 import 'admin_repository.dart';
@@ -14,7 +15,8 @@ String? adminStatisticDestination(String label) => switch (label) {
   'Donors / patients' => AppRoutes.adminUsers,
   'Hospitals' => AppRoutes.adminHospitals,
   'Doctors' => AppRoutes.adminDoctors,
-  'Active requests' => '${AppRoutes.adminActivity}?tab=blood-requests',
+  'Active requests' =>
+    '${AppRoutes.adminActivity}?tab=blood-requests&status=active',
   'Pending complaints' => AppRoutes.adminComplaints,
   'Pending registrations' => AppRoutes.adminRegistrations,
   'Pending appeals' => AppRoutes.adminAppeals,
@@ -158,86 +160,26 @@ class StatGrid extends StatelessWidget {
   final Map<String, VoidCallback> actions;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, c) {
-      final columns = c.maxWidth >= 600 ? 3 : 2;
-      const gap = 10.0;
-      final dark = Theme.of(context).brightness == Brightness.dark;
-      final textScale = MediaQuery.textScalerOf(context).scale(1);
-      final tileHeight = (104 + (textScale - 1) * 40).clamp(104.0, 152.0);
-      return GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columns,
-          crossAxisSpacing: gap,
-          mainAxisSpacing: gap,
-          mainAxisExtent: tileHeight,
+  Widget build(BuildContext context) => DashboardMetricGrid(
+    narrowColumns: 2,
+    wideColumns: 3,
+    breakpoint: 600,
+    compact: true,
+    children: [
+      for (final (label, value, icon, color) in stats)
+        DashboardMetricCard(
+          interactionKey: actions[label] == null
+              ? null
+              : Key('admin-directory-$label'),
+          label: label,
+          value: '$value',
+          detail: 'Open $label',
+          icon: icon,
+          color: color,
+          compact: true,
+          onTap: actions[label],
         ),
-        itemCount: stats.length,
-        itemBuilder: (context, index) {
-          final (label, value, icon, color) = stats[index];
-          return Material(
-            color: dark ? AppColors.slate800 : AppColors.slate50,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              key: actions[label] == null
-                  ? null
-                  : Key('admin-directory-$label'),
-              borderRadius: BorderRadius.circular(12),
-              onTap: actions[label],
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(icon, color: color),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: double.infinity,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                '$value',
-                                maxLines: 1,
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Text(
-                            label,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.slate500,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (actions[label] != null)
-                      const Icon(
-                        Icons.chevron_right,
-                        size: 18,
-                        color: AppColors.slate500,
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    },
+    ],
   );
 }
 

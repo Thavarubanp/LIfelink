@@ -35,13 +35,17 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard>
   bool _heartbeatInFlight = false;
   bool _signingOut = false;
   bool _staying = false;
+  bool _resumed = true;
   int _lastTouchMs = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
+    _resumed =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    _startTicking();
     ref.read(routerProvider).routerDelegate.addListener(_onRouteChanged);
   }
 
@@ -55,9 +59,26 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Back from the background: sign out at once if the idle time has passed meanwhile
-    if (state == AppLifecycleState.resumed) _onTick();
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    _resumed = lifecycle == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startTicking();
+      if (_paused) _startKeepAlive();
+      // Back from the background: sign out at once if the idle time passed.
+      _onTick();
+    } else {
+      _tick?.cancel();
+      _tick = null;
+      _keepAlive?.cancel();
+      _keepAlive = null;
+    }
+  }
+
+  void _startTicking() {
+    _tick?.cancel();
+    _tick = null;
+    if (!_resumed) return;
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
   }
 
   String get _path {
@@ -86,7 +107,7 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard>
   }
 
   void _startKeepAlive() {
-    if (_keepAlive != null) return;
+    if (!_resumed || _keepAlive != null) return;
     final user = ref.read(authControllerProvider).user;
     if (user == null) return;
     final idleMs = (user.sessionIdleTimeoutMinutes * 60000).round();

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http_mock_adapter/http_mock_adapter.dart';
@@ -8,6 +10,21 @@ import 'package:lifelink_mobile/core/auth/auth_repository.dart';
 import 'package:lifelink_mobile/core/providers.dart';
 
 import '../helpers.dart';
+
+class _DeferredLogoutRepository extends AuthRepository {
+  _DeferredLogoutRepository(super.api);
+
+  final release = Completer<void>();
+  final called = Completer<void>();
+  String? capturedToken;
+
+  @override
+  Future<void> logout({String? reason, String? capturedToken}) async {
+    this.capturedToken = capturedToken;
+    if (!called.isCompleted) called.complete();
+    await release.future;
+  }
+}
 
 void main() {
   test('donor capability includes User and Admin but excludes clinical/staff roles', () {
@@ -200,6 +217,38 @@ void main() {
       expect(c.read(sessionActivityProvider).lastConfirmedMs, 0);
       expect(c.read(authControllerProvider).status, AuthStatus.signedOut);
     });
+
+    test(
+      'logout clears locally before best-effort server termination finishes',
+      () async {
+        final api = MockedApi(token: 'jwt-old');
+        api.adapter.onGet(
+          '/Auth/me',
+          (s) => s.reply(200, {'success': true, 'data': userJson()}),
+        );
+        final repository = _DeferredLogoutRepository(api.client);
+        final c = ProviderContainer(
+          overrides: [
+            ...api.overrides,
+            authRepositoryProvider.overrideWithValue(repository),
+          ],
+          retry: (_, _) => null,
+        );
+        addTearDown(c.dispose);
+        await c.read(authControllerProvider.notifier).restore();
+
+        final localLogout = c.read(authControllerProvider.notifier).logout();
+        await repository.called.future;
+
+        expect(api.tokens.token, isNull);
+        expect(c.read(authControllerProvider).status, AuthStatus.signedOut);
+        expect(repository.capturedToken, 'jwt-old');
+        await localLogout;
+
+        repository.release.complete();
+        await Future<void>.delayed(Duration.zero);
+      },
+    );
 
     test(
       'a 401 while signed in signs out with the reason and message',

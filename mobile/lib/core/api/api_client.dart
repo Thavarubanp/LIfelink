@@ -16,12 +16,16 @@ Options apiOptions({
   bool background = false,
   bool reportActivity = false,
   String? idempotencyKey,
+  String? capturedToken,
+  bool ignoreUnauthorized = false,
   Duration? receiveTimeout,
 }) => Options(
   extra: {
     'background': background,
     'reportActivity': reportActivity,
     'idempotencyKey': ?idempotencyKey,
+    'capturedToken': ?capturedToken,
+    'ignoreUnauthorized': ignoreUnauthorized,
   },
   receiveTimeout: receiveTimeout,
 );
@@ -61,7 +65,7 @@ class ApiClient {
   void Function(SignOutReason reason)? onUnauthorized;
 
   void _onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final token = tokens.token;
+    final token = options.extra['capturedToken'] as String? ?? tokens.token;
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
       final background = options.extra['background'] == true;
@@ -99,6 +103,7 @@ class ApiClient {
       }
     }
     if (status == 401 &&
+        error.requestOptions.extra['ignoreUnauthorized'] != true &&
         error.requestOptions.headers.containsKey('Authorization')) {
       final ended = error.response?.headers.value(
         SessionActivity.sessionEndedHeader,

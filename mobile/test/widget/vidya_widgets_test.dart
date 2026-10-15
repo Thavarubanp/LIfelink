@@ -3,14 +3,78 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lifelink_mobile/core/auth/auth_controller.dart';
+import 'package:lifelink_mobile/core/api/api_error.dart';
+import 'package:lifelink_mobile/features/attention/tab_attention_controller.dart';
 import 'package:lifelink_mobile/features/blood_requests/blood_request_models.dart';
 import 'package:lifelink_mobile/features/blood_requests/blood_request_repository.dart';
 import 'package:lifelink_mobile/features/blood_requests/create_request_screen.dart';
 import 'package:lifelink_mobile/features/blood_requests/public_requests_screen.dart';
 import 'package:lifelink_mobile/features/screening/screening_inputs.dart';
+import 'package:lifelink_mobile/features/screening/screening_interview_screen.dart';
 import 'package:lifelink_mobile/features/screening/screening_models.dart';
+import 'package:lifelink_mobile/features/screening/screening_repository.dart';
 
 import '../helpers.dart';
+
+class _NoTabAttention extends TabAttentionController {
+  @override
+  TabAttentionState build() => const TabAttentionState();
+
+  @override
+  Future<void> refresh() async {}
+}
+
+class _FailThenConfirmScreeningRepository extends ScreeningRepository {
+  _FailThenConfirmScreeningRepository() : super(MockedApi().client);
+
+  int calls = 0;
+  int submittedPayloads = 0;
+
+  @override
+  Future<AssistantReply> chat(
+    String acceptanceId, {
+    String message = '',
+    Map<String, dynamic>? structured,
+  }) async {
+    calls++;
+    if (calls == 1) {
+      return AssistantReply(
+        'Please answer the current question.',
+        ScreeningSession(
+          'InProgress',
+          false,
+          1,
+          1,
+          'Health',
+          0,
+          1,
+          const ScreeningQuestion(
+            'Q1',
+            1,
+            'Health',
+            'Are you feeling well?',
+            'text',
+            false,
+            false,
+            [],
+            [],
+          ),
+          const [],
+        ),
+      );
+    }
+    if (message.isNotEmpty || structured != null) {
+      submittedPayloads++;
+      throw const ApiError('The response was lost.');
+    }
+    return const AssistantReply(
+      'Your screening is complete.',
+      ScreeningSession('Submitted', true, 1, 1, 'Health', 1, 1, null, [
+        (question: 'Are you feeling well?', answer: 'Yes'),
+      ]),
+    );
+  }
+}
 
 void main() {
   testWidgets('public requests show API data and filters', (tester) async {
@@ -153,4 +217,40 @@ void main() {
     await tester.pump();
     expect(values['OK'], 'Yes');
   });
+
+  testWidgets(
+    'failed screening answer is retained and retry reconciles first',
+    (tester) async {
+      final repository = _FailThenConfirmScreeningRepository();
+      await tester.pumpWidget(
+        testApp(
+          const ScreeningInterviewScreen(acceptanceId: 'a1'),
+          overrides: [
+            screeningRepositoryProvider.overrideWithValue(repository),
+            tabAttentionProvider.overrideWith(_NoTabAttention.new),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final input = find.byType(TextField);
+      await tester.enterText(input, 'Yes');
+      await tester.tap(find.byType(IconButton));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Retry answer'), findsOneWidget);
+      expect(tester.widget<TextField>(input).controller!.text, 'Yes');
+      expect(repository.submittedPayloads, 1);
+
+      await tester.tap(find.text('Retry answer'));
+      await tester.pumpAndSettle();
+
+      expect(repository.submittedPayloads, 1);
+      expect(repository.calls, 3);
+      expect(
+        find.text('Your answers were sent to the doctor.'),
+        findsOneWidget,
+      );
+    },
+  );
 }

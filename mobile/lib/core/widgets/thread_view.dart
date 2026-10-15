@@ -41,8 +41,12 @@ class ThreadView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (messages.isEmpty)
-      return Text(emptyText, style: const TextStyle(color: AppColors.slate500));
+    if (messages.isEmpty) {
+      return Text(
+        emptyText,
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      );
+    }
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
@@ -79,10 +83,7 @@ class ThreadView extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       m.detail!,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.slate500,
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                   if (m.attachment != null) ...[
@@ -92,10 +93,7 @@ class ThreadView extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                     Fmt.sriLankaDateTime(m.at),
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.slate500,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
               ),

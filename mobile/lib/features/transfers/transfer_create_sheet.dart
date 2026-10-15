@@ -166,6 +166,7 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 key: const Key('transfer-group'),
                 initialValue: _group,
                 decoration: const InputDecoration(labelText: 'Blood group'),

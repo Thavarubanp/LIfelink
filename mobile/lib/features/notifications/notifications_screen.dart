@@ -35,6 +35,7 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   final Set<String> _readLocally = {};
   final Set<String> _dismissed = {};
+  bool _readingAll = false;
 
   Future<void> _refresh() async {
     _readLocally.clear();
@@ -143,6 +144,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Future<void> _readAll() async {
+    if (_readingAll) return;
+    setState(() => _readingAll = true);
     try {
       await ref.read(notificationsRepositoryProvider).markAllRead();
       await _refresh();
@@ -155,6 +158,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       }
     } catch (e) {
       if (mounted) showErrorSnack(context, e);
+    } finally {
+      if (mounted) setState(() => _readingAll = false);
     }
   }
 
@@ -168,8 +173,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           if (widget.types == null)
             IconButton(
               tooltip: 'Mark all as read',
-              icon: const Icon(Icons.done_all),
-              onPressed: _readAll,
+              icon: _readingAll
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.done_all),
+              onPressed: _readingAll ? null : _readAll,
             ),
         ],
       ),

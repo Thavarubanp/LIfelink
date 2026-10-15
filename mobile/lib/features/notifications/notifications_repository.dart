@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
@@ -89,22 +90,57 @@ final unreadCountProvider = NotifierProvider<UnreadCountController, int>(
 );
 
 /// Unread count, refreshed every 30 s in the background while signed in.
-class UnreadCountController extends Notifier<int> {
+class UnreadCountController extends Notifier<int> with WidgetsBindingObserver {
   Timer? _timer;
+  bool _observingLifecycle = false;
+  bool _signedIn = false;
+  bool _resumed = true;
+  int _lastCount = 0;
 
   @override
   int build() {
-    final signedIn = ref.watch(
+    _signedIn = ref.watch(
       authControllerProvider.select(
         (s) => s.isSignedIn && s.user?.isSuspended != true,
       ),
     );
     _timer?.cancel();
-    ref.onDispose(() => _timer?.cancel());
-    if (!signedIn) return 0;
+    if (!_observingLifecycle) {
+      _observingLifecycle = true;
+      _resumed =
+          WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      WidgetsBinding.instance.addObserver(this);
+      ref.onDispose(() {
+        _timer?.cancel();
+        WidgetsBinding.instance.removeObserver(this);
+      });
+    }
+    if (!_signedIn) {
+      _lastCount = 0;
+      return 0;
+    }
+    _startForegroundPolling();
+    return _lastCount;
+  }
+
+  void _startForegroundPolling() {
+    _timer?.cancel();
+    _timer = null;
+    if (!_signedIn || !_resumed) return;
     Future.microtask(refresh);
     _timer = Timer.periodic(AppConstants.unreadPollInterval, (_) => refresh());
-    return 0;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _resumed = state == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startForegroundPolling();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   Future<void> refresh() async {
@@ -112,17 +148,29 @@ class UnreadCountController extends Notifier<int> {
       final count = await ref
           .read(notificationsRepositoryProvider)
           .unreadCount(background: true);
-      if (ref.mounted) state = count;
+      if (ref.mounted) {
+        _lastCount = count;
+        state = count;
+      }
     } catch (_) {
       // Keep the last count; a 401 is handled by the API client
     }
   }
 
   void decrement() {
-    if (state > 0) state--;
+    if (state > 0) {
+      state--;
+      _lastCount = state;
+    }
   }
 
-  void increment() => state++;
+  void increment() {
+    state++;
+    _lastCount = state;
+  }
 
-  void setLocalCount(int count) => state = count;
+  void setLocalCount(int count) {
+    state = count;
+    _lastCount = count;
+  }
 }

@@ -132,6 +132,7 @@ enum OversightKind {
 }
 
 const suspendedFilter = '__suspended';
+const activeRequestFilter = '__active';
 
 /// Filters of the web page: status (or "Suspended by admin"), transfer type, Sri Lanka date range.
 bool oversightMatches(
@@ -141,7 +142,12 @@ bool oversightMatches(
   DateTime? from,
   DateTime? to,
 }) {
+  if (status == activeRequestFilter &&
+      !const {'Pending', 'Verified', 'Approved'}.contains(i.status)) {
+    return false;
+  }
   if (status != null &&
+      status != activeRequestFilter &&
       (status == suspendedFilter ? !i.isSuspended : i.status != status)) {
     return false;
   }
@@ -213,9 +219,10 @@ final oversightTabProvider = FutureProvider.autoDispose
 /// Admin Activity tab: every blood request (any status, incl. deleted) and every transfer, "New" since last opened,
 /// filters, and Suspend (reason) / Lift on open items. The admin never edits or deletes them.
 class AdminActivityScreen extends ConsumerStatefulWidget {
-  const AdminActivityScreen({super.key, this.initialTab});
+  const AdminActivityScreen({super.key, this.initialTab, this.initialStatus});
 
   final String? initialTab;
+  final String? initialStatus;
 
   @override
   ConsumerState<AdminActivityScreen> createState() =>
@@ -226,7 +233,10 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
   late OversightKind _kind = widget.initialTab == 'transfers'
       ? OversightKind.transfer
       : OversightKind.request;
-  String? _status;
+  late String? _status =
+      _kind == OversightKind.request && widget.initialStatus == 'active'
+      ? activeRequestFilter
+      : null;
   String? _type;
   DateTime? _from;
   DateTime? _to;
@@ -238,12 +248,20 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
   @override
   void didUpdateWidget(covariant AdminActivityScreen old) {
     super.didUpdateWidget(old);
-    if (widget.initialTab != old.initialTab) {
-      _select(
-        widget.initialTab == 'transfers'
+    if (widget.initialTab != old.initialTab ||
+        widget.initialStatus != old.initialStatus) {
+      setState(() {
+        _kind = widget.initialTab == 'transfers'
             ? OversightKind.transfer
-            : OversightKind.request,
-      );
+            : OversightKind.request;
+        _status =
+            _kind == OversightKind.request && widget.initialStatus == 'active'
+            ? activeRequestFilter
+            : null;
+        _type = null;
+        _from = null;
+        _to = null;
+      });
     }
   }
 
@@ -314,6 +332,7 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
       firstDate: from ? DateTime(2026) : (_from ?? DateTime(2026)),
       lastDate: from ? (_to ?? today) : today,
     );
+    if (!mounted) return;
     if (picked != null) setState(() => from ? _from = picked : _to = picked);
   }
 
@@ -370,6 +389,8 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
                 FilterChips<String?>(
                   options: [
                     (null, 'All statuses'),
+                    if (_kind == OversightKind.request)
+                      (activeRequestFilter, 'Active'),
                     for (final s in statuses) (s, s),
                     (suspendedFilter, 'Suspended by admin'),
                   ],

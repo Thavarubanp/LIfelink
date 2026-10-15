@@ -142,7 +142,7 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
                                       key: Key('verify-${r.id}'),
                                       style: FilledButton.styleFrom(
                                         backgroundColor: AppColors.emerald600,
-                                        minimumSize: const Size(0, 40),
+                                        minimumSize: const Size(0, 48),
                                       ),
                                       onPressed: () => _verify(r),
                                       icon: const Icon(
@@ -155,7 +155,7 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
                                       key: Key('reject-${r.id}'),
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: AppColors.rose600,
-                                        minimumSize: const Size(0, 40),
+                                        minimumSize: const Size(0, 48),
                                       ),
                                       onPressed: () => _reject(r),
                                       icon: const Icon(Icons.close, size: 18),
@@ -168,7 +168,7 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
                                   }.contains(r.status))
                                     OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
-                                        minimumSize: const Size(0, 40),
+                                        minimumSize: const Size(0, 48),
                                       ),
                                       onPressed: () => context.push(
                                         AppRoutes.hospitalRequestDonors(r.id),
@@ -293,7 +293,7 @@ class RequestCard extends StatelessWidget {
               ),
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 10),
-              Wrap(spacing: 8, runSpacing: 8, children: actions),
+              AdaptiveActions(children: actions),
             ],
           ],
         ),

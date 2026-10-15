@@ -177,12 +177,16 @@ String? resolveRedirect(AuthState auth, String path) {
     return AppRoutes.homeFor(user);
   }
 
+  if (path == AppRoutes.suspendedWithdrawals && !user.isDonorCapable) {
+    return user.isSuspended
+        ? AppRoutes.governanceStatus
+        : AppRoutes.homeFor(user);
+  }
+
   if (user.isSuspended) {
-    final narrowWithdrawal =
-        path == AppRoutes.suspendedWithdrawals && user.isDonorCapable;
     return path == AppRoutes.governanceStatus ||
             path == AppRoutes.myAppeals ||
-            narrowWithdrawal
+            path == AppRoutes.suspendedWithdrawals
         ? null
         : AppRoutes.governanceStatus;
   }

@@ -61,6 +61,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     final message = await ref
         .read(authRepositoryProvider)
         .forgotPassword(_email.text);
+    if (!mounted) return;
     setState(() {
       _info = message;
       _step = _Step.otp;
@@ -71,6 +72,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     _resetToken = await ref
         .read(authRepositoryProvider)
         .verifyOtp(_email.text, _otp.text.trim());
+    if (!mounted) return;
     setState(() {
       _info = 'Code verified. Choose a new password.';
       _step = _Step.reset;

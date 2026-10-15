@@ -55,6 +55,7 @@ void main() {
     expect(find.text('Colombo'), findsOneWidget);
     expect(find.text('Public'), findsOneWidget);
     expect(find.text('Private'), findsNWidgets(2));
+    expect(find.byType(Switch), findsNWidgets(3));
     expect(find.text('Edit profile'), findsOneWidget);
   });
 

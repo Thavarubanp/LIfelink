@@ -118,6 +118,24 @@ void main() {
 
       expect(api.sent.single.headers['Idempotency-Key'], 'key-123');
     });
+
+    test('a captured token can terminate a cleared session', () async {
+      final api = MockedApi(token: 'jwt-old');
+      api.adapter.onPost('/Auth/logout', (s) => s.reply(200, {}));
+      await api.tokens.clear();
+
+      await api.client.post(
+        '/Auth/logout',
+        options: apiOptions(
+          background: true,
+          capturedToken: 'jwt-old',
+          ignoreUnauthorized: true,
+        ),
+      );
+
+      expect(api.sent.single.headers['Authorization'], 'Bearer jwt-old');
+      expect(api.tokens.token, isNull);
+    });
   });
 
   group('ApiClient errors', () {

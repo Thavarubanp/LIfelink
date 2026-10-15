@@ -115,11 +115,12 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
     });
     try {
       final a = await picker();
+      if (!mounted) return;
       if (a != null) widget.onChanged(a);
     } on AttachmentException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'The file could not be read.');
+      if (mounted) setState(() => _error = 'The file could not be read.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -153,7 +154,7 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
           spacing: 8,
           children: [
             OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
               onPressed: !widget.enabled || _busy
                   ? null
                   : () => _pick(widget.documentPicker ?? pickDocument),
@@ -161,7 +162,7 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
               label: const Text('Attach file'),
             ),
             OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
               onPressed: !widget.enabled || _busy
                   ? null
                   : () => _pick(takePhoto),
@@ -169,7 +170,7 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
               label: const Text('Take photo'),
             ),
             OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
               onPressed: !widget.enabled || _busy
                   ? null
                   : () => _pick(pickGalleryImage),
@@ -277,7 +278,7 @@ class AttachmentView extends StatelessWidget {
     }
     return OutlinedButton.icon(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 40),
+        minimumSize: const Size(0, 48),
         alignment: Alignment.centerLeft,
       ),
       onPressed: () => _open(context),

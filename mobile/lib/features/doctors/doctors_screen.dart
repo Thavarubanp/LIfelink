@@ -24,8 +24,10 @@ class DoctorsScreen extends ConsumerStatefulWidget {
 
 class _DoctorsScreenState extends ConsumerState<DoctorsScreen> {
   String _search = '';
+  String? _removingId;
 
   Future<void> _remove(Doctor d) async {
+    if (_removingId != null) return;
     final ok = await confirmDialog(
       context,
       title: 'Remove ${d.name}?',
@@ -35,7 +37,8 @@ class _DoctorsScreenState extends ConsumerState<DoctorsScreen> {
       confirmLabel: 'Remove',
       destructive: true,
     );
-    if (!ok) return;
+    if (!ok || !mounted) return;
+    setState(() => _removingId = d.doctorId);
     try {
       await ref.read(doctorRepositoryProvider).remove(d.doctorId);
       if (mounted) {
@@ -50,6 +53,7 @@ class _DoctorsScreenState extends ConsumerState<DoctorsScreen> {
       if (mounted) showErrorSnack(context, e, title: 'Delete failed');
     } finally {
       ref.invalidate(hospitalDoctorsProvider);
+      if (mounted) setState(() => _removingId = null);
     }
   }
 
@@ -186,11 +190,21 @@ class _DoctorsScreenState extends ConsumerState<DoctorsScreen> {
                                 trailing: IconButton(
                                   key: Key('remove-${d.doctorId}'),
                                   tooltip: 'Remove doctor',
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: AppColors.rose600,
-                                  ),
-                                  onPressed: () => _remove(d),
+                                  icon: _removingId == d.doctorId
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.delete_outline,
+                                          color: AppColors.rose600,
+                                        ),
+                                  onPressed: _removingId == null
+                                      ? () => _remove(d)
+                                      : null,
                                 ),
                               ),
                             ),

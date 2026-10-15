@@ -48,7 +48,11 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
 
   Future<void> _refresh() async {
     _reload();
-    await ref.read(transfersProvider.future).catchError((_) => <Transfer>[]);
+    ref.invalidate(myHospitalProvider);
+    await Future.wait([
+      ref.read(transfersProvider.future).then<void>((_) {}, onError: (_) {}),
+      ref.read(myHospitalProvider.future).then<void>((_) {}, onError: (_) {}),
+    ]);
   }
 
   Future<void> _act(
@@ -206,13 +210,15 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
   @override
   Widget build(BuildContext context) {
     final value = ref.watch(transfersProvider);
-    final me = ref.watch(myHospitalProvider).value?.hospitalId;
+    final hospital = ref.watch(myHospitalProvider);
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: AppColors.red600,
         foregroundColor: Colors.white,
         onPressed: () async {
-          if (await showCreateTransferSheet(context)) {
+          final created = await showCreateTransferSheet(context);
+          if (!mounted) return;
+          if (created) {
             setState(() => _tab = _Tab.outgoing);
             _reload();
           }
@@ -231,79 +237,87 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
                 const ShellPageHeader(title: 'Transfers'),
                 const SizedBox(height: 16),
                 AsyncView(
-                  value: value,
-                  onRetry: _reload,
-                  loadingMessage: 'Loading transfers...',
-                  data: (all) {
-                    if (me == null) return const LoadingView();
-                    final lists = TransferLists(all, me);
-                    final history = lists.history
-                        .where(
-                          (t) =>
-                              _historyStatus == null ||
-                              t.status == _historyStatus,
-                        )
-                        .toList();
-                    final visible = switch (_tab) {
-                      _Tab.incoming => lists.incoming,
-                      _Tab.outgoing => lists.outgoing,
-                      _Tab.history => history,
-                    };
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        FilterChips<_Tab>(
-                          options: [
-                            (
-                              _Tab.incoming,
-                              'Waiting for me (${lists.incoming.length})',
-                            ),
-                            (
-                              _Tab.outgoing,
-                              'Sent by us (${lists.outgoing.length})',
-                            ),
-                            (_Tab.history, 'History (${lists.history.length})'),
-                          ],
-                          selected: _tab,
-                          onSelected: (t) => setState(() => _tab = t),
-                        ),
-                        if (_tab == _Tab.history) ...[
-                          const SizedBox(height: 8),
-                          FilterChips<String?>(
-                            options: const [
-                              (null, 'All'),
-                              ('Completed', 'Completed'),
-                              ('Rejected', 'Rejected'),
-                              ('Cancelled', 'Cancelled'),
-                            ],
-                            selected: _historyStatus,
-                            onSelected: (s) =>
-                                setState(() => _historyStatus = s),
-                          ),
-                        ],
-                        const SizedBox(height: 12),
-                        if (visible.isEmpty)
-                          const EmptyView(
-                            icon: Icons.swap_horiz,
-                            message: 'No transfers here.',
+                  value: hospital,
+                  onRetry: () => ref.invalidate(myHospitalProvider),
+                  loadingMessage: 'Loading hospital profile...',
+                  data: (profile) => AsyncView(
+                    value: value,
+                    onRetry: _reload,
+                    loadingMessage: 'Loading transfers...',
+                    data: (all) {
+                      final me = profile.hospitalId;
+                      final lists = TransferLists(all, me);
+                      final history = lists.history
+                          .where(
+                            (t) =>
+                                _historyStatus == null ||
+                                t.status == _historyStatus,
                           )
-                        else
-                          for (final t in visible)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _TransferCard(
-                                t: t,
-                                me: me,
-                                busy: _acting,
-                                onAccept: () => _accept(t, me),
-                                onReject: () => _reject(t),
-                                onCancel: () => _cancel(t),
-                                onPackets: () => _showPackets(t),
+                          .toList();
+                      final visible = switch (_tab) {
+                        _Tab.incoming => lists.incoming,
+                        _Tab.outgoing => lists.outgoing,
+                        _Tab.history => history,
+                      };
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          FilterChips<_Tab>(
+                            options: [
+                              (
+                                _Tab.incoming,
+                                'Waiting for me (${lists.incoming.length})',
                               ),
+                              (
+                                _Tab.outgoing,
+                                'Sent by us (${lists.outgoing.length})',
+                              ),
+                              (
+                                _Tab.history,
+                                'History (${lists.history.length})',
+                              ),
+                            ],
+                            selected: _tab,
+                            onSelected: (t) => setState(() => _tab = t),
+                          ),
+                          if (_tab == _Tab.history) ...[
+                            const SizedBox(height: 8),
+                            FilterChips<String?>(
+                              options: const [
+                                (null, 'All'),
+                                ('Completed', 'Completed'),
+                                ('Rejected', 'Rejected'),
+                                ('Cancelled', 'Cancelled'),
+                              ],
+                              selected: _historyStatus,
+                              onSelected: (s) =>
+                                  setState(() => _historyStatus = s),
                             ),
-                      ],
-                    );
-                  },
+                          ],
+                          const SizedBox(height: 12),
+                          if (visible.isEmpty)
+                            const EmptyView(
+                              icon: Icons.swap_horiz,
+                              message: 'No transfers here.',
+                            )
+                          else
+                            for (final t in visible)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: _TransferCard(
+                                  t: t,
+                                  me: me,
+                                  busy: _acting,
+                                  onAccept: () => _accept(t, me),
+                                  onReject: () => _reject(t),
+                                  onCancel: () => _cancel(t),
+                                  onPackets: () => _showPackets(t),
+                                ),
+                              ),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -400,15 +414,13 @@ class _TransferCard extends StatelessWidget {
               ),
             if (canAnswer || canCancel || showPackets) ...[
               const SizedBox(height: 10),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              AdaptiveActions(
                 children: [
                   if (canAnswer) ...[
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.emerald600,
-                        minimumSize: const Size(0, 40),
+                        minimumSize: const Size(0, 48),
                       ),
                       onPressed: busy ? null : onAccept,
                       icon: const Icon(Icons.check, size: 18),
@@ -417,7 +429,7 @@ class _TransferCard extends StatelessWidget {
                     FilledButton.icon(
                       style: FilledButton.styleFrom(
                         backgroundColor: AppColors.rose600,
-                        minimumSize: const Size(0, 40),
+                        minimumSize: const Size(0, 48),
                       ),
                       onPressed: busy ? null : onReject,
                       icon: const Icon(Icons.close, size: 18),
@@ -427,7 +439,7 @@ class _TransferCard extends StatelessWidget {
                   if (canCancel)
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(0, 40),
+                        minimumSize: const Size(0, 48),
                       ),
                       onPressed: busy ? null : onCancel,
                       icon: const Icon(Icons.delete_outline, size: 18),
@@ -436,7 +448,7 @@ class _TransferCard extends StatelessWidget {
                   if (showPackets)
                     OutlinedButton(
                       style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(0, 40),
+                        minimumSize: const Size(0, 48),
                       ),
                       onPressed: onPackets,
                       child: Text(

@@ -158,6 +158,27 @@ void main() {
       },
     );
 
+    test('withdrawals require donor capability even when not suspended', () {
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['HospitalStaff'], approval: 'Approved'),
+          AppRoutes.suspendedWithdrawals,
+        ),
+        AppRoutes.hospitalHome,
+      );
+      expect(
+        resolveRedirect(
+          signedIn(roles: ['Doctor']),
+          AppRoutes.suspendedWithdrawals,
+        ),
+        AppRoutes.doctorHome,
+      );
+      expect(
+        resolveRedirect(signedIn(), AppRoutes.suspendedWithdrawals),
+        isNull,
+      );
+    });
+
     test(
       'hospital staff of an unapproved hospital only see the waiting screen',
       () {

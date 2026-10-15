@@ -41,7 +41,11 @@ class _FakeAnalysisRepository extends AnalysisRepository {
       );
 }
 
-Future<GoRouter> _pumpHome(WidgetTester tester, {required double width}) async {
+Future<GoRouter> _pumpHome(
+  WidgetTester tester, {
+  required double width,
+  bool inventoryFails = false,
+}) async {
   tester.view.physicalSize = Size(width * 3, 2340);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
@@ -72,7 +76,10 @@ Future<GoRouter> _pumpHome(WidgetTester tester, {required double width}) async {
     ProviderScope(
       overrides: [
         myHospitalProvider.overrideWith((ref) async => _hospital),
-        hospitalInventoryProvider.overrideWith((ref) async => []),
+        hospitalInventoryProvider.overrideWith((ref) async {
+          if (inventoryFails) throw Exception('Inventory unavailable');
+          return [];
+        }),
         criticalEmergenciesProvider.overrideWith((ref) async => []),
         analysisRepositoryProvider.overrideWithValue(_FakeAnalysisRepository()),
       ],
@@ -164,5 +171,18 @@ void main() {
       router.pop();
       await tester.pumpAndSettle();
     }
+  });
+
+  testWidgets('failed inventory metrics are not presented as genuine zeros', (
+    tester,
+  ) async {
+    await _pumpHome(tester, width: 360, inventoryFails: true);
+    await tester.pump();
+
+    expect(find.text('Unavailable'), findsNWidgets(2));
+    expect(find.text('0 units'), findsNothing);
+    expect(find.text('Across 0 blood groups'), findsNothing);
+    expect(find.textContaining('tap to retry'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
   });
 }

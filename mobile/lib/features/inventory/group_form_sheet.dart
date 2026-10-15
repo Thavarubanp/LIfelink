@@ -138,6 +138,7 @@ class _GroupFormSheetState extends ConsumerState<GroupFormSheet> {
               const SizedBox(height: 16),
               if (!editing) ...[
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: _group,
                   decoration: const InputDecoration(labelText: 'Blood group'),
                   items: [
@@ -148,32 +149,27 @@ class _GroupFormSheetState extends ConsumerState<GroupFormSheet> {
                 ),
                 const SizedBox(height: 14),
               ],
-              Row(
+              AdaptiveFormRow(
                 children: [
-                  Expanded(
-                    child: TextFormField(
-                      key: const Key('group-threshold'),
-                      controller: _threshold,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: 'Minimum threshold',
-                      ),
-                      validator: (v) =>
-                          Validators.intRange(v, 'Minimum threshold', min: 0),
+                  TextFormField(
+                    key: const Key('group-threshold'),
+                    controller: _threshold,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Minimum threshold',
                     ),
+                    validator: (v) =>
+                        Validators.intRange(v, 'Minimum threshold', min: 0),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextFormField(
-                      key: const Key('group-capacity'),
-                      controller: _capacity,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(labelText: 'Capacity'),
-                      validator: (v) =>
-                          Validators.intRange(v, 'Capacity', min: 1),
-                    ),
+                  TextFormField(
+                    key: const Key('group-capacity'),
+                    controller: _capacity,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(labelText: 'Capacity'),
+                    validator: (v) =>
+                        Validators.intRange(v, 'Capacity', min: 1),
                   ),
                 ],
               ),

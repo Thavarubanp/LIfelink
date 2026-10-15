@@ -28,9 +28,9 @@ void showSnack(
   String? title,
 }) {
   final color = switch (type) {
-    SnackType.success => AppColors.emerald600,
-    SnackType.error => AppColors.rose600,
-    SnackType.warning => AppColors.amber600,
+    SnackType.success => AppColors.emerald700,
+    SnackType.error => AppColors.rose700,
+    SnackType.warning => AppColors.amber800,
     SnackType.info => AppColors.slate800,
   };
   ScaffoldMessenger.of(context)
@@ -279,24 +279,46 @@ class SectionCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title != null) ...[
-            Row(
-              children: [
-                if (icon != null) ...[
-                  Icon(icon, size: 18, color: AppColors.red600),
-                  const SizedBox(width: 8),
-                ],
-                Expanded(
-                  child: Text(
-                    title!,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final heading = Row(
+                  children: [
+                    if (icon != null) ...[
+                      Icon(
+                        icon,
+                        size: 20,
+                        color: AppColors.readableAccent(
+                          context,
+                          AppColors.red600,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: Text(
+                        title!,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
                     ),
-                  ),
-                ),
-                // A long badge or button shrinks instead of overflowing on narrow phones
-                if (trailing != null) Flexible(child: trailing!),
-              ],
+                  ],
+                );
+                if (trailing != null && constraints.maxWidth < 340) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      heading,
+                      const SizedBox(height: 8),
+                      Align(alignment: Alignment.centerRight, child: trailing!),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: heading),
+                    if (trailing != null) Flexible(child: trailing!),
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 12),
           ],
@@ -321,25 +343,34 @@ class InfoBanner extends StatelessWidget {
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: color.withValues(alpha: 0.35)),
-    ),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(message, style: TextStyle(color: color, fontSize: 13)),
+  Widget build(BuildContext context) {
+    final foreground = AppColors.readableAccent(context, color);
+    return Semantics(
+      container: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: foreground.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: foreground.withValues(alpha: 0.38)),
         ),
-      ],
-    ),
-  );
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: foreground),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: foreground, fontSize: 13, height: 1.4),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Primary button with a spinner while busy.
@@ -358,27 +389,32 @@ class BusyButton extends StatelessWidget {
   final IconData? icon;
 
   @override
-  Widget build(BuildContext context) => FilledButton(
-    onPressed: busy ? null : onPressed,
-    child: busy
-        ? const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.white,
-            ),
-          )
-        : Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 18),
-                const SizedBox(width: 8),
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    value: busy ? 'In progress' : null,
+    child: FilledButton(
+      onPressed: busy ? null : onPressed,
+      child: busy
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.onPrimary,
+              ),
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
               ],
-              Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-            ],
-          ),
+            ),
+    ),
   );
 }
 
@@ -394,10 +430,7 @@ class LabeledValue extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        label,
-        style: const TextStyle(fontSize: 12, color: AppColors.slate500),
-      ),
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
       const SizedBox(height: 2),
       Text(
         value,
@@ -472,5 +505,87 @@ class ContentWidth extends StatelessWidget {
       constraints: BoxConstraints(maxWidth: maxWidth),
       child: child,
     ),
+  );
+}
+
+/// Places related form fields side by side when space permits and stacks them
+/// on narrow screens. It deliberately does not own validation or field state.
+class AdaptiveFormRow extends StatelessWidget {
+  const AdaptiveFormRow({
+    super.key,
+    required this.children,
+    this.breakpoint = 600,
+    this.spacing = AppSpacing.md,
+  });
+
+  final List<Widget> children;
+  final double breakpoint;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < breakpoint) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) SizedBox(height: spacing),
+              children[i],
+            ],
+          ],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) SizedBox(width: spacing),
+            Expanded(child: children[i]),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+/// A predictable action area: full-width stacked actions on phones and a
+/// trailing horizontal group when wider. Callbacks remain owned by callers.
+class AdaptiveActions extends StatelessWidget {
+  const AdaptiveActions({
+    super.key,
+    required this.children,
+    this.breakpoint = 520,
+    this.spacing = AppSpacing.sm,
+  });
+
+  final List<Widget> children;
+  final double breakpoint;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < breakpoint) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) SizedBox(height: spacing),
+              children[i],
+            ],
+          ],
+        );
+      }
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) SizedBox(width: spacing),
+            Flexible(child: children[i]),
+          ],
+        ],
+      );
+    },
   );
 }

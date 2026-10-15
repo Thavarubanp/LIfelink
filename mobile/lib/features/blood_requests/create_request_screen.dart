@@ -148,9 +148,18 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
         ref.invalidate(hospitalChoicesProvider);
         if (hospitalStaff) ref.invalidate(doctorChoicesProvider);
         _reload();
-        await ref
-            .read(myBloodRequestsProvider.future)
-            .then((_) {}, onError: (_) {});
+        await Future.wait<void>([
+          ref
+              .read(myBloodRequestsProvider.future)
+              .then<void>((_) {}, onError: (_) {}),
+          ref
+              .read(hospitalChoicesProvider.future)
+              .then<void>((_) {}, onError: (_) {}),
+          if (hospitalStaff)
+            ref
+                .read(doctorChoicesProvider.future)
+                .then<void>((_) {}, onError: (_) {}),
+        ]);
       },
       child: ContentWidth(
         maxWidth: 900,
@@ -264,34 +273,27 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
                 ),
             ],
             const SizedBox(height: 14),
-            Row(
+            AdaptiveFormRow(
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    isExpanded: true,
-                    initialValue: _group,
-                    decoration: const InputDecoration(labelText: 'Blood group'),
-                    items: [
-                      for (final g in AppConstants.bloodGroups)
-                        DropdownMenuItem(value: g, child: Text(g)),
-                    ],
-                    onChanged: _saving
-                        ? null
-                        : (value) => setState(() => _group = value ?? _group),
-                  ),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  initialValue: _group,
+                  decoration: const InputDecoration(labelText: 'Blood group'),
+                  items: [
+                    for (final g in AppConstants.bloodGroups)
+                      DropdownMenuItem(value: g, child: Text(g)),
+                  ],
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _group = value ?? _group),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    controller: _units,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: 'Units (1-10)',
-                    ),
-                    validator: (value) =>
-                        Validators.intRange(value, 'Units', min: 1, max: 10),
-                  ),
+                TextFormField(
+                  controller: _units,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(labelText: 'Units (1-10)'),
+                  validator: (value) =>
+                      Validators.intRange(value, 'Units', min: 1, max: 10),
                 ),
               ],
             ),
@@ -610,6 +612,7 @@ class _EditRequestSheetState extends State<_EditRequestSheet> {
             ),
             const SizedBox(height: 14),
             DropdownButtonFormField<String>(
+              isExpanded: true,
               initialValue: _group,
               decoration: const InputDecoration(labelText: 'Blood group'),
               items: [

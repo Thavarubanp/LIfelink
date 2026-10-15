@@ -100,9 +100,14 @@ class _DonateBloodScreenState extends ConsumerState<DonateBloodScreen> {
       body: RefreshableScroll(
         onRefresh: () async {
           _reload();
-          await ref
-              .read(publicRequestsProvider(_group).future)
-              .catchError((_) => <PublicRequest>[]);
+          await Future.wait<void>([
+            ref
+                .read(publicRequestsProvider(_group).future)
+                .then<void>((_) {}, onError: (_) {}),
+            ref
+                .read(myDonationsProvider.future)
+                .then<void>((_) {}, onError: (_) {}),
+          ]);
         },
         child: ContentWidth(
           child: Padding(
@@ -338,7 +343,7 @@ class _DonationCard extends StatelessWidget {
           if (d.status == 'Accepted') ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
               onPressed: withdrawing ? null : onWithdraw,
               icon: const Icon(Icons.undo, size: 18),
               label: const Text('Withdraw'),

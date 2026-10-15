@@ -12,6 +12,38 @@ import 'screening_inputs.dart';
 import 'screening_models.dart';
 import 'screening_repository.dart';
 
+class _PendingScreeningAnswer {
+  const _PendingScreeningAnswer({
+    required this.message,
+    required this.displayText,
+    required this.structured,
+    required this.answeredBefore,
+    required this.transcriptLengthBefore,
+    required this.questionKeyBefore,
+  });
+
+  final String message;
+  final String displayText;
+  final Map<String, dynamic>? structured;
+  final int answeredBefore;
+  final int transcriptLengthBefore;
+  final String questionKeyBefore;
+
+  bool isConfirmedBy(ScreeningSession? session) {
+    if (session == null) return false;
+    if (session.isComplete || session.status == 'Submitted') return true;
+    if (session.answered > answeredBefore ||
+        session.transcript.length > transcriptLengthBefore) {
+      return true;
+    }
+    return questionKeyBefore.isNotEmpty &&
+        _questionKey(session.question) != questionKeyBefore;
+  }
+
+  static String _questionKey(ScreeningQuestion? question) =>
+      question == null ? '' : '${question.id}:${question.missing.join(',')}';
+}
+
 class ScreeningInterviewScreen extends ConsumerStatefulWidget {
   const ScreeningInterviewScreen({
     super.key,
@@ -30,6 +62,7 @@ class _ScreeningInterviewScreenState
   final _input = TextEditingController();
   final List<({bool user, String text})> _messages = [];
   ScreeningSession? _session;
+  _PendingScreeningAnswer? _failedAnswer;
   bool _thinking = true;
   String? _error;
 
@@ -55,11 +88,20 @@ class _ScreeningInterviewScreenState
           .read(screeningRepositoryProvider)
           .chat(widget.acceptanceId);
       if (!mounted) return;
+      final pending = _failedAnswer;
+      if (pending != null && !pending.isConfirmedBy(reply.screening)) {
+        setState(() {
+          if (reply.screening != null) _session = reply.screening;
+          _error = 'The server has not confirmed this answer yet. Retry it.';
+        });
+        return;
+      }
       _messages.clear();
       for (final turn in reply.screening?.transcript ?? const []) {
         _messages.add((user: false, text: turn.question));
         _messages.add((user: true, text: turn.answer));
       }
+      if (pending != null) _clearConfirmedAnswer();
       _apply(reply);
     } catch (e) {
       if (mounted) setState(() => _error = ApiError.from(e).message);
@@ -76,33 +118,95 @@ class _ScreeningInterviewScreenState
 
   Future<void> _send({String? text, Map<String, dynamic>? structured}) async {
     final message = (text ?? '').trim();
-    if (_thinking || (message.isEmpty && structured == null)) return;
+    if (_thinking ||
+        _failedAnswer != null ||
+        (message.isEmpty && structured == null)) {
+      return;
+    }
+    final session = _session;
+    final pending = _PendingScreeningAnswer(
+      message: structured == null ? message : '',
+      displayText: message.isEmpty ? 'Answered' : message,
+      structured: structured == null
+          ? null
+          : Map<String, dynamic>.from(structured),
+      answeredBefore: session?.answered ?? 0,
+      transcriptLengthBefore: session?.transcript.length ?? 0,
+      questionKeyBefore: _PendingScreeningAnswer._questionKey(
+        session?.question,
+      ),
+    );
     setState(() {
-      _messages.add((user: true, text: message.isEmpty ? 'Answered' : message));
+      _messages.add((user: true, text: pending.displayText));
+      _failedAnswer = pending;
       _thinking = true;
-      _input.clear();
+      _error = null;
     });
+    await _submitPending(pending);
+  }
+
+  Future<void> _submitPending(_PendingScreeningAnswer pending) async {
     try {
       final reply = await ref
           .read(screeningRepositoryProvider)
           .chat(
             widget.acceptanceId,
-            message: structured == null ? message : '',
-            structured: structured,
+            message: pending.message,
+            structured: pending.structured,
           );
+      if (!mounted) return;
+      _clearConfirmedAnswer();
       _apply(reply);
       if (reply.screening?.isComplete == true ||
           reply.screening?.status == 'Submitted') {
         ref.read(tabAttentionProvider.notifier).refresh();
       }
     } catch (e) {
-      if (mounted)
-        setState(
-          () => _messages.add((user: false, text: ApiError.from(e).message)),
-        );
+      if (mounted) setState(() => _error = ApiError.from(e).message);
     } finally {
       if (mounted) setState(() => _thinking = false);
     }
+  }
+
+  Future<void> _retryFailedAnswer() async {
+    final pending = _failedAnswer;
+    if (_thinking || pending == null) return;
+    setState(() {
+      _thinking = true;
+      _error = null;
+    });
+    try {
+      // Reconcile first: the original response may have been lost after the
+      // server saved the answer. Resending without this check could duplicate it.
+      final saved = await ref
+          .read(screeningRepositoryProvider)
+          .chat(widget.acceptanceId);
+      if (!mounted) return;
+      if (pending.isConfirmedBy(saved.screening)) {
+        _messages.clear();
+        for (final turn in saved.screening?.transcript ?? const []) {
+          _messages.add((user: false, text: turn.question));
+          _messages.add((user: true, text: turn.answer));
+        }
+        _clearConfirmedAnswer();
+        _apply(saved);
+        if (saved.screening?.isComplete == true ||
+            saved.screening?.status == 'Submitted') {
+          ref.read(tabAttentionProvider.notifier).refresh();
+        }
+        return;
+      }
+      await _submitPending(pending);
+    } catch (e) {
+      if (mounted) setState(() => _error = ApiError.from(e).message);
+    } finally {
+      if (mounted && _thinking) setState(() => _thinking = false);
+    }
+  }
+
+  void _clearConfirmedAnswer() {
+    _failedAnswer = null;
+    _input.clear();
   }
 
   @override
@@ -166,6 +270,25 @@ class _ScreeningInterviewScreenState
                           const SizedBox(height: 12),
                           for (final message in _messages)
                             _Bubble(user: message.user, text: message.text),
+                          if (_error != null && _messages.isNotEmpty) ...[
+                            InfoBanner(
+                              'Your answer was not confirmed: $_error',
+                              color: AppColors.rose600,
+                              icon: Icons.cloud_off_outlined,
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: _thinking
+                                    ? null
+                                    : _retryFailedAnswer,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Retry answer'),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                          ],
                           if (question != null &&
                               !finished &&
                               !closed &&
@@ -175,7 +298,7 @@ class _ScreeningInterviewScreenState
                                 '${question.id}-${question.missing.join(',')}',
                               ),
                               question: question,
-                              disabled: _thinking,
+                              disabled: _thinking || _failedAnswer != null,
                               onSend: (answers, summary) =>
                                   _send(text: summary, structured: answers),
                             ),
@@ -243,7 +366,9 @@ class _ScreeningInterviewScreenState
             ),
             const SizedBox(width: 8),
             IconButton.filled(
-              onPressed: _thinking ? null : () => _send(text: _input.text),
+              onPressed: _thinking || _failedAnswer != null
+                  ? null
+                  : () => _send(text: _input.text),
               icon: const Icon(Icons.send),
             ),
           ],

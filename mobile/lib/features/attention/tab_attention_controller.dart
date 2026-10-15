@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -121,8 +122,12 @@ final tabAttentionCountProvider = Provider.family<int, TabAttentionKey>(
 );
 
 /// One role-wide polling cycle supplies every actionable tab badge.
-class TabAttentionController extends Notifier<TabAttentionState> {
+class TabAttentionController extends Notifier<TabAttentionState>
+    with WidgetsBindingObserver {
   Timer? _timer;
+  bool _observingLifecycle = false;
+  bool _eligible = false;
+  bool _resumed = true;
   String? _hospitalId;
   List<BloodRequest> _lastDonorRequests = const [];
   bool _refreshing = false;
@@ -132,17 +137,46 @@ class TabAttentionController extends Notifier<TabAttentionState> {
   TabAttentionState build() {
     final auth = ref.watch(authControllerProvider);
     _timer?.cancel();
-    ref.onDispose(() => _timer?.cancel());
+    if (!_observingLifecycle) {
+      _observingLifecycle = true;
+      _resumed =
+          WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      WidgetsBinding.instance.addObserver(this);
+      ref.onDispose(() {
+        _timer?.cancel();
+        WidgetsBinding.instance.removeObserver(this);
+      });
+    }
     _hospitalId = null;
     _lastDonorRequests = const [];
 
-    if (!auth.isSignedIn || auth.user!.isSuspended) {
+    _eligible = auth.isSignedIn && auth.user?.isSuspended != true;
+    if (!_eligible) {
       return const TabAttentionState();
     }
 
+    _startForegroundPolling();
+    return const TabAttentionState();
+  }
+
+  void _startForegroundPolling() {
+    _timer?.cancel();
+    _timer = null;
+    if (!_eligible || !_resumed) return;
     Future.microtask(refresh);
     _timer = Timer.periodic(AppConstants.unreadPollInterval, (_) => refresh());
-    return const TabAttentionState();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _resumed = state == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startForegroundPolling();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   Future<void> refresh() async {

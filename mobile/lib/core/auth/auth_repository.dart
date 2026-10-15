@@ -48,11 +48,15 @@ class AuthRepository {
   }
 
   /// Ends the server-side session; reason 'idle' when signed out for inactivity.
-  Future<void> logout({String? reason}) async {
+  Future<void> logout({String? reason, String? capturedToken}) async {
     await _api.post(
       '/Auth/logout',
       query: {'reason': reason},
-      options: apiOptions(background: true),
+      options: apiOptions(
+        background: true,
+        capturedToken: capturedToken,
+        ignoreUnauthorized: capturedToken != null,
+      ),
     );
   }
 

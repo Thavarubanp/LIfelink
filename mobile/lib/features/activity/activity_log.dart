@@ -200,6 +200,7 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
   ActivityPage? _page;
   Object? _error;
   bool _loading = true;
+  int _requestGeneration = 0;
 
   @override
   void initState() {
@@ -208,17 +209,25 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
   }
 
   Future<void> _fetch() async {
+    final generation = ++_requestGeneration;
+    final query = _q;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final page = await widget.load(ref, _q);
-      if (mounted) setState(() => _page = page);
+      final page = await widget.load(ref, query);
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _page = page);
+      }
     } catch (e) {
-      if (mounted) setState(() => _error = e);
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _error = e);
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -236,6 +245,7 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
       lastDate: from ? (_q.to ?? today) : today,
       helpText: from ? 'From (Sri Lanka date)' : 'To (Sri Lanka date)',
     );
+    if (!mounted) return;
     if (picked != null)
       _set(
         from

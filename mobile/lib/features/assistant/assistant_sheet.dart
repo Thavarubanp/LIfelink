@@ -188,6 +188,32 @@ class _AssistantSheetState extends ConsumerState<AssistantSheet> {
                     ],
                   ),
                 ),
+              if (conversation.error != null) ...[
+                InfoBanner(
+                  'The assistant could not respond: ${conversation.error}',
+                  color: AppColors.rose600,
+                  icon: Icons.cloud_off_outlined,
+                ),
+                const SizedBox(height: 8),
+                AdaptiveActions(
+                  children: [
+                    OutlinedButton(
+                      onPressed: ref
+                          .read(assistantConversationProvider.notifier)
+                          .dismissError,
+                      child: const Text('Dismiss'),
+                    ),
+                    FilledButton.icon(
+                      key: const Key('assistant-retry'),
+                      onPressed: ref
+                          .read(assistantConversationProvider.notifier)
+                          .retry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Try again'),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

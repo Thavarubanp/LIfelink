@@ -29,50 +29,113 @@ class InventoryAnalysisPanel extends ConsumerStatefulWidget {
       _InventoryAnalysisPanelState();
 }
 
-class _InventoryAnalysisPanelState
-    extends ConsumerState<InventoryAnalysisPanel> {
+class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
+    with WidgetsBindingObserver {
   AnalysisStatus? _status;
   Duration _offset = Duration.zero; // server clock minus phone clock
   String? _error;
   bool _running = false;
   Timer? _poll;
   Timer? _tick;
+  int _loadGeneration = 0;
+  bool _resumed = true;
+  bool _visible = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _resumed =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     _load(background: false);
-    _poll = Timer.periodic(widget.pollInterval, (_) => _load(background: true));
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
+    _startPolling();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _poll?.cancel();
     _tick?.cancel();
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _visible = TickerMode.valuesOf(context).enabled;
+    _syncTicker();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    _resumed = lifecycle == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startPolling();
+      _load(background: true);
+      _syncTicker();
+    } else {
+      _poll?.cancel();
+      _poll = null;
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    _poll = null;
+    if (!_resumed) return;
+    _poll = Timer.periodic(widget.pollInterval, (_) => _load(background: true));
+  }
+
+  bool get _cooldownVisible {
+    final status = _status;
+    if (!_visible || status == null || _running || status.state == 'Running') {
+      return false;
+    }
+    return status.cooldownLeft(DateTime.now(), _offset) > Duration.zero;
+  }
+
+  void _syncTicker() {
+    if (!_resumed || !_cooldownVisible) {
+      _tick?.cancel();
+      _tick = null;
+      return;
+    }
+    _tick ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (!_cooldownVisible) {
+        _tick?.cancel();
+        _tick = null;
+      }
+      setState(() {});
+    });
+  }
+
   Future<void> _load({required bool background}) async {
+    final generation = ++_loadGeneration;
     try {
       final status = await ref
           .read(analysisRepositoryProvider)
           .status(background: background);
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _status = status;
         _offset = status.serverNow.difference(DateTime.now().toUtc());
         _error = null;
       });
+      _syncTicker();
     } catch (e) {
-      if (mounted) setState(() => _error = ApiError.from(e).message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = ApiError.from(e).message);
+      }
     }
   }
 
   Future<void> _run() async {
     setState(() => _running = true);
+    _syncTicker();
     try {
       final result = await ref.read(analysisRepositoryProvider).run();
       if (mounted) {
@@ -87,8 +150,11 @@ class _InventoryAnalysisPanelState
     } catch (e) {
       if (mounted) showErrorSnack(context, e, title: 'Analysis not run');
     } finally {
-      if (mounted) setState(() => _running = false);
-      await _load(background: false);
+      if (mounted) {
+        setState(() => _running = false);
+        _syncTicker();
+        await _load(background: false);
+      }
     }
   }
 

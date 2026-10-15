@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_client.dart';
@@ -115,16 +117,28 @@ class AuthController extends Notifier<AuthState> {
 
   /// Signs out on the server (best effort) and clears everything stored on the phone.
   Future<void> logout({SignOutReason reason = SignOutReason.signedOut}) async {
-    if (ref.read(tokenStorageProvider).token != null) {
-      try {
-        await ref
-            .read(authRepositoryProvider)
-            .logout(reason: reason == SignOutReason.idle ? 'idle' : null);
-      } catch (_) {
-        // The API ends idle or expired sessions on its own
-      }
+    final capturedToken = ref.read(tokenStorageProvider).token;
+    final clearing = _clear(reason);
+    if (capturedToken != null) {
+      unawaited(_terminateServerSession(capturedToken, reason));
     }
-    if (ref.mounted) await _clear(reason);
+    await clearing;
+  }
+
+  Future<void> _terminateServerSession(
+    String capturedToken,
+    SignOutReason reason,
+  ) async {
+    try {
+      await ref
+          .read(authRepositoryProvider)
+          .logout(
+            reason: reason == SignOutReason.idle ? 'idle' : null,
+            capturedToken: capturedToken,
+          );
+    } catch (_) {
+      // Local sign-out is already complete; server termination is best effort.
+    }
   }
 
   /// Reloads the signed-in account (e.g. after a password change or an approval).
@@ -148,9 +162,11 @@ class AuthController extends Notifier<AuthState> {
     final idle = state.user?.sessionIdleTimeoutMinutes;
     final tokens = ref.read(tokenStorageProvider);
     final activity = ref.read(sessionActivityProvider);
-    await tokens.clear();
+    final clearingToken = tokens.clear();
     activity.reset();
-    if (ref.mounted)
+    if (ref.mounted) {
       state = AuthState.signedOut(reason: reason, idleMinutes: idle);
+    }
+    await clearingToken;
   }
 }

@@ -12,6 +12,8 @@ import 'package:lifelink_mobile/features/inventory/inventory_repository.dart';
 import 'package:lifelink_mobile/features/inventory/inventory_screen.dart';
 import 'package:lifelink_mobile/features/inventory/packet_forms.dart';
 import 'package:lifelink_mobile/features/profile/profile_repository.dart';
+import 'package:lifelink_mobile/features/transfers/transfer_repository.dart';
+import 'package:lifelink_mobile/features/transfers/transfers_screen.dart';
 
 import '../helpers.dart';
 
@@ -111,6 +113,33 @@ class FakeAnalysisRepository extends AnalysisRepository {
 }
 
 void main() {
+  testWidgets('transfers shows a retryable hospital profile error', (
+    tester,
+  ) async {
+    var profileLoads = 0;
+    await tester.pumpWidget(
+      testApp(
+        const TransfersScreen(),
+        overrides: [
+          transfersProvider.overrideWith((ref) async => <Transfer>[]),
+          myHospitalProvider.overrideWith((ref) async {
+            profileLoads++;
+            throw const ApiError('Hospital profile unavailable.');
+          }),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hospital profile unavailable.'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Loading transfers...'), findsNothing);
+
+    await tester.tap(find.text('Retry'));
+    await tester.pumpAndSettle();
+    expect(profileLoads, 2);
+  });
+
   group('Inventory screen states', () {
     testWidgets('loading', (tester) async {
       final never = Completer<List<InventoryItem>>();
