@@ -24,7 +24,9 @@ class GovernanceStatus {
   });
 
   factory GovernanceStatus.fromJson(Map<String, dynamic> j) {
-    final profile = j['profile'] is Map ? Map<String, dynamic>.from(j['profile'] as Map) : <String, dynamic>{};
+    final profile = j['profile'] is Map
+        ? Map<String, dynamic>.from(j['profile'] as Map)
+        : <String, dynamic>{};
     return GovernanceStatus(
       isSuspended: boolOf(j['isSuspended']),
       suspensionReason: j['suspensionReason']?.toString(),
@@ -68,7 +70,9 @@ class GovernanceStatus {
 /// Appeal rules from CreateAppealDto: 10–2000 characters.
 String? appealReasonError(String text) {
   final t = text.trim();
-  if (t.length < 10) return 'Please explain your appeal in at least 10 characters.';
+  if (t.length < 10) {
+    return 'Please explain your appeal in at least 10 characters.';
+  }
   if (t.length > 2000) return 'The reason cannot exceed 2000 characters.';
   return null;
 }
@@ -79,24 +83,42 @@ class GovernanceRepository {
 
   final ApiClient _api;
 
-  Future<GovernanceStatus> status() async => GovernanceStatus.fromJson(unwrapMap(await _api.get('/governance/status')));
+  Future<GovernanceStatus> status() async => GovernanceStatus.fromJson(
+    unwrapMap(await _api.get('/governance/status')),
+  );
 
-  Future<void> submitAppeal(String reason, Attachment? a) =>
-      _api.post('/Appeals', body: {'reason': reason, 'attachmentUrl': a?.url, 'attachmentName': a?.name});
+  Future<void> submitAppeal(String reason, Attachment? a) => _api.post(
+    '/Appeals',
+    body: {
+      'reason': reason,
+      'attachmentUrl': a?.url,
+      'attachmentName': a?.name,
+    },
+  );
 
   /// The appellant's reply, allowed after an administrator message.
-  Future<void> reply(String appealId, String notes, Attachment? a) =>
-      _api.post('/Appeals/$appealId/reply', body: {'notes': notes, 'attachmentUrl': a?.url, 'attachmentName': a?.name});
+  Future<void> reply(String appealId, String notes, Attachment? a) => _api.post(
+    '/Appeals/$appealId/reply',
+    body: {'notes': notes, 'attachmentUrl': a?.url, 'attachmentName': a?.name},
+  );
 
-  Future<List<Appeal>> myAppeals() async => unwrapList(await _api.get('/Appeals/my')).map(Appeal.fromJson).toList();
+  Future<List<Appeal>> myAppeals() async =>
+      unwrapList(await _api.get('/Appeals/my')).map(Appeal.fromJson).toList();
 }
 
-final governanceRepositoryProvider = Provider<GovernanceRepository>((ref) => GovernanceRepository(ref.watch(apiClientProvider)));
+final governanceRepositoryProvider = Provider<GovernanceRepository>(
+  (ref) => GovernanceRepository(ref.watch(apiClientProvider)),
+);
 
-final governanceStatusProvider = FutureProvider.autoDispose<GovernanceStatus>((ref) => ref.watch(governanceRepositoryProvider).status());
+final governanceStatusProvider = FutureProvider.autoDispose<GovernanceStatus>(
+  (ref) => ref.watch(governanceRepositoryProvider).status(),
+);
 
 final myAppealsProvider = FutureProvider.autoDispose<List<Appeal>>((ref) async {
   final list = await ref.watch(governanceRepositoryProvider).myAppeals();
-  list.sort((a, b) => (b.submittedAt ?? DateTime(0)).compareTo(a.submittedAt ?? DateTime(0)));
+  list.sort(
+    (a, b) =>
+        (b.submittedAt ?? DateTime(0)).compareTo(a.submittedAt ?? DateTime(0)),
+  );
   return list;
 });

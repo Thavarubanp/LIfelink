@@ -30,20 +30,31 @@ class ThreadMessage {
 
 /// A conversation: administrator messages on one side, the other party's on the other.
 class ThreadView extends StatelessWidget {
-  const ThreadView({super.key, required this.messages, this.emptyText = 'No messages yet.'});
+  const ThreadView({
+    super.key,
+    required this.messages,
+    this.emptyText = 'No messages yet.',
+  });
 
   final List<ThreadMessage> messages;
   final String emptyText;
 
   @override
   Widget build(BuildContext context) {
-    if (messages.isEmpty) return Text(emptyText, style: const TextStyle(color: AppColors.slate500));
+    if (messages.isEmpty) {
+      return Text(
+        emptyText,
+        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+      );
+    }
     final dark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         for (final m in messages)
           Align(
-            alignment: m.fromAdmin ? Alignment.centerRight : Alignment.centerLeft,
+            alignment: m.fromAdmin
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
             child: Container(
               constraints: const BoxConstraints(maxWidth: 560),
               margin: const EdgeInsets.only(bottom: 10),
@@ -59,16 +70,31 @@ class ThreadView extends StatelessWidget {
                 children: [
                   Text(
                     '${m.title != null ? '${m.title} · ' : ''}${m.author}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  if (m.text != null && m.text!.trim().isNotEmpty) ...[const SizedBox(height: 4), SelectableText(m.text!)],
+                  if (m.text != null && m.text!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    SelectableText(m.text!),
+                  ],
                   if (m.detail != null && m.detail!.trim().isNotEmpty) ...[
                     const SizedBox(height: 4),
-                    Text(m.detail!, style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+                    Text(
+                      m.detail!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ],
-                  if (m.attachment != null) ...[const SizedBox(height: 8), AttachmentView(attachment: m.attachment!)],
+                  if (m.attachment != null) ...[
+                    const SizedBox(height: 8),
+                    AttachmentView(attachment: m.attachment!),
+                  ],
                   const SizedBox(height: 4),
-                  Text(Fmt.sriLankaDateTime(m.at), style: const TextStyle(fontSize: 11, color: AppColors.slate500)),
+                  Text(
+                    Fmt.sriLankaDateTime(m.at),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ],
               ),
             ),

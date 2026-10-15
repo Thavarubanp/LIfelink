@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 
+const double _authLogoMarkSize = 48;
+
 /// LifeLink logo mark and name.
 class BrandHeader extends StatelessWidget {
   const BrandHeader({super.key, this.subtitle});
@@ -9,22 +11,53 @@ class BrandHeader extends StatelessWidget {
   final String? subtitle;
 
   @override
-  Widget build(BuildContext context) => Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(color: AppColors.red600, borderRadius: BorderRadius.circular(18)),
-            child: const Icon(Icons.water_drop_rounded, color: Colors.white, size: 36),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Image.asset(
+            'assets/brand/lifelink-logo.png',
+            width: _authLogoMarkSize,
+            height: _authLogoMarkSize,
+            fit: BoxFit.cover,
           ),
-          const SizedBox(height: 12),
-          const Text('LifeLink', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-          if (subtitle != null) ...[
-            const SizedBox(height: 4),
-            Text(subtitle!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.slate500)),
-          ],
+        ),
+        const SizedBox(height: 8),
+        RichText(
+          text: TextSpan(
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+            children: [
+              TextSpan(
+                text: 'Life',
+                style: TextStyle(color: theme.colorScheme.onSurface),
+              ),
+              TextSpan(
+                text: 'Link',
+                style: TextStyle(
+                  color: theme.brightness == Brightness.dark
+                      ? AppColors.red500
+                      : AppColors.red600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            subtitle!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppColors.slate500),
+          ),
         ],
-      );
+      ],
+    );
+  }
 }
 
 /// Centered, width-limited form page for the sign-in screens.
@@ -35,17 +68,31 @@ class AuthPage extends StatelessWidget {
   final String? title;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: title == null ? null : AppBar(title: Text(title!)),
-        body: SafeArea(
-          child: Center(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 440), child: child),
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= 520;
+    return Scaffold(
+      appBar: title == null ? null : AppBar(title: Text(title!)),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.all(wide ? AppSpacing.xl : AppSpacing.lg),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(
+                    wide ? AppSpacing.xxl : AppSpacing.lg,
+                  ),
+                  child: FocusTraversalGroup(child: child),
+                ),
+              ),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// Password field with a show/hide button.
@@ -78,26 +125,28 @@ class _PasswordFieldState extends State<PasswordField> {
 
   @override
   Widget build(BuildContext context) => TextFormField(
-        controller: widget.controller,
-        obscureText: _hidden,
-        autocorrect: false,
-        enableSuggestions: false,
-        textInputAction: widget.textInputAction,
-        onFieldSubmitted: widget.onSubmitted,
-        validator: widget.validator,
-        decoration: InputDecoration(
-          labelText: widget.label,
-          errorText: widget.errorText,
-          helperText: widget.helperText,
-          helperMaxLines: 2,
-          prefixIcon: const Icon(Icons.lock_outline),
-          suffixIcon: IconButton(
-            tooltip: _hidden ? 'Show password' : 'Hide password',
-            icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-            onPressed: () => setState(() => _hidden = !_hidden),
-          ),
+    controller: widget.controller,
+    obscureText: _hidden,
+    autocorrect: false,
+    enableSuggestions: false,
+    textInputAction: widget.textInputAction,
+    onFieldSubmitted: widget.onSubmitted,
+    validator: widget.validator,
+    decoration: InputDecoration(
+      labelText: widget.label,
+      errorText: widget.errorText,
+      helperText: widget.helperText,
+      helperMaxLines: 2,
+      prefixIcon: const Icon(Icons.lock_outline),
+      suffixIcon: IconButton(
+        tooltip: _hidden ? 'Show password' : 'Hide password',
+        icon: Icon(
+          _hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined,
         ),
-      );
+        onPressed: () => setState(() => _hidden = !_hidden),
+      ),
+    ),
+  );
 }
 
 /// Red error box for a form-level message.
@@ -107,14 +156,31 @@ class FormErrorBox extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final foreground = AppColors.readableAccent(context, AppColors.rose600);
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      label: 'Error: $message',
+      child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: AppColors.rose600.withValues(alpha: 0.1),
+          color: foreground.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.rose600.withValues(alpha: 0.4)),
+          border: Border.all(color: foreground.withValues(alpha: 0.4)),
         ),
-        child: Text(message, style: const TextStyle(color: AppColors.rose600)),
-      );
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, size: 20, color: foreground),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(message, style: TextStyle(color: foreground)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

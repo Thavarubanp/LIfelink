@@ -31,16 +31,19 @@ class ComplaintLog {
   });
 
   factory ComplaintLog.fromJson(Map<String, dynamic> j) => ComplaintLog(
-        id: str(j['auditId']),
-        fromAdmin: boolOf(j['fromAdmin']),
-        adminEmail: j['adminEmail']?.toString(),
-        previousStatus: str(j['previousStatus']),
-        newStatus: str(j['newStatus']),
-        notes: j['notes']?.toString(),
-        attachment: Attachment.fromApi(j['attachmentUrl']?.toString(), j['attachmentName']?.toString()),
-        isReply: boolOf(j['isReply']),
-        createdAt: parseDate(j['createdAt']),
-      );
+    id: str(j['auditId']),
+    fromAdmin: boolOf(j['fromAdmin']),
+    adminEmail: j['adminEmail']?.toString(),
+    previousStatus: str(j['previousStatus']),
+    newStatus: str(j['newStatus']),
+    notes: j['notes']?.toString(),
+    attachment: Attachment.fromApi(
+      j['attachmentUrl']?.toString(),
+      j['attachmentName']?.toString(),
+    ),
+    isReply: boolOf(j['isReply']),
+    createdAt: parseDate(j['createdAt']),
+  );
 
   final String id;
   final bool fromAdmin;
@@ -55,15 +58,21 @@ class ComplaintLog {
 
 /// ActivityReportResponseDto: a hospital activity report linked to a complaint (read-only here).
 class ActivityReport {
-  const ActivityReport({required this.id, required this.hospitalName, required this.title, required this.description, required this.submittedAt});
+  const ActivityReport({
+    required this.id,
+    required this.hospitalName,
+    required this.title,
+    required this.description,
+    required this.submittedAt,
+  });
 
   factory ActivityReport.fromJson(Map<String, dynamic> j) => ActivityReport(
-        id: str(j['reportId']),
-        hospitalName: str(j['hospitalName']),
-        title: str(j['title']),
-        description: str(j['description']),
-        submittedAt: parseDate(j['submittedAt']),
-      );
+    id: str(j['reportId']),
+    hospitalName: str(j['hospitalName']),
+    title: str(j['title']),
+    description: str(j['description']),
+    submittedAt: parseDate(j['submittedAt']),
+  );
 
   final String id;
   final String hospitalName;
@@ -95,26 +104,32 @@ class Complaint {
   });
 
   factory Complaint.fromJson(Map<String, dynamic> j) => Complaint(
-        id: str(j['complaintId']),
-        userEmail: j['userEmail']?.toString(),
-        hospitalId: j['hospitalId']?.toString(),
-        hospitalName: j['hospitalName']?.toString(),
-        targetUserId: j['targetUserId']?.toString(),
-        targetUserName: j['targetUserName']?.toString(),
-        complaintType: str(j['complaintType']),
-        subject: str(j['subject']),
-        description: str(j['description']),
-        status: str(j['status'], 'OPEN').toUpperCase(),
-        createdAt: parseDate(j['createdAt']),
-        logs: j['auditLogs'] is List
-            ? (j['auditLogs'] as List).whereType<Map>().map((e) => ComplaintLog.fromJson(Map<String, dynamic>.from(e))).toList()
-            : const [],
-        reports: j['activityReports'] is List
-            ? (j['activityReports'] as List).whereType<Map>().map((e) => ActivityReport.fromJson(Map<String, dynamic>.from(e))).toList()
-            : const [],
-        awaitingAdminReply: boolOf(j['awaitingAdminReply']),
-        canCreatorReply: boolOf(j['canCreatorReply']),
-      );
+    id: str(j['complaintId']),
+    userEmail: j['userEmail']?.toString(),
+    hospitalId: j['hospitalId']?.toString(),
+    hospitalName: j['hospitalName']?.toString(),
+    targetUserId: j['targetUserId']?.toString(),
+    targetUserName: j['targetUserName']?.toString(),
+    complaintType: str(j['complaintType']),
+    subject: str(j['subject']),
+    description: str(j['description']),
+    status: str(j['status'], 'OPEN').toUpperCase(),
+    createdAt: parseDate(j['createdAt']),
+    logs: j['auditLogs'] is List
+        ? (j['auditLogs'] as List)
+              .whereType<Map>()
+              .map((e) => ComplaintLog.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+        : const [],
+    reports: j['activityReports'] is List
+        ? (j['activityReports'] as List)
+              .whereType<Map>()
+              .map((e) => ActivityReport.fromJson(Map<String, dynamic>.from(e)))
+              .toList()
+        : const [],
+    awaitingAdminReply: boolOf(j['awaitingAdminReply']),
+    canCreatorReply: boolOf(j['canCreatorReply']),
+  );
 
   final String id;
   final String? userEmail;
@@ -132,38 +147,52 @@ class Complaint {
   final bool awaitingAdminReply;
   final bool canCreatorReply;
 
-  bool get isOpen => !const {'RESOLVED', 'REJECTED', 'CANCELLED'}.contains(status);
+  bool get isOpen =>
+      !const {'RESOLVED', 'REJECTED', 'CANCELLED'}.contains(status);
 
   /// Without a target the complaint is a general question to the admin.
   ComplaintTarget get target => (hospitalId?.isNotEmpty ?? false)
       ? ComplaintTarget.hospital
       : (targetUserId?.isNotEmpty ?? false)
-          ? ComplaintTarget.user
-          : ComplaintTarget.general;
+      ? ComplaintTarget.user
+      : ComplaintTarget.general;
 
   String get targetLabel => switch (target) {
-        ComplaintTarget.hospital => 'Against ${hospitalName ?? 'a hospital'}',
-        ComplaintTarget.user => 'Against ${targetUserName ?? 'a user'}',
-        _ => 'General question (no target)',
-      };
+    ComplaintTarget.hospital => 'Against ${hospitalName ?? 'a hospital'}',
+    ComplaintTarget.user => 'Against ${targetUserName ?? 'a user'}',
+    _ => 'General question (no target)',
+  };
 
   /// The complaint as a conversation: the description first, then every reply (status changes as notes).
   List<ThreadMessage> thread() => [
-        ThreadMessage(author: userEmail ?? 'Complainant', fromAdmin: false, at: createdAt, title: 'Complaint', text: description),
-        for (final l in logs)
-          ThreadMessage(
-            author: l.fromAdmin ? 'Administrator' : (userEmail ?? 'Complainant'),
-            fromAdmin: l.fromAdmin,
-            at: l.createdAt,
-            title: l.isReply || l.previousStatus == l.newStatus ? null : 'Status ${l.previousStatus} → ${l.newStatus}',
-            text: l.notes,
-            attachment: l.attachment,
-          ),
-      ];
+    ThreadMessage(
+      author: userEmail ?? 'Complainant',
+      fromAdmin: false,
+      at: createdAt,
+      title: 'Complaint',
+      text: description,
+    ),
+    for (final l in logs)
+      ThreadMessage(
+        author: l.fromAdmin ? 'Administrator' : (userEmail ?? 'Complainant'),
+        fromAdmin: l.fromAdmin,
+        at: l.createdAt,
+        title: l.isReply || l.previousStatus == l.newStatus
+            ? null
+            : 'Status ${l.previousStatus} → ${l.newStatus}',
+        text: l.notes,
+        attachment: l.attachment,
+      ),
+  ];
 }
 
 /// Same status filter as the web page: OPEN = anything not resolved, rejected or cancelled.
-bool complaintMatches(Complaint c, {required String status, required ComplaintTarget target, String query = ''}) {
+bool complaintMatches(
+  Complaint c, {
+  required String status,
+  required ComplaintTarget target,
+  String query = '',
+}) {
   final s = c.status;
   if (status == 'OPEN' && !c.isOpen) return false;
   if (status == 'RESOLVED' && s != 'RESOLVED') return false;
@@ -171,15 +200,20 @@ bool complaintMatches(Complaint c, {required String status, required ComplaintTa
   if (target != ComplaintTarget.all && c.target != target) return false;
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return true;
-  return [c.subject, c.description, c.complaintType, c.userEmail ?? '', c.hospitalName ?? '']
-      .any((v) => v.toLowerCase().contains(q));
+  return [
+    c.subject,
+    c.description,
+    c.complaintType,
+    c.userEmail ?? '',
+    c.hospitalName ?? '',
+  ].any((v) => v.toLowerCase().contains(q));
 }
 
 BadgeVariant complaintVariant(String status) => switch (status) {
-      'RESOLVED' => BadgeVariant.success,
-      'CANCELLED' || 'REJECTED' => BadgeVariant.neutral,
-      _ => BadgeVariant.warning,
-    };
+  'RESOLVED' => BadgeVariant.success,
+  'CANCELLED' || 'REJECTED' => BadgeVariant.neutral,
+  _ => BadgeVariant.warning,
+};
 
 /// /api/Admin/complaints (same calls as the web's AdminComplaintsPage).
 class AdminComplaintsRepository {
@@ -187,33 +221,48 @@ class AdminComplaintsRepository {
 
   final ApiClient _api;
 
-  Future<List<Complaint>> list() async => unwrapList(await _api.get('/Admin/complaints')).map(Complaint.fromJson).toList();
+  Future<List<Complaint>> list() async =>
+      unwrapList(await _api.get('/Admin/complaints'))
+          .map(Complaint.fromJson)
+          .toList();
 
-  Future<Complaint> byId(String id) async => Complaint.fromJson(unwrapMap(await _api.get('/Admin/complaints/$id')));
+  Future<Complaint> byId(String id) async =>
+      Complaint.fromJson(unwrapMap(await _api.get('/Admin/complaints/$id')));
 
   /// The admin's reply (the only admin complaint action); replies alternate with the complaint creator.
-  Future<void> reply(String id, String notes, Attachment? a) =>
-      _api.put('/Admin/complaints/$id/review', body: {'notes': notes, 'attachmentUrl': a?.url, 'attachmentName': a?.name});
+  Future<void> reply(String id, String notes, Attachment? a) => _api.put(
+    '/Admin/complaints/$id/review',
+    body: {'notes': notes, 'attachmentUrl': a?.url, 'attachmentName': a?.name},
+  );
 }
 
-final adminComplaintsRepositoryProvider =
-    Provider<AdminComplaintsRepository>((ref) => AdminComplaintsRepository(ref.watch(apiClientProvider)));
+final adminComplaintsRepositoryProvider = Provider<AdminComplaintsRepository>(
+  (ref) => AdminComplaintsRepository(ref.watch(apiClientProvider)),
+);
 
-final adminComplaintsProvider = FutureProvider.autoDispose<List<Complaint>>((ref) async {
+final adminComplaintsProvider = FutureProvider.autoDispose<List<Complaint>>((
+  ref,
+) async {
   final list = await ref.watch(adminComplaintsRepositoryProvider).list();
-  list.sort((a, b) => (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
+  list.sort(
+    (a, b) =>
+        (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)),
+  );
   return list;
 });
 
-final adminComplaintProvider =
-    FutureProvider.autoDispose.family<Complaint, String>((ref, id) => ref.watch(adminComplaintsRepositoryProvider).byId(id));
+final adminComplaintProvider = FutureProvider.autoDispose
+    .family<Complaint, String>(
+      (ref, id) => ref.watch(adminComplaintsRepositoryProvider).byId(id),
+    );
 
 /// Admin complaints: status and target filters (incl. "General question"), search; each opens its thread.
 class AdminComplaintsScreen extends ConsumerStatefulWidget {
   const AdminComplaintsScreen({super.key});
 
   @override
-  ConsumerState<AdminComplaintsScreen> createState() => _AdminComplaintsScreenState();
+  ConsumerState<AdminComplaintsScreen> createState() =>
+      _AdminComplaintsScreenState();
 }
 
 class _AdminComplaintsScreenState extends ConsumerState<AdminComplaintsScreen> {
@@ -229,7 +278,9 @@ class _AdminComplaintsScreenState extends ConsumerState<AdminComplaintsScreen> {
       body: RefreshableScroll(
         onRefresh: () async {
           ref.invalidate(adminComplaintsProvider);
-          await ref.read(adminComplaintsProvider.future).then((_) {}, onError: (_) {});
+          await ref
+              .read(adminComplaintsProvider.future)
+              .then((_) {}, onError: (_) {});
         },
         child: ContentWidth(
           child: Padding(
@@ -237,10 +288,18 @@ class _AdminComplaintsScreenState extends ConsumerState<AdminComplaintsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SearchField(hint: 'Search subject, type, complainant, hospital', onChanged: (v) => setState(() => _query = v)),
+                SearchField(
+                  hint: 'Search subject, type, complainant, hospital',
+                  onChanged: (v) => setState(() => _query = v),
+                ),
                 const SizedBox(height: 10),
                 FilterChips<String>(
-                  options: const [('OPEN', 'Open'), ('RESOLVED', 'Resolved'), ('CANCELLED', 'Cancelled'), ('ALL', 'All')],
+                  options: const [
+                    ('OPEN', 'Open'),
+                    ('RESOLVED', 'Resolved'),
+                    ('CANCELLED', 'Cancelled'),
+                    ('ALL', 'All'),
+                  ],
                   selected: _status,
                   onSelected: (s) => setState(() => _status = s),
                 ),
@@ -261,8 +320,22 @@ class _AdminComplaintsScreenState extends ConsumerState<AdminComplaintsScreen> {
                   onRetry: () => ref.invalidate(adminComplaintsProvider),
                   loadingMessage: 'Loading complaints...',
                   data: (all) {
-                    final list = all.where((c) => complaintMatches(c, status: _status, target: _target, query: _query)).toList();
-                    if (list.isEmpty) return const EmptyView(icon: Icons.report_outlined, message: 'No complaints match these filters.');
+                    final list = all
+                        .where(
+                          (c) => complaintMatches(
+                            c,
+                            status: _status,
+                            target: _target,
+                            query: _query,
+                          ),
+                        )
+                        .toList();
+                    if (list.isEmpty) {
+                      return const EmptyView(
+                        icon: Icons.report_outlined,
+                        message: 'No complaints match these filters.',
+                      );
+                    }
                     return Column(
                       children: [
                         for (final c in list)
@@ -271,19 +344,43 @@ class _AdminComplaintsScreenState extends ConsumerState<AdminComplaintsScreen> {
                             child: Card(
                               child: ListTile(
                                 key: Key('complaint-${c.id}'),
-                                onTap: () => context.push('${AppRoutes.adminComplaints}/${c.id}'),
-                                title: Text(c.subject, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                onTap: () => context.push(
+                                  '${AppRoutes.adminComplaints}/${c.id}',
+                                ),
+                                title: Text(
+                                  c.subject,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('${c.userEmail ?? 'Unknown'} · ${Fmt.sriLankaDateTime(c.createdAt)}'),
-                                    Text(c.targetLabel, style: const TextStyle(fontSize: 12)),
+                                    Text(
+                                      '${c.userEmail ?? 'Unknown'} · ${Fmt.sriLankaDateTime(c.createdAt)}',
+                                    ),
+                                    Text(
+                                      c.targetLabel,
+                                      style: const TextStyle(fontSize: 12),
+                                    ),
                                     const SizedBox(height: 4),
-                                    Wrap(spacing: 6, runSpacing: 4, children: [
-                                      StatusBadge(c.status, variant: complaintVariant(c.status)),
-                                      if (c.complaintType.isNotEmpty) StatusBadge(c.complaintType),
-                                      if (c.awaitingAdminReply && c.isOpen) const StatusBadge('Your turn', variant: BadgeVariant.info),
-                                    ]),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      children: [
+                                        StatusBadge(
+                                          c.status,
+                                          variant: complaintVariant(c.status),
+                                        ),
+                                        if (c.complaintType.isNotEmpty)
+                                          StatusBadge(c.complaintType),
+                                        if (c.awaitingAdminReply && c.isOpen)
+                                          const StatusBadge(
+                                            'Your turn',
+                                            variant: BadgeVariant.info,
+                                          ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                                 trailing: const Icon(Icons.chevron_right),
@@ -316,13 +413,21 @@ class AdminComplaintDetailScreen extends ConsumerWidget {
       subtitle: c.subject,
       maxLength: 1000,
       requiredMessage: 'A reply message is required.',
-      onSubmit: (text, file) => ref.read(adminComplaintsRepositoryProvider).reply(c.id, text, file),
+      onSubmit: (text, file) =>
+          ref.read(adminComplaintsRepositoryProvider).reply(c.id, text, file),
     );
     if (sent) {
       ref.invalidate(adminComplaintProvider(complaintId));
       ref.invalidate(adminComplaintsProvider);
       ref.read(adminAttentionProvider.notifier).refresh();
-      if (context.mounted) showSnack(context, 'The complainant has been notified.', type: SnackType.success, title: 'Reply sent');
+      if (context.mounted) {
+        showSnack(
+          context,
+          'The complainant has been notified.',
+          type: SnackType.success,
+          title: 'Reply sent',
+        );
+      }
     }
   }
 
@@ -345,7 +450,9 @@ class AdminComplaintDetailScreen extends ConsumerWidget {
       body: RefreshableScroll(
         onRefresh: () async {
           ref.invalidate(adminComplaintProvider(complaintId));
-          await ref.read(adminComplaintProvider(complaintId).future).then((_) {}, onError: (_) {});
+          await ref
+              .read(adminComplaintProvider(complaintId).future)
+              .then((_) {}, onError: (_) {});
         },
         child: AsyncView(
           value: value,
@@ -360,25 +467,44 @@ class AdminComplaintDetailScreen extends ConsumerWidget {
                   SectionCard(
                     title: c.subject,
                     icon: Icons.report_outlined,
-                    trailing: StatusBadge(c.status, variant: complaintVariant(c.status)),
+                    trailing: StatusBadge(
+                      c.status,
+                      variant: complaintVariant(c.status),
+                    ),
                     child: Wrap(
                       spacing: 20,
                       runSpacing: 12,
                       children: [
                         LabeledValue('Filed by', c.userEmail ?? 'Unknown'),
                         LabeledValue('Target', c.targetLabel),
-                        LabeledValue('Type', c.complaintType.isEmpty ? '-' : c.complaintType),
-                        LabeledValue('Filed', Fmt.sriLankaDateTime(c.createdAt)),
+                        LabeledValue(
+                          'Type',
+                          c.complaintType.isEmpty ? '-' : c.complaintType,
+                        ),
+                        LabeledValue(
+                          'Filed',
+                          Fmt.sriLankaDateTime(c.createdAt),
+                        ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 12),
-                  SectionCard(title: 'Conversation', icon: Icons.forum_outlined, child: ThreadView(messages: c.thread())),
+                  SectionCard(
+                    title: 'Conversation',
+                    icon: Icons.forum_outlined,
+                    child: ThreadView(messages: c.thread()),
+                  ),
                   const SizedBox(height: 12),
                   if (!c.isOpen)
-                    const InfoBanner('This complaint is closed.', color: AppColors.slate500)
+                    const InfoBanner(
+                      'This complaint is closed.',
+                      color: AppColors.slate500,
+                    )
                   else if (!c.awaitingAdminReply)
-                    const InfoBanner('Waiting for the complainant to reply (replies alternate).', color: AppColors.blue600),
+                    const InfoBanner(
+                      'Waiting for the complainant to reply (replies alternate).',
+                      color: AppColors.blue600,
+                    ),
                   if (c.reports.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     SectionCard(
@@ -389,8 +515,15 @@ class AdminComplaintDetailScreen extends ConsumerWidget {
                           for (final r in c.reports)
                             ListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              subtitle: Text('${r.description}\n${r.hospitalName} · ${Fmt.sriLankaDateTime(r.submittedAt)}'),
+                              title: Text(
+                                r.title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                '${r.description}\n${r.hospitalName} · ${Fmt.sriLankaDateTime(r.submittedAt)}',
+                              ),
                               isThreeLine: true,
                             ),
                         ],

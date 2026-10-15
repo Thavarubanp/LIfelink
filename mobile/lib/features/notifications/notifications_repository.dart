@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
@@ -19,7 +20,8 @@ class AppNotification {
     required this.createdAt,
   });
 
-  factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
         id: str(json['notificationId']),
         title: str(json['title']),
         message: str(json['message']),
@@ -35,8 +37,14 @@ class AppNotification {
   final bool isRead;
   final DateTime? createdAt;
 
-  AppNotification copyWith({bool? isRead}) =>
-      AppNotification(id: id, title: title, message: message, type: type, isRead: isRead ?? this.isRead, createdAt: createdAt);
+  AppNotification copyWith({bool? isRead}) => AppNotification(
+    id: id,
+    title: title,
+    message: message,
+    type: type,
+    isRead: isRead ?? this.isRead,
+    createdAt: createdAt,
+  );
 }
 
 /// The caller's own notifications (same endpoints as the web app).
@@ -46,11 +54,18 @@ class NotificationsRepository {
   final ApiClient _api;
 
   Future<List<AppNotification>> my() async =>
-      unwrapList(await _api.get('/notifications/my')).map(AppNotification.fromJson).toList();
+      unwrapList(await _api.get('/notifications/my'))
+          .map(AppNotification.fromJson)
+          .toList();
 
   /// Polled in the background: never counts as user activity for the idle timeout.
   Future<int> unreadCount({bool background = false}) async {
-    final body = unwrapMap(await _api.get('/notifications/unread-count', options: apiOptions(background: background)));
+    final body = unwrapMap(
+      await _api.get(
+        '/notifications/unread-count',
+        options: apiOptions(background: background),
+      ),
+    );
     return intOf(body['count']);
   }
 
@@ -62,36 +77,100 @@ class NotificationsRepository {
   Future<void> dismiss(String id) => _api.delete('/notifications/$id');
 }
 
-final notificationsRepositoryProvider =
-    Provider<NotificationsRepository>((ref) => NotificationsRepository(ref.watch(apiClientProvider)));
+final notificationsRepositoryProvider = Provider<NotificationsRepository>(
+  (ref) => NotificationsRepository(ref.watch(apiClientProvider)),
+);
 
 final notificationsProvider = FutureProvider.autoDispose<List<AppNotification>>(
   (ref) => ref.watch(notificationsRepositoryProvider).my(),
 );
 
-final unreadCountProvider = NotifierProvider<UnreadCountController, int>(UnreadCountController.new);
+final unreadCountProvider = NotifierProvider<UnreadCountController, int>(
+  UnreadCountController.new,
+);
 
 /// Unread count, refreshed every 30 s in the background while signed in.
-class UnreadCountController extends Notifier<int> {
+class UnreadCountController extends Notifier<int> with WidgetsBindingObserver {
   Timer? _timer;
+  bool _observingLifecycle = false;
+  bool _signedIn = false;
+  bool _resumed = true;
+  int _lastCount = 0;
 
   @override
   int build() {
-    final signedIn = ref.watch(authControllerProvider.select((s) => s.isSignedIn && s.user?.isSuspended != true));
+    _signedIn = ref.watch(
+      authControllerProvider.select(
+        (s) => s.isSignedIn && s.user?.isSuspended != true,
+      ),
+    );
     _timer?.cancel();
-    ref.onDispose(() => _timer?.cancel());
-    if (!signedIn) return 0;
+    if (!_observingLifecycle) {
+      _observingLifecycle = true;
+      _resumed =
+          WidgetsBinding.instance.lifecycleState == null ||
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+      WidgetsBinding.instance.addObserver(this);
+      ref.onDispose(() {
+        _timer?.cancel();
+        WidgetsBinding.instance.removeObserver(this);
+      });
+    }
+    if (!_signedIn) {
+      _lastCount = 0;
+      return 0;
+    }
+    _startForegroundPolling();
+    return _lastCount;
+  }
+
+  void _startForegroundPolling() {
+    _timer?.cancel();
+    _timer = null;
+    if (!_signedIn || !_resumed) return;
     Future.microtask(refresh);
     _timer = Timer.periodic(AppConstants.unreadPollInterval, (_) => refresh());
-    return 0;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _resumed = state == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startForegroundPolling();
+    } else {
+      _timer?.cancel();
+      _timer = null;
+    }
   }
 
   Future<void> refresh() async {
     try {
-      final count = await ref.read(notificationsRepositoryProvider).unreadCount(background: true);
-      if (ref.mounted) state = count;
+      final count = await ref
+          .read(notificationsRepositoryProvider)
+          .unreadCount(background: true);
+      if (ref.mounted) {
+        _lastCount = count;
+        state = count;
+      }
     } catch (_) {
       // Keep the last count; a 401 is handled by the API client
     }
+  }
+
+  void decrement() {
+    if (state > 0) {
+      state--;
+      _lastCount = state;
+    }
+  }
+
+  void increment() {
+    state++;
+    _lastCount = state;
+  }
+
+  void setLocalCount(int count) {
+    state = count;
+    _lastCount = count;
   }
 }

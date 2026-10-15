@@ -6,7 +6,8 @@ import '../config/constants.dart';
 class Fmt {
   const Fmt._();
 
-  static DateTime toSriLanka(DateTime value) => value.toUtc().add(AppConstants.sriLankaOffset);
+  static DateTime toSriLanka(DateTime value) =>
+      value.toUtc().add(AppConstants.sriLankaOffset);
 
   /// "3 Oct 2026, 2:15 pm" in Sri Lanka time.
   static String sriLankaDateTime(DateTime? value) {
@@ -16,10 +17,12 @@ class Fmt {
   }
 
   /// "3 Oct 2026" in Sri Lanka time.
-  static String date(DateTime? value) => value == null ? '-' : DateFormat('d MMM yyyy').format(toSriLanka(value));
+  static String date(DateTime? value) =>
+      value == null ? '-' : DateFormat('d MMM yyyy').format(toSriLanka(value));
 
   /// A calendar date as the API expects it: yyyy-MM-dd.
-  static String apiDate(DateTime value) => DateFormat('yyyy-MM-dd').format(value);
+  static String apiDate(DateTime value) =>
+      DateFormat('yyyy-MM-dd').format(value);
 
   /// Today's calendar date in Sri Lanka (the API treats "today" as the Sri Lanka date).
   static DateTime sriLankaToday([DateTime? now]) {
@@ -37,7 +40,10 @@ class Fmt {
 
   /// "InventoryShortageHelp" -> "Inventory shortage help", "TRANSFER_IN" -> "Transfer in".
   static String humanize(String value) {
-    final spaced = value.replaceAll('_', ' ').replaceAllMapped(RegExp(r'(?<=[a-z])(?=[A-Z])'), (_) => ' ').trim();
+    final spaced = value
+        .replaceAll('_', ' ')
+        .replaceAllMapped(RegExp(r'(?<=[a-z])(?=[A-Z])'), (_) => ' ')
+        .trim();
     if (spaced.isEmpty) return spaced;
     final lower = spaced.toLowerCase();
     return lower[0].toUpperCase() + lower.substring(1);

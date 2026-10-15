@@ -13,12 +13,12 @@ import 'registration_repository.dart';
 enum RegistrationFilter { needsReview, waiting, all }
 
 BadgeVariant registrationVariant(String status) => switch (status) {
-      'Pending' => BadgeVariant.warning,
-      'AwaitingAdminReview' => BadgeVariant.info,
-      'Rejected' => BadgeVariant.danger,
-      'Approved' => BadgeVariant.success,
-      _ => BadgeVariant.neutral,
-    };
+  'Pending' => BadgeVariant.warning,
+  'AwaitingAdminReview' => BadgeVariant.info,
+  'Rejected' => BadgeVariant.danger,
+  'Approved' => BadgeVariant.success,
+  _ => BadgeVariant.neutral,
+};
 
 /// Hospital registrations the admin decides: pending ones and hospital replies need review; rejected ones wait for
 /// the hospital. Approved hospitals are managed in the Hospitals directory.
@@ -26,7 +26,8 @@ class RegistrationsScreen extends ConsumerStatefulWidget {
   const RegistrationsScreen({super.key});
 
   @override
-  ConsumerState<RegistrationsScreen> createState() => _RegistrationsScreenState();
+  ConsumerState<RegistrationsScreen> createState() =>
+      _RegistrationsScreenState();
 }
 
 class _RegistrationsScreenState extends ConsumerState<RegistrationsScreen> {
@@ -42,7 +43,9 @@ class _RegistrationsScreenState extends ConsumerState<RegistrationsScreen> {
       body: RefreshableScroll(
         onRefresh: () async {
           ref.invalidate(adminHospitalsProvider);
-          await ref.read(adminHospitalsProvider.future).then((_) {}, onError: (_) {});
+          await ref
+              .read(adminHospitalsProvider.future)
+              .then((_) {}, onError: (_) {});
         },
         child: ContentWidth(
           child: Padding(
@@ -50,7 +53,10 @@ class _RegistrationsScreenState extends ConsumerState<RegistrationsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SearchField(hint: 'Search name, city, email, registration no.', onChanged: (v) => setState(() => _search = v)),
+                SearchField(
+                  hint: 'Search name, city, email, registration no.',
+                  onChanged: (v) => setState(() => _search = v),
+                ),
                 const SizedBox(height: 10),
                 FilterChips<RegistrationFilter>(
                   options: const [
@@ -69,17 +75,30 @@ class _RegistrationsScreenState extends ConsumerState<RegistrationsScreen> {
                   data: (all) {
                     final list = all
                         .where((h) => h.approvalStatus != 'Approved')
-                        .where((h) => switch (_filter) {
-                              RegistrationFilter.needsReview => h.needsReview,
-                              RegistrationFilter.waiting => h.waitingForHospital,
-                              RegistrationFilter.all => true,
-                            })
-                        .where((h) =>
-                            term.isEmpty ||
-                            [h.name, h.city ?? '', h.email, h.registrationNumber ?? '', h.licenseNumber].any((s) => s.toLowerCase().contains(term)))
+                        .where(
+                          (h) => switch (_filter) {
+                            RegistrationFilter.needsReview => h.needsReview,
+                            RegistrationFilter.waiting => h.waitingForHospital,
+                            RegistrationFilter.all => true,
+                          },
+                        )
+                        .where(
+                          (h) =>
+                              term.isEmpty ||
+                              [
+                                h.name,
+                                h.city ?? '',
+                                h.email,
+                                h.registrationNumber ?? '',
+                                h.licenseNumber,
+                              ].any((s) => s.toLowerCase().contains(term)),
+                        )
                         .toList();
                     if (list.isEmpty) {
-                      return const EmptyView(icon: Icons.domain_add_outlined, message: 'No hospital registrations here.');
+                      return const EmptyView(
+                        icon: Icons.domain_add_outlined,
+                        message: 'No hospital registrations here.',
+                      );
                     }
                     return Column(
                       children: [
@@ -89,15 +108,32 @@ class _RegistrationsScreenState extends ConsumerState<RegistrationsScreen> {
                             child: Card(
                               child: ListTile(
                                 key: Key('registration-${h.hospitalId}'),
-                                onTap: () => context.push('${AppRoutes.adminRegistrations}/${h.hospitalId}'),
-                                leading: const Icon(Icons.local_hospital_outlined, color: AppColors.red600),
-                                title: Text(h.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                onTap: () => context.push(
+                                  '${AppRoutes.adminRegistrations}/${h.hospitalId}',
+                                ),
+                                leading: const Icon(
+                                  Icons.local_hospital_outlined,
+                                  color: AppColors.red600,
+                                ),
+                                title: Text(
+                                  h.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                                 subtitle: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('${h.city ?? h.address} · submitted ${Fmt.date(h.createdAt)}'),
+                                    Text(
+                                      '${h.city ?? h.address} · submitted ${Fmt.date(h.createdAt)}',
+                                    ),
                                     const SizedBox(height: 4),
-                                    StatusBadge(h.statusLabel, variant: registrationVariant(h.approvalStatus)),
+                                    StatusBadge(
+                                      h.statusLabel,
+                                      variant: registrationVariant(
+                                        h.approvalStatus,
+                                      ),
+                                    ),
                                   ],
                                 ),
                                 trailing: const Icon(Icons.chevron_right),

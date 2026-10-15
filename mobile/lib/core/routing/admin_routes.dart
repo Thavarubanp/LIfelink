@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/admin/admin_home_screen.dart';
+import '../../features/admin/admin_create_screen.dart';
 import '../../features/admin/appeals/admin_appeals.dart';
 import '../../features/admin/attention_controller.dart';
 import '../../features/admin/complaints/admin_complaints.dart';
@@ -12,6 +13,8 @@ import '../../features/admin/registrations/registration_detail_screen.dart';
 import '../../features/admin/registrations/registrations_screen.dart';
 import '../../features/home/more_screen.dart';
 import '../../features/home/role_shell.dart';
+import '../../features/screening/my_acceptances_screen.dart';
+import '../../features/screening/screening_interview_screen.dart';
 import 'app_router.dart';
 import 'routes.dart';
 
@@ -26,6 +29,7 @@ List<RouteBase> adminRoutes() => [
         Icons.flag,
         badge: attentionCountProvider('total'),
       ),
+      const ShellTab('Create', Icons.add, Icons.add),
       ShellTab(
         'Activity',
         Icons.history,
@@ -37,6 +41,7 @@ List<RouteBase> adminRoutes() => [
     branches: [
       (AppRoutes.adminHome, const AdminHomeScreen()),
       (AppRoutes.adminAttention, const AttentionScreen()),
+      (AppRoutes.adminCreate, const AdminCreateScreen()),
       (AppRoutes.adminActivity, const AdminActivityScreen()),
       (
         AppRoutes.adminMore,
@@ -59,36 +64,23 @@ List<RouteBase> adminRoutes() => [
               Icons.local_hospital_outlined,
               AppRoutes.adminHospitals,
             ),
-            MoreEntry(
-              'Donate blood',
-              Icons.bloodtype_outlined,
-              AppRoutes.donorRequests,
-              subtitle: 'Browse and participate in public requests',
-            ),
-            MoreEntry(
-              'My acceptances',
-              Icons.volunteer_activism_outlined,
-              AppRoutes.donorAcceptances,
-              subtitle: 'Screening and donation participation',
-            ),
-            MoreEntry(
-              'Create blood request',
-              Icons.add_circle_outline,
-              AppRoutes.createRequest,
-            ),
           ],
         ),
       ),
     ],
     builders: {
-      AppRoutes.adminActivity: (state) =>
-          AdminActivityScreen(initialTab: state.uri.queryParameters['tab']),
+      AppRoutes.adminActivity: (state) => AdminActivityScreen(
+        initialTab: state.uri.queryParameters['tab'],
+        initialStatus: state.uri.queryParameters['status'],
+      ),
     },
   ),
   GoRoute(
     path: AppRoutes.adminUsers,
     parentNavigatorKey: rootNavigatorKey,
-    builder: (_, _) => const AdminUsersScreen(),
+    builder: (_, state) => AdminUsersScreen(
+      initialFilter: state.uri.queryParameters['filter'] ?? 'all',
+    ),
     routes: [
       GoRoute(
         path: ':userId',
@@ -111,7 +103,9 @@ List<RouteBase> adminRoutes() => [
   GoRoute(
     path: AppRoutes.adminHospitals,
     parentNavigatorKey: rootNavigatorKey,
-    builder: (_, _) => const AdminHospitalsScreen(),
+    builder: (_, state) => AdminHospitalsScreen(
+      initialFilter: state.uri.queryParameters['filter'] ?? 'all',
+    ),
     routes: [
       GoRoute(
         path: ':hospitalId',
@@ -128,6 +122,29 @@ List<RouteBase> adminRoutes() => [
                 hospitalActivityScreen(state.pathParameters['hospitalId']!),
           ),
         ],
+      ),
+    ],
+  ),
+  GoRoute(
+    path: AppRoutes.adminDoctors,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const AdminDoctorsScreen(),
+  ),
+  GoRoute(
+    path: AppRoutes.adminAcceptances,
+    parentNavigatorKey: rootNavigatorKey,
+    builder: (_, _) => const MyAcceptancesScreen(
+      browsePath: AppRoutes.adminCreate,
+      screeningPathPrefix: AppRoutes.adminAcceptances,
+    ),
+    routes: [
+      GoRoute(
+        path: ':acceptanceId/screening',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, state) => ScreeningInterviewScreen(
+          acceptanceId: state.pathParameters['acceptanceId']!,
+          returnPath: AppRoutes.adminAcceptances,
+        ),
       ),
     ],
   ),

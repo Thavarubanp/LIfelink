@@ -20,17 +20,17 @@ class EmergencyRequest {
   });
 
   factory EmergencyRequest.fromJson(Map<String, dynamic> j) => EmergencyRequest(
-        id: str(j['emergencyRequestId']),
-        hospitalId: str(j['hospitalId']),
-        hospitalName: str(j['hospitalName']),
-        bloodGroup: str(j['bloodGroup']),
-        unitsRequired: intOf(j['unitsRequired']),
-        priority: str(j['priority']),
-        status: str(j['status']),
-        reason: str(j['reason']),
-        createdAt: parseDate(j['createdAt']),
-        updatedAt: parseDate(j['updatedAt']),
-      );
+    id: str(j['emergencyRequestId']),
+    hospitalId: str(j['hospitalId']),
+    hospitalName: str(j['hospitalName']),
+    bloodGroup: str(j['bloodGroup']),
+    unitsRequired: intOf(j['unitsRequired']),
+    priority: str(j['priority']),
+    status: str(j['status']),
+    reason: str(j['reason']),
+    createdAt: parseDate(j['createdAt']),
+    updatedAt: parseDate(j['updatedAt']),
+  );
 
   final String id;
   final String hospitalId;
@@ -53,10 +53,14 @@ class EmergencyRepository {
   final ApiClient _api;
 
   Future<List<EmergencyRequest>> all() async =>
-      unwrapList(await _api.get('/emergencyrequests')).map(EmergencyRequest.fromJson).toList();
+      unwrapList(await _api.get('/emergencyrequests'))
+          .map(EmergencyRequest.fromJson)
+          .toList();
 
   Future<List<EmergencyRequest>> critical() async =>
-      unwrapList(await _api.get('/emergencyrequests/critical')).map(EmergencyRequest.fromJson).toList();
+      unwrapList(await _api.get('/emergencyrequests/critical'))
+          .map(EmergencyRequest.fromJson)
+          .toList();
 
   /// The hospital comes from the signed-in account on the server; one idempotency key per form.
   Future<void> create({
@@ -65,21 +69,29 @@ class EmergencyRepository {
     required String priority,
     required String reason,
     required String idempotencyKey,
-  }) =>
-      _api.post(
-        '/emergencyrequests',
-        body: {'bloodGroup': bloodGroup, 'unitsRequired': unitsRequired, 'priority': priority, 'reason': reason},
-        options: apiOptions(idempotencyKey: idempotencyKey),
-      );
+  }) => _api.post(
+    '/emergencyrequests',
+    body: {
+      'bloodGroup': bloodGroup,
+      'unitsRequired': unitsRequired,
+      'priority': priority,
+      'reason': reason,
+    },
+    options: apiOptions(idempotencyKey: idempotencyKey),
+  );
 
   /// Only the hospital that raised the emergency may approve, reject or complete it (checked by the API).
   Future<void> approve(String id) => _api.put('/emergencyrequests/$id/approve');
   Future<void> reject(String id) => _api.put('/emergencyrequests/$id/reject');
-  Future<void> complete(String id) => _api.put('/emergencyrequests/$id/complete');
+  Future<void> complete(String id) =>
+      _api.put('/emergencyrequests/$id/complete');
 }
 
-final emergencyRepositoryProvider = Provider<EmergencyRepository>((ref) => EmergencyRepository(ref.watch(apiClientProvider)));
-
-final criticalEmergenciesProvider = FutureProvider.autoDispose<List<EmergencyRequest>>(
-  (ref) => ref.watch(emergencyRepositoryProvider).critical(),
+final emergencyRepositoryProvider = Provider<EmergencyRepository>(
+  (ref) => EmergencyRepository(ref.watch(apiClientProvider)),
 );
+
+final criticalEmergenciesProvider =
+    FutureProvider.autoDispose<List<EmergencyRequest>>(
+      (ref) => ref.watch(emergencyRepositoryProvider).critical(),
+    );

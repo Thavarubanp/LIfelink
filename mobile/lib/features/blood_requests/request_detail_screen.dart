@@ -12,6 +12,7 @@ import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../auth/auth_widgets.dart';
+import '../attention/tab_attention_controller.dart';
 import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
 import 'donor_home_screen.dart';
@@ -40,7 +41,9 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   Future<void> _accept(DonorProfileSummary? profile) async {
     final group = profile?.bloodGroupConfirmed == true
         ? profile!.bloodGroup ?? ''
-        : _bloodGroup;
+        : _bloodGroup.isNotEmpty
+        ? _bloodGroup
+        : profile?.bloodGroup ?? '';
     if (group.isEmpty) {
       setState(() => _error = 'Select your blood group before accepting.');
       return;
@@ -53,6 +56,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       final acceptance = await ref
           .read(bloodRequestRepositoryProvider)
           .accept(widget.requestId, group);
+      ref.read(tabAttentionProvider.notifier).refresh();
       if (!mounted) return;
       showSnack(
         context,
@@ -83,9 +87,15 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       body: RefreshableScroll(
         onRefresh: () async {
           _reload();
-          await ref
-              .read(bloodRequestProvider(widget.requestId).future)
-              .then((_) {}, onError: (_) {});
+          await Future.wait<void>([
+            ref
+                .read(bloodRequestProvider(widget.requestId).future)
+                .then<void>((_) {}, onError: (_) {}),
+            if (donor && user != null)
+              ref
+                  .read(donorProfileProvider(user.userId).future)
+                  .then<void>((_) {}, onError: (_) {}),
+          ]);
         },
         child: AsyncView(
           value: requestValue,
@@ -123,9 +133,9 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
   }
 
   Widget _acceptCard(BloodRequest request, DonorProfileSummary profile) {
-    if (_bloodGroup.isEmpty && profile.bloodGroup?.isNotEmpty == true) {
-      _bloodGroup = profile.bloodGroup!;
-    }
+    final selectedGroup = _bloodGroup.isNotEmpty
+        ? _bloodGroup
+        : profile.bloodGroup ?? '';
     final blocked = request.status != 'Approved'
         ? 'This request is ${request.status.toLowerCase()} and is not accepting donors.'
         : !request.isAcceptingDonors
@@ -140,8 +150,9 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           DropdownButtonFormField<String>(
-            initialValue: AppConstants.bloodGroups.contains(_bloodGroup)
-                ? _bloodGroup
+            isExpanded: true,
+            initialValue: AppConstants.bloodGroups.contains(selectedGroup)
+                ? selectedGroup
                 : null,
             decoration: InputDecoration(
               labelText: profile.bloodGroupConfirmed

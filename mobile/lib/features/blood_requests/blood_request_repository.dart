@@ -5,6 +5,7 @@ import '../../core/api/api_error.dart';
 import '../../core/api/json.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/providers.dart';
+import '../screening/screening_repository.dart';
 import 'blood_request_models.dart';
 
 class DonorHomeData {
@@ -32,10 +33,13 @@ class BloodRequestRepository {
 
   final ApiClient _api;
 
-  Future<List<BloodRequest>> myRequests() async =>
-      unwrapList(await _api.get('/BloodRequests/my'))
-          .map(BloodRequest.fromJson)
-          .toList();
+  Future<List<BloodRequest>> myRequests({bool background = false}) async =>
+      unwrapList(
+        await _api.get(
+          '/BloodRequests/my',
+          options: apiOptions(background: background),
+        ),
+      ).map(BloodRequest.fromJson).toList();
 
   Future<List<DonorAcceptance>> myAcceptances() async =>
       unwrapList(await _api.get('/Acceptances/my'))
@@ -144,14 +148,23 @@ final bloodRequestRepositoryProvider = Provider<BloodRequestRepository>(
   (ref) => BloodRequestRepository(ref.watch(apiClientProvider)),
 );
 
-final donorHomeProvider = FutureProvider.autoDispose<DonorHomeData>((ref) {
+final donorHomeProvider = FutureProvider.autoDispose<DonorHomeData>((
+  ref,
+) async {
   final user = ref.watch(authControllerProvider).user;
   if (user == null) {
     throw const ApiError(
       'Your account could not be loaded. Please sign in again.',
     );
   }
-  return ref.watch(bloodRequestRepositoryProvider).home(user.userId);
+  final requests = await ref.watch(myBloodRequestsProvider.future);
+  final acceptances = await ref.watch(myAcceptancesProvider.future);
+  final profile = await ref.watch(donorProfileProvider(user.userId).future);
+  return DonorHomeData(
+    requests: requests,
+    acceptances: acceptances,
+    profile: profile,
+  );
 });
 
 typedef PublicRequestFilter = ({String? bloodGroup});

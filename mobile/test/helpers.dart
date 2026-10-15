@@ -14,13 +14,15 @@ import 'package:lifelink_mobile/core/providers.dart';
 import 'package:lifelink_mobile/core/theme/app_theme.dart';
 import 'package:lifelink_mobile/features/admin/admin_repository.dart';
 import 'package:lifelink_mobile/features/admin/attention_controller.dart';
+import 'package:lifelink_mobile/features/auth/hospital_registration_repository.dart';
 import 'package:lifelink_mobile/features/notifications/notifications_repository.dart';
 
 const testBaseUrl = 'http://test.local/api';
 
 /// A clock the tests move by hand.
 class FakeClock {
-  FakeClock([DateTime? start]) : now = start ?? DateTime.utc(2026, 10, 5, 4, 30);
+  FakeClock([DateTime? start])
+    : now = start ?? DateTime.utc(2026, 10, 5, 4, 30);
   DateTime now;
   DateTime call() => now;
   void advance(Duration d) => now = now.add(d);
@@ -29,16 +31,25 @@ class FakeClock {
 /// An [ApiClient] whose HTTP layer is mocked, plus a log of the headers each request carried.
 class MockedApi {
   MockedApi({String? token, FakeClock? clock})
-      : clock = clock ?? FakeClock(),
-        tokens = MemoryTokenStorage(token) {
+    : clock = clock ?? FakeClock(),
+      tokens = MemoryTokenStorage(token) {
     activity = SessionActivity(clock: this.clock.call);
     final dio = Dio();
-    client = ApiClient(tokens: tokens, activity: activity, baseUrl: testBaseUrl, dio: dio);
+    client = ApiClient(
+      tokens: tokens,
+      activity: activity,
+      baseUrl: testBaseUrl,
+      dio: dio,
+    );
     // Runs after the client's interceptor, so it sees the final headers
-    dio.interceptors.add(InterceptorsWrapper(onRequest: (o, h) {
-      sent.add(o);
-      h.next(o);
-    }));
+    dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (o, h) {
+          sent.add(o);
+          h.next(o);
+        },
+      ),
+    );
     adapter = DioAdapter(dio: dio);
   }
 
@@ -50,10 +61,10 @@ class MockedApi {
   final List<RequestOptions> sent = [];
 
   List<Override> get overrides => [
-        tokenStorageProvider.overrideWithValue(tokens),
-        sessionActivityProvider.overrideWithValue(activity),
-        apiClientProvider.overrideWithValue(client),
-      ];
+    tokenStorageProvider.overrideWithValue(tokens),
+    sessionActivityProvider.overrideWithValue(activity),
+    apiClientProvider.overrideWithValue(client),
+  ];
 }
 
 Map<String, dynamic> userJson({
@@ -61,33 +72,74 @@ Map<String, dynamic> userJson({
   bool suspended = false,
   bool mustChangePassword = false,
   String? hospitalApprovalStatus,
-}) =>
-    {
-      'userId': '11111111-1111-1111-1111-111111111111',
-      'firstName': 'Test',
-      'lastName': 'Person',
-      'email': 'test.person@example.test',
-      'roles': roles,
-      'accountStatus': suspended ? 'Suspended' : 'Active',
-      'isSuspended': suspended,
-      'mustChangePassword': mustChangePassword,
-      'hospitalApprovalStatus': hospitalApprovalStatus,
-      'sessionIdleTimeoutMinutes': 10,
-      'sessionWarningMinutes': 1,
-    };
+}) => {
+  'userId': '11111111-1111-1111-1111-111111111111',
+  'firstName': 'Test',
+  'lastName': 'Person',
+  'email': 'test.person@example.test',
+  'roles': roles,
+  'accountStatus': suspended ? 'Suspended' : 'Active',
+  'isSuspended': suspended,
+  'mustChangePassword': mustChangePassword,
+  'hospitalApprovalStatus': hospitalApprovalStatus,
+  'sessionIdleTimeoutMinutes': 10,
+  'sessionWarningMinutes': 1,
+};
 
 CurrentUser testUser({
   List<String> roles = const ['User'],
   bool suspended = false,
   bool mustChangePassword = false,
   String? hospitalApprovalStatus,
-}) =>
-    CurrentUser.fromJson(userJson(
-      roles: roles,
-      suspended: suspended,
-      mustChangePassword: mustChangePassword,
-      hospitalApprovalStatus: hospitalApprovalStatus,
-    ));
+}) => CurrentUser.fromJson(
+  userJson(
+    roles: roles,
+    suspended: suspended,
+    mustChangePassword: mustChangePassword,
+    hospitalApprovalStatus: hospitalApprovalStatus,
+  ),
+);
+
+Map<String, dynamic> hospitalRegistrationJson({
+  String status = 'Pending',
+  List<Map<String, dynamic>> history = const [],
+}) => {
+  'hospitalId': '22222222-2222-2222-2222-222222222222',
+  'name': 'Central Hospital',
+  'licenseNumber': 'PHSRC/PH/123',
+  'registrationNumber': 'PHSRC/PH/123',
+  'address': '1 Main Street',
+  'city': 'Colombo',
+  'contactNumber': '0112345678',
+  'email': 'hospital@example.test',
+  'approvalStatus': status,
+  'contactPersonName': 'Nimal Perera',
+  'contactPersonPhone': '0771234567',
+  'contactPersonEmail': 'nimal@example.test',
+  'createdAt': '2026-10-15T04:00:00Z',
+  'updatedAt': '2026-10-15T04:00:00Z',
+  'approvalHistory': history,
+};
+
+class FakeHospitalRegistrationRepository
+    implements HospitalRegistrationRepository {
+  FakeHospitalRegistrationRepository(this.registration);
+
+  HospitalRegistration registration;
+
+  @override
+  Future<HospitalRegistration> mine() async => registration;
+
+  @override
+  Future<HospitalRegistration> create(HospitalRegistrationDraft draft) async =>
+      registration;
+
+  @override
+  Future<HospitalRegistration> reply(
+    String hospitalId,
+    HospitalRegistrationReply reply,
+  ) async => registration;
+}
 
 /// Auth controller with a fixed state (no restore, no API).
 class FakeAuthController extends AuthController {
@@ -105,7 +157,8 @@ class FakeUnreadCount extends UnreadCountController {
 }
 
 /// MaterialApp with the app theme around [child], inside a ProviderScope with [overrides].
-Widget testApp(Widget child, {List<Override> overrides = const []}) => ProviderScope(
+Widget testApp(Widget child, {List<Override> overrides = const []}) =>
+    ProviderScope(
       overrides: overrides,
       retry: (_, _) => null,
       child: MaterialApp(theme: AppTheme.light(), home: child),
@@ -113,7 +166,14 @@ Widget testApp(Widget child, {List<Override> overrides = const []}) => ProviderS
 
 /// Fixed attention counts (no polling).
 class FakeAttention extends AdminAttentionController {
-  FakeAttention([this.value = const AdminAttention(pendingRegistrations: 2, pendingAppeals: 1, pendingComplaints: 3, newBloodRequests: 4)]);
+  FakeAttention([
+    this.value = const AdminAttention(
+      pendingRegistrations: 2,
+      pendingAppeals: 1,
+      pendingComplaints: 3,
+      newBloodRequests: 4,
+    ),
+  ]);
   final AdminAttention value;
 
   @override
@@ -125,14 +185,32 @@ class FakeAttention extends AdminAttentionController {
 
 /// A screening agent report (lifelink.screening.v2) as ReportJson, for the Step 3 tests.
 String reportJson({List<Map<String, dynamic>> flags = const []}) => jsonEncode({
-      'risk_level': flags.any((f) => f['severity'] == 'defer') ? 'HIGH' : 'LOW',
-      'recommendation': 'Requires Doctor Review',
-      'summary': 'Donor answered all questions.',
-      'governance': 'The AI never approves or rejects donors.',
-      'flags': flags,
-      'sections': [
-        {'index': 1, 'title': 'Personal details', 'confidential': false, 'items': [{'question_id': 'P_DOB', 'question': 'Date of birth', 'answer': '1960-01-01'}]},
-        {'index': 2, 'title': 'Health', 'confidential': false, 'items': [{'question_id': 'H_WEIGHT', 'question': 'Weight', 'answer': '70 kg'}]},
-        {'index': 7, 'title': 'Confidential', 'confidential': true, 'items': []},
+  'risk_level': flags.any((f) => f['severity'] == 'defer') ? 'HIGH' : 'LOW',
+  'recommendation': 'Requires Doctor Review',
+  'summary': 'Donor answered all questions.',
+  'governance': 'The AI never approves or rejects donors.',
+  'flags': flags,
+  'sections': [
+    {
+      'index': 1,
+      'title': 'Personal details',
+      'confidential': false,
+      'items': [
+        {
+          'question_id': 'P_DOB',
+          'question': 'Date of birth',
+          'answer': '1960-01-01',
+        },
       ],
-    });
+    },
+    {
+      'index': 2,
+      'title': 'Health',
+      'confidential': false,
+      'items': [
+        {'question_id': 'H_WEIGHT', 'question': 'Weight', 'answer': '70 kg'},
+      ],
+    },
+    {'index': 7, 'title': 'Confidential', 'confidential': true, 'items': []},
+  ],
+});

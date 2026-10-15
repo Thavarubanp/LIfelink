@@ -15,56 +15,127 @@ import 'analysis_repository.dart';
 /// hospital, its result), the next scheduled run, and "Run analysis now" with a running state and the 2-minute
 /// cooldown countdown on the server's clock. Refreshes every 15 s in the background (never extends the session).
 class InventoryAnalysisPanel extends ConsumerStatefulWidget {
-  const InventoryAnalysisPanel({super.key, this.onRunComplete, this.pollInterval = const Duration(seconds: 15)});
+  const InventoryAnalysisPanel({
+    super.key,
+    this.onRunComplete,
+    this.pollInterval = const Duration(seconds: 15),
+  });
 
   final VoidCallback? onRunComplete;
   final Duration pollInterval;
 
   @override
-  ConsumerState<InventoryAnalysisPanel> createState() => _InventoryAnalysisPanelState();
+  ConsumerState<InventoryAnalysisPanel> createState() =>
+      _InventoryAnalysisPanelState();
 }
 
-class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel> {
+class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
+    with WidgetsBindingObserver {
   AnalysisStatus? _status;
   Duration _offset = Duration.zero; // server clock minus phone clock
   String? _error;
   bool _running = false;
   Timer? _poll;
   Timer? _tick;
+  int _loadGeneration = 0;
+  bool _resumed = true;
+  bool _visible = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _resumed =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     _load(background: false);
-    _poll = Timer.periodic(widget.pollInterval, (_) => _load(background: true));
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
-    });
+    _startPolling();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _poll?.cancel();
     _tick?.cancel();
     super.dispose();
   }
 
-  Future<void> _load({required bool background}) async {
-    try {
-      final status = await ref.read(analysisRepositoryProvider).status(background: background);
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _visible = TickerMode.valuesOf(context).enabled;
+    _syncTicker();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    _resumed = lifecycle == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startPolling();
+      _load(background: true);
+      _syncTicker();
+    } else {
+      _poll?.cancel();
+      _poll = null;
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    _poll = null;
+    if (!_resumed) return;
+    _poll = Timer.periodic(widget.pollInterval, (_) => _load(background: true));
+  }
+
+  bool get _cooldownVisible {
+    final status = _status;
+    if (!_visible || status == null || _running || status.state == 'Running') {
+      return false;
+    }
+    return status.cooldownLeft(DateTime.now(), _offset) > Duration.zero;
+  }
+
+  void _syncTicker() {
+    if (!_resumed || !_cooldownVisible) {
+      _tick?.cancel();
+      _tick = null;
+      return;
+    }
+    _tick ??= Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
+      if (!_cooldownVisible) {
+        _tick?.cancel();
+        _tick = null;
+      }
+      setState(() {});
+    });
+  }
+
+  Future<void> _load({required bool background}) async {
+    final generation = ++_loadGeneration;
+    try {
+      final status = await ref
+          .read(analysisRepositoryProvider)
+          .status(background: background);
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _status = status;
         _offset = status.serverNow.difference(DateTime.now().toUtc());
         _error = null;
       });
+      _syncTicker();
     } catch (e) {
-      if (mounted) setState(() => _error = ApiError.from(e).message);
+      if (mounted && generation == _loadGeneration) {
+        setState(() => _error = ApiError.from(e).message);
+      }
     }
   }
 
   Future<void> _run() async {
     setState(() => _running = true);
+    _syncTicker();
     try {
       final result = await ref.read(analysisRepositoryProvider).run();
       if (mounted) {
@@ -79,8 +150,11 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
     } catch (e) {
       if (mounted) showErrorSnack(context, e, title: 'Analysis not run');
     } finally {
-      if (mounted) setState(() => _running = false);
-      await _load(background: false);
+      if (mounted) {
+        setState(() => _running = false);
+        _syncTicker();
+        await _load(background: false);
+      }
     }
   }
 
@@ -99,8 +173,16 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
       title: 'Inventory analysis',
       icon: Icons.insights,
       trailing: TextButton(
+        style: TextButton.styleFrom(
+          minimumSize: Size.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         onPressed: () => context.push(AppRoutes.hospitalRecommendations),
-        child: const Text('Recommendations'),
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Recommendations', maxLines: 1, softWrap: false),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -114,19 +196,38 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
           if (status == null && _error != null)
             Text(_error!, style: const TextStyle(color: AppColors.rose600))
           else if (status == null)
-            const Row(children: [
-              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 8),
-              Text('Loading…'),
-            ])
+            const Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Loading…'),
+              ],
+            )
           else ...[
             if (isRunning)
               const Row(
                 key: Key('analysis-running'),
                 children: [
-                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.red600)),
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.red600,
+                    ),
+                  ),
                   SizedBox(width: 8),
-                  Text('Analysis running…', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.red600)),
+                  Text(
+                    'Analysis running…',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.red600,
+                    ),
+                  ),
                 ],
               )
             else
@@ -134,18 +235,40 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
                 key: const Key('analysis-last-run'),
                 last == null
                     ? const TextSpan(text: 'No analysis has run yet.')
-                    : TextSpan(children: [
-                        const TextSpan(text: 'Last analysis: ', style: TextStyle(fontWeight: FontWeight.w700)),
-                        TextSpan(text: '${Fmt.sriLankaDateTime(last.startedAt)} (${last.triggerLabel}) – ${last.summary}'),
-                      ]),
+                    : TextSpan(
+                        children: [
+                          const TextSpan(
+                            text: 'Last analysis: ',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          TextSpan(
+                            text:
+                                '${Fmt.sriLankaDateTime(last.startedAt)} (${last.triggerLabel}) – ${last.summary}',
+                          ),
+                        ],
+                      ),
               ),
             if (next != null) ...[
               const SizedBox(height: 4),
-              Row(children: [
-                const Icon(Icons.schedule, size: 14, color: AppColors.slate500),
-                const SizedBox(width: 4),
-                Expanded(child: Text(next, style: const TextStyle(fontSize: 12, color: AppColors.slate500))),
-              ]),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.schedule,
+                    size: 14,
+                    color: AppColors.slate500,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      next,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.slate500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
           const SizedBox(height: 12),
@@ -153,13 +276,22 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
             key: const Key('analysis-run'),
             onPressed: status == null || isRunning || inCooldown ? null : _run,
             icon: isRunning
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.play_arrow),
-            label: Text(isRunning
-                ? 'Analysis running…'
-                : inCooldown
-                    ? 'Available again in ${Fmt.countdown(cooldown)}'
-                    : 'Run analysis now'),
+            label: Text(
+              isRunning
+                  ? 'Analysis running…'
+                  : inCooldown
+                  ? 'Available again in ${Fmt.countdown(cooldown)}'
+                  : 'Run analysis now',
+            ),
           ),
         ],
       ),

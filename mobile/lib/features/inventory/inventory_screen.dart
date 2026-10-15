@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/format.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
+import '../home/shell_page_header.dart';
+import '../attention/tab_attention_controller.dart';
+import '../profile/hospital_profile_edit_sheet.dart';
 import '../profile/profile_repository.dart';
 import 'group_form_sheet.dart';
 import 'inventory_models.dart';
@@ -82,6 +86,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
   void _reload() {
     ref.invalidate(hospitalInventoryProvider);
     ref.invalidate(packetsProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
   }
 
   void _scrollToRequested() {
@@ -102,6 +107,7 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     final inventory = ref.watch(hospitalInventoryProvider);
     final packets = ref.watch(packetsProvider(_status));
     final hospital = ref.watch(myHospitalProvider).value;
+    final user = ref.watch(authControllerProvider).user;
     final term = _search.trim().toLowerCase();
     final packetList = packets.value ?? const <BloodPacket>[];
 
@@ -110,40 +116,11 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Blood inventory'),
-        actions: [
-          IconButton(
-            tooltip: 'Add blood group',
-            icon: const Icon(Icons.add_circle_outline),
-            onPressed: () async {
-              final groups =
-                  inventory.value?.map((i) => i.bloodGroup).toList() ??
-                  const <String>[];
-              if (await showGroupFormSheet(context, existingGroups: groups)) {
-                _reload();
-              }
-            },
-          ),
-          IconButton(
-            tooltip: 'Scan packet',
-            icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => context.push(AppRoutes.hospitalScan),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton(
+        tooltip: 'Scan packet',
+        onPressed: () => context.push(AppRoutes.hospitalScan),
+        child: const Icon(Icons.qr_code_scanner),
       ),
-      floatingActionButton: widget.actions.addPackets == null
-          ? null
-          : FloatingActionButton.extended(
-              key: const Key('fab-add-packets'),
-              backgroundColor: AppColors.red600,
-              foregroundColor: Colors.white,
-              onPressed: () async {
-                if (await widget.actions.addPackets!(context)) _reload();
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('Add packets'),
-            ),
       body: RefreshableScroll(
         onRefresh: _refresh,
         child: ContentWidth(
@@ -152,15 +129,32 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (hospital != null)
+                const ShellPageHeader(title: 'Blood inventory'),
+                const SizedBox(height: 16),
+                if (hospital != null) ...[
                   Text(
                     'Every unit is a 440 ml packet with its own tracking number. Shelf life ${hospital.packetShelfLifeDays} days, '
-                    'expiry alert window ${hospital.expiryAlertDays} days (changed in the hospital profile on the web).',
+                    'expiry alert window ${hospital.expiryAlertDays} days.',
                     style: const TextStyle(
                       fontSize: 12,
                       color: AppColors.slate500,
                     ),
                   ),
+                  if (canEditHospitalProfile(hospital, user))
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        key: const Key('edit-hospital-profile'),
+                        onPressed: () => showHospitalProfileEditSheet(
+                          context,
+                          ref,
+                          hospital,
+                        ),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit hospital profile'),
+                      ),
+                    ),
+                ],
                 const SizedBox(height: 12),
                 if ((inventory.value ?? const []).any(
                   (i) => i.isLowStock || i.expiringSoonUnits > 0,
@@ -172,6 +166,41 @@ class _InventoryScreenState extends ConsumerState<InventoryScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (widget.actions.addPackets != null)
+                      FilledButton.icon(
+                        key: const Key('add-packets'),
+                        onPressed: () async {
+                          if (await widget.actions.addPackets!(context)) {
+                            _reload();
+                          }
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('Add packets'),
+                      ),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final groups =
+                            inventory.value
+                                ?.map((i) => i.bloodGroup)
+                                .toList() ??
+                            const <String>[];
+                        if (await showGroupFormSheet(
+                          context,
+                          existingGroups: groups,
+                        )) {
+                          _reload();
+                        }
+                      },
+                      icon: const Icon(Icons.add_circle_outline),
+                      label: const Text('Add blood group'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 SearchField(
                   hint: 'Search blood group or tracking number',
                   onChanged: (v) => setState(() => _search = v),

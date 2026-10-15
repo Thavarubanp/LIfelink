@@ -19,7 +19,7 @@ Future<bool> _sheet(BuildContext context, Widget child) async =>
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => child,
+      builder: (_) => ModalSheetSafeArea(child: child),
     ) ??
     false;
 
@@ -46,12 +46,7 @@ class _SheetFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      20,
-      0,
-      20,
-      MediaQuery.viewInsetsOf(context).bottom + 20,
-    ),
+    padding: EdgeInsets.fromLTRB(20, 0, 20, modalSheetBottomPadding(context)),
     child: SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -123,6 +118,7 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
       lastDate: _today,
       helpText: 'Collected date',
     );
+    if (!mounted) return;
     if (picked != null) setState(() => _collected = picked);
   }
 
@@ -213,6 +209,7 @@ class _PacketFormSheetState extends ConsumerState<PacketFormSheet> {
                 const SizedBox(height: 12),
               ],
               DropdownButtonFormField<String>(
+                isExpanded: true,
                 key: const Key('packet-group'),
                 initialValue: _group,
                 decoration: const InputDecoration(labelText: 'Blood group'),

@@ -36,7 +36,7 @@ void main() {
         'pendingAppeals': 0,
         'pendingComplaints': 4,
       });
-      expect(a.total, 10);
+      expect(a.total, 7);
       expect(a.newActivity, 3);
       expect(badgeText(0), isNull);
       expect(badgeText(7), '7');
@@ -232,6 +232,21 @@ void main() {
         ).canSuspend,
         isFalse,
       );
+    });
+
+    test('active request filter matches the dashboard count definition', () {
+      for (final status in ['Pending', 'Verified', 'Approved']) {
+        final item = OversightItem.request(
+          AdminBloodRequest.fromJson({'status': status}),
+        );
+        expect(oversightMatches(item, status: activeRequestFilter), isTrue);
+      }
+      for (final status in ['Rejected', 'Completed', 'Cancelled', 'Deleted']) {
+        final item = OversightItem.request(
+          AdminBloodRequest.fromJson({'status': status}),
+        );
+        expect(oversightMatches(item, status: activeRequestFilter), isFalse);
+      }
     });
 
     test('"New" since last seen; filters by status, suspension, type and Sri Lanka date', () {
@@ -443,6 +458,10 @@ void main() {
       expect(
         routeForNotificationType('DonorApproved'),
         AppRoutes.donorAcceptances,
+      );
+      expect(
+        routeForNotificationType('BloodRequestReviewAssigned'),
+        AppRoutes.doctorRequests,
       );
       expect(
         routeForNotificationType('TransferAccepted'),

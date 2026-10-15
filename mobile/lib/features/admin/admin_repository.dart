@@ -19,16 +19,16 @@ class AdminStats {
   });
 
   factory AdminStats.fromJson(Map<String, dynamic> j) => AdminStats(
-        totalDonorPatients: intOf(j['totalDonorPatients']),
-        totalHospitals: intOf(j['totalHospitals']),
-        totalDoctors: intOf(j['totalDoctors']),
-        activeRequests: intOf(j['activeRequests']),
-        pendingComplaints: intOf(j['pendingComplaints']),
-        pendingHospitalApprovals: intOf(j['pendingHospitalApprovals']),
-        pendingAppeals: intOf(j['pendingAppeals']),
-        activeSuspendedUsers: intOf(j['activeSuspendedUsers']),
-        activeSuspendedHospitals: intOf(j['activeSuspendedHospitals']),
-      );
+    totalDonorPatients: intOf(j['totalDonorPatients']),
+    totalHospitals: intOf(j['totalHospitals']),
+    totalDoctors: intOf(j['totalDoctors']),
+    activeRequests: intOf(j['activeRequests']),
+    pendingComplaints: intOf(j['pendingComplaints']),
+    pendingHospitalApprovals: intOf(j['pendingHospitalApprovals']),
+    pendingAppeals: intOf(j['pendingAppeals']),
+    activeSuspendedUsers: intOf(j['activeSuspendedUsers']),
+    activeSuspendedHospitals: intOf(j['activeSuspendedHospitals']),
+  );
 
   final int totalDonorPatients;
   final int totalHospitals;
@@ -54,14 +54,14 @@ class AdminAttention {
   });
 
   factory AdminAttention.fromJson(Map<String, dynamic> j) => AdminAttention(
-        newBloodRequests: intOf(j['newBloodRequests']),
-        newTransfers: intOf(j['newTransfers']),
-        bloodRequestsSeenAt: parseDate(j['bloodRequestsSeenAt']),
-        transfersSeenAt: parseDate(j['transfersSeenAt']),
-        pendingRegistrations: intOf(j['pendingRegistrations']),
-        pendingAppeals: intOf(j['pendingAppeals']),
-        pendingComplaints: intOf(j['pendingComplaints']),
-      );
+    newBloodRequests: intOf(j['newBloodRequests']),
+    newTransfers: intOf(j['newTransfers']),
+    bloodRequestsSeenAt: parseDate(j['bloodRequestsSeenAt']),
+    transfersSeenAt: parseDate(j['transfersSeenAt']),
+    pendingRegistrations: intOf(j['pendingRegistrations']),
+    pendingAppeals: intOf(j['pendingAppeals']),
+    pendingComplaints: intOf(j['pendingComplaints']),
+  );
 
   final int newBloodRequests;
   final int newTransfers;
@@ -71,14 +71,18 @@ class AdminAttention {
   final int pendingAppeals;
   final int pendingComplaints;
 
-  /// Everything that waits for the admin (the Attention tab badge).
-  int get total => newBloodRequests + newTransfers + pendingRegistrations + pendingAppeals + pendingComplaints;
+  /// Governance work reachable from the Attention tab.
+  int get total => pendingRegistrations + pendingAppeals + pendingComplaints;
 
   int get newActivity => newBloodRequests + newTransfers;
 }
 
 /// Short badge text: 0 hides the badge, more than 99 shows "99+" (same as the web sidebar).
-String? badgeText(int n) => n <= 0 ? null : n > 99 ? '99+' : '$n';
+String? badgeText(int n) => n <= 0
+    ? null
+    : n > 99
+    ? '99+'
+    : '$n';
 
 /// /api/Admin endpoints for the dashboard and badges.
 class AdminRepository {
@@ -86,13 +90,25 @@ class AdminRepository {
 
   final ApiClient _api;
 
-  Future<AdminStats> dashboard() async => AdminStats.fromJson(unwrapMap(await _api.get('/Admin/dashboard')));
+  Future<AdminStats> dashboard() async =>
+      AdminStats.fromJson(unwrapMap(await _api.get('/Admin/dashboard')));
 
   /// Polled in the background: never counts as user activity for the idle timeout.
   Future<AdminAttention> attention({bool background = false}) async =>
-      AdminAttention.fromJson(unwrapMap(await _api.get('/Admin/attention-counts', options: apiOptions(background: background))));
+      AdminAttention.fromJson(
+        unwrapMap(
+          await _api.get(
+            '/Admin/attention-counts',
+            options: apiOptions(background: background),
+          ),
+        ),
+      );
 }
 
-final adminRepositoryProvider = Provider<AdminRepository>((ref) => AdminRepository(ref.watch(apiClientProvider)));
+final adminRepositoryProvider = Provider<AdminRepository>(
+  (ref) => AdminRepository(ref.watch(apiClientProvider)),
+);
 
-final adminStatsProvider = FutureProvider.autoDispose<AdminStats>((ref) => ref.watch(adminRepositoryProvider).dashboard());
+final adminStatsProvider = FutureProvider.autoDispose<AdminStats>(
+  (ref) => ref.watch(adminRepositoryProvider).dashboard(),
+);

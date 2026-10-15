@@ -27,20 +27,25 @@ class IdleSessionGuard extends ConsumerStatefulWidget {
   ConsumerState<IdleSessionGuard> createState() => _IdleSessionGuardState();
 }
 
-class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with WidgetsBindingObserver {
+class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard>
+    with WidgetsBindingObserver {
   Timer? _tick;
   Timer? _keepAlive;
   Duration? _remaining; // shown while the warning is open
   bool _heartbeatInFlight = false;
   bool _signingOut = false;
   bool _staying = false;
+  bool _resumed = true;
   int _lastTouchMs = 0;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
+    _resumed =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+    _startTicking();
     ref.read(routerProvider).routerDelegate.addListener(_onRouteChanged);
   }
 
@@ -54,14 +59,36 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with Widget
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Back from the background: sign out at once if the idle time has passed meanwhile
-    if (state == AppLifecycleState.resumed) _onTick();
+  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+    _resumed = lifecycle == AppLifecycleState.resumed;
+    if (_resumed) {
+      _startTicking();
+      if (_paused) _startKeepAlive();
+      // Back from the background: sign out at once if the idle time passed.
+      _onTick();
+    } else {
+      _tick?.cancel();
+      _tick = null;
+      _keepAlive?.cancel();
+      _keepAlive = null;
+    }
+  }
+
+  void _startTicking() {
+    _tick?.cancel();
+    _tick = null;
+    if (!_resumed) return;
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
   }
 
   String get _path {
     try {
-      return ref.read(routerProvider).routerDelegate.currentConfiguration.uri.path;
+      return ref
+          .read(routerProvider)
+          .routerDelegate
+          .currentConfiguration
+          .uri
+          .path;
     } catch (_) {
       return '';
     }
@@ -80,12 +107,15 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with Widget
   }
 
   void _startKeepAlive() {
-    if (_keepAlive != null) return;
+    if (!_resumed || _keepAlive != null) return;
     final user = ref.read(authControllerProvider).user;
     if (user == null) return;
     final idleMs = (user.sessionIdleTimeoutMinutes * 60000).round();
     _heartbeat();
-    _keepAlive = Timer.periodic(Duration(milliseconds: min(120000, idleMs ~/ 3)), (_) => _heartbeat());
+    _keepAlive = Timer.periodic(
+      Duration(milliseconds: min(120000, idleMs ~/ 3)),
+      (_) => _heartbeat(),
+    );
   }
 
   Future<void> _heartbeat() async {
@@ -128,19 +158,28 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with Widget
 
   void _onTouch() {
     // While the warning is open only its buttons count
-    if (_remaining != null || _paused || !ref.read(authControllerProvider).isSignedIn) return;
+    if (_remaining != null ||
+        _paused ||
+        !ref.read(authControllerProvider).isSignedIn) {
+      return;
+    }
     final activity = ref.read(sessionActivityProvider);
     final now = activity.nowMs;
     if (now - _lastTouchMs < 1000) return;
     _lastTouchMs = now;
-    if (now - activity.lastConfirmedMs >= AppConstants.heartbeatInterval.inMilliseconds) _heartbeat();
+    if (now - activity.lastConfirmedMs >=
+        AppConstants.heartbeatInterval.inMilliseconds) {
+      _heartbeat();
+    }
   }
 
   Future<void> _signOutForInactivity() async {
     if (_signingOut) return;
     _signingOut = true;
     setState(() => _remaining = null);
-    await ref.read(authControllerProvider.notifier).logout(reason: SignOutReason.idle);
+    await ref
+        .read(authControllerProvider.notifier)
+        .logout(reason: SignOutReason.idle);
     _signingOut = false;
   }
 
@@ -159,7 +198,10 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with Widget
   @override
   Widget build(BuildContext context) {
     // Signed out elsewhere (401): close the warning
-    ref.listen(authControllerProvider.select((s) => s.isSignedIn), (_, signedIn) {
+    ref.listen(authControllerProvider.select((s) => s.isSignedIn), (
+      _,
+      signedIn,
+    ) {
       if (!signedIn) {
         _keepAlive?.cancel();
         _keepAlive = null;
@@ -203,11 +245,19 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with Widget
                   children: [
                     Icon(Icons.schedule, color: AppColors.amber600),
                     SizedBox(width: 8),
-                    Text('Are you still there?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                    Text(
+                      'Are you still there?',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 16,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text('For your security you will be signed out in ${Fmt.countdown(remaining)} because of inactivity.'),
+                Text(
+                  'For your security you will be signed out in ${Fmt.countdown(remaining)} because of inactivity.',
+                ),
                 const SizedBox(height: 18),
                 FilledButton(
                   key: const Key('stay-signed-in'),
@@ -216,7 +266,8 @@ class _IdleSessionGuardState extends ConsumerState<IdleSessionGuard> with Widget
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
-                  onPressed: () => ref.read(authControllerProvider.notifier).logout(),
+                  onPressed: () =>
+                      ref.read(authControllerProvider.notifier).logout(),
                   child: const Text('Sign out'),
                 ),
               ],

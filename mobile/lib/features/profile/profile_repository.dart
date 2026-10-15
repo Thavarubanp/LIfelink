@@ -24,6 +24,10 @@ class HospitalProfile {
     required this.doctorCount,
     required this.packetShelfLifeDays,
     required this.expiryAlertDays,
+    this.contactPersonName,
+    this.contactPersonPhone,
+    this.contactPersonEmail,
+    this.canEdit = false,
   });
 
   factory HospitalProfile.fromJson(Map<String, dynamic> j) => HospitalProfile(
@@ -37,6 +41,10 @@ class HospitalProfile {
     doctorCount: intOf(j['doctorCount']),
     packetShelfLifeDays: intOf(j['packetShelfLifeDays']),
     expiryAlertDays: intOf(j['expiryAlertDays']),
+    contactPersonName: j['contactPersonName']?.toString(),
+    contactPersonPhone: j['contactPersonPhone']?.toString(),
+    contactPersonEmail: j['contactPersonEmail']?.toString(),
+    canEdit: boolOf(j['canEdit']),
   );
 
   final String hospitalId;
@@ -49,6 +57,10 @@ class HospitalProfile {
   final int doctorCount;
   final int packetShelfLifeDays;
   final int expiryAlertDays;
+  final String? contactPersonName;
+  final String? contactPersonPhone;
+  final String? contactPersonEmail;
+  final bool canEdit;
 }
 
 class UserProfile {
@@ -111,13 +123,48 @@ class ProfileRepository {
 
   final ApiClient _api;
 
-  Future<MyProfileRef> me() async {
-    final j = unwrapMap(await _api.get('/profiles/me'));
+  Future<MyProfileRef> me({bool background = false}) async {
+    final j = unwrapMap(
+      await _api.get(
+        '/profiles/me',
+        options: apiOptions(background: background),
+      ),
+    );
     return MyProfileRef(str(j['type']), str(j['id']));
   }
 
   Future<HospitalProfile> hospital(String id) async => HospitalProfile.fromJson(
     unwrapMap(await _api.get('/profiles/hospital/$id')),
+  );
+
+  Future<HospitalProfile> updateHospital(
+    String id, {
+    required String name,
+    required String address,
+    required String? city,
+    required String contactNumber,
+    required String contactPersonName,
+    required String contactPersonPhone,
+    required String? contactPersonEmail,
+    required int? packetShelfLifeDays,
+    required int? expiryAlertDays,
+  }) async => HospitalProfile.fromJson(
+    unwrapMap(
+      await _api.put(
+        '/profiles/hospital/$id',
+        body: {
+          'name': name,
+          'address': address,
+          'city': city,
+          'contactNumber': contactNumber,
+          'contactPersonName': contactPersonName,
+          'contactPersonPhone': contactPersonPhone,
+          'contactPersonEmail': contactPersonEmail,
+          'packetShelfLifeDays': packetShelfLifeDays,
+          'expiryAlertDays': expiryAlertDays,
+        },
+      ),
+    ),
   );
 
   Future<UserProfile> user(String id) async =>

@@ -25,17 +25,19 @@ Future<bool> showReplySheet(
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => ReplySheet(
-        title: title,
-        subtitle: subtitle,
-        label: label,
-        submitLabel: submitLabel,
-        minLength: minLength,
-        maxLength: maxLength,
-        requiredMessage: requiredMessage,
-        allowAttachment: allowAttachment,
-        destructive: destructive,
-        onSubmit: onSubmit,
+      builder: (_) => ModalSheetSafeArea(
+        child: ReplySheet(
+          title: title,
+          subtitle: subtitle,
+          label: label,
+          submitLabel: submitLabel,
+          minLength: minLength,
+          maxLength: maxLength,
+          requiredMessage: requiredMessage,
+          allowAttachment: allowAttachment,
+          destructive: destructive,
+          onSubmit: onSubmit,
+        ),
       ),
     ) ??
     false;
@@ -85,8 +87,13 @@ class _ReplySheetState extends State<ReplySheet> {
   Future<void> _submit() async {
     final text = _text.text.trim();
     if (text.length < widget.minLength) {
-      setState(() => _error = widget.requiredMessage ??
-          (widget.minLength <= 1 ? 'A message is required.' : 'Please write at least ${widget.minLength} characters.'));
+      setState(
+        () => _error =
+            widget.requiredMessage ??
+            (widget.minLength <= 1
+                ? 'A message is required.'
+                : 'Please write at least ${widget.minLength} characters.'),
+      );
       return;
     }
     setState(() {
@@ -101,7 +108,12 @@ class _ReplySheetState extends State<ReplySheet> {
       if (!mounted) return;
       if (api.isConflict) {
         // The thread changed at the same moment: the caller reloads it
-        showSnack(context, api.message, type: SnackType.error, title: 'Not sent');
+        showSnack(
+          context,
+          api.message,
+          type: SnackType.error,
+          title: 'Not sent',
+        );
         Navigator.of(context).pop(true);
       } else {
         setState(() => _error = api.message);
@@ -113,46 +125,64 @@ class _ReplySheetState extends State<ReplySheet> {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(widget.title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              if (widget.subtitle != null) ...[
-                const SizedBox(height: 6),
-                Text(widget.subtitle!, style: const TextStyle(fontSize: 12)),
-              ],
-              const SizedBox(height: 14),
-              TextField(
-                key: const Key('reply-text'),
-                controller: _text,
-                autofocus: true,
-                maxLines: 5,
-                maxLength: widget.maxLength,
-                decoration: InputDecoration(labelText: widget.label),
-              ),
-              if (widget.allowAttachment) ...[
-                AttachmentPickerField(value: _file, enabled: !_sending, onChanged: (a) => setState(() => _file = a)),
-                const SizedBox(height: 12),
-              ],
-              if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
-              // Destructive decisions (reject, block) get a red button
-              Theme(
-                data: widget.destructive
-                    ? Theme.of(context).copyWith(
-                        filledButtonTheme: FilledButtonThemeData(
-                          style: Theme.of(context).filledButtonTheme.style?.copyWith(
-                                backgroundColor: const WidgetStatePropertyAll(AppColors.rose600),
-                              ),
-                        ),
-                      )
-                    : Theme.of(context),
-                child: BusyButton(key: const Key('reply-submit'), label: widget.submitLabel, busy: _sending, onPressed: _submit),
-              ),
-            ],
+    padding: EdgeInsets.fromLTRB(20, 0, 20, modalSheetBottomPadding(context)),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
+          if (widget.subtitle != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              widget.subtitle!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          const SizedBox(height: 14),
+          TextField(
+            key: const Key('reply-text'),
+            controller: _text,
+            autofocus: true,
+            maxLines: 5,
+            maxLength: widget.maxLength,
+            decoration: InputDecoration(labelText: widget.label),
           ),
-        ),
-      );
+          if (widget.allowAttachment) ...[
+            AttachmentPickerField(
+              value: _file,
+              enabled: !_sending,
+              onChanged: (a) => setState(() => _file = a),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (_error != null) ...[
+            FormErrorBox(_error!),
+            const SizedBox(height: 12),
+          ],
+          // Destructive decisions (reject, block) get a red button
+          Theme(
+            data: widget.destructive
+                ? Theme.of(context).copyWith(
+                    filledButtonTheme: FilledButtonThemeData(
+                      style: Theme.of(context).filledButtonTheme.style
+                          ?.copyWith(
+                            backgroundColor: const WidgetStatePropertyAll(
+                              AppColors.rose600,
+                            ),
+                          ),
+                    ),
+                  )
+                : Theme.of(context),
+            child: BusyButton(
+              key: const Key('reply-submit'),
+              label: widget.submitLabel,
+              busy: _sending,
+              onPressed: _submit,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }

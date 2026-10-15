@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,7 +25,11 @@ class ScanPacketScreen extends ConsumerStatefulWidget {
 class _ScanPacketScreenState extends ConsumerState<ScanPacketScreen> {
   final MobileScannerController _camera = MobileScannerController(
     detectionSpeed: DetectionSpeed.noDuplicates,
-    formats: const [BarcodeFormat.qrCode, BarcodeFormat.code128, BarcodeFormat.code39],
+    formats: const [
+      BarcodeFormat.qrCode,
+      BarcodeFormat.code128,
+      BarcodeFormat.code39,
+    ],
   );
   final _manual = TextEditingController();
   bool _busy = false;
@@ -38,15 +44,20 @@ class _ScanPacketScreenState extends ConsumerState<ScanPacketScreen> {
 
   void _onDetect(BarcodeCapture capture) {
     if (_busy) return;
-    final raw = capture.barcodes.map((b) => b.rawValue).firstWhere((v) => v != null && v.isNotEmpty, orElse: () => null);
+    final raw = capture.barcodes
+        .map((b) => b.rawValue)
+        .firstWhere((v) => v != null && v.isNotEmpty, orElse: () => null);
     if (raw != null) _open(raw, fromCamera: true);
   }
 
   Future<void> _open(String raw, {bool fromCamera = false}) async {
     final tracking = normalizeTrackingNumber(raw);
     if (tracking == null) {
-      setState(() => _message = '"${raw.length > 40 ? '${raw.substring(0, 40)}…' : raw}" is not a LifeLink packet code '
-          '(expected a tracking number like PKT-00000012).');
+      setState(
+        () => _message =
+            '"${raw.length > 40 ? '${raw.substring(0, 40)}…' : raw}" is not a LifeLink packet code '
+            '(expected a tracking number like PKT-00000012).',
+      );
       return;
     }
     setState(() {
@@ -57,10 +68,15 @@ class _ScanPacketScreenState extends ConsumerState<ScanPacketScreen> {
     try {
       // The API has no lookup by tracking number: match against this hospital's packets (all statuses)
       final packets = await ref.read(inventoryRepositoryProvider).packets();
-      final match = packets.where((p) => p.trackingNumber.toUpperCase() == tracking).firstOrNull;
+      final match = packets
+          .where((p) => p.trackingNumber.toUpperCase() == tracking)
+          .firstOrNull;
       if (!mounted) return;
       if (match == null) {
-        setState(() => _message = '$tracking is not in your hospital\'s inventory. Packets sent to another hospital belong to it now.');
+        setState(
+          () => _message =
+              '$tracking is not in your hospital\'s inventory. Packets sent to another hospital belong to it now.',
+        );
         return;
       }
       await _camera.stop();
@@ -76,74 +92,97 @@ class _ScanPacketScreenState extends ConsumerState<ScanPacketScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(
-          title: const Text('Scan packet'),
-          actions: [
-            IconButton(tooltip: 'Torch', icon: const Icon(Icons.flashlight_on_outlined), onPressed: () => _camera.toggleTorch()),
-          ],
+    appBar: AppBar(
+      title: const Text('Scan packet'),
+      actions: [
+        IconButton(
+          tooltip: 'Torch',
+          icon: const Icon(Icons.flashlight_on_outlined),
+          onPressed: () => _camera.toggleTorch(),
         ),
-        body: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    MobileScanner(
-                      controller: _camera,
-                      onDetect: _onDetect,
-                      errorBuilder: (context, error) => _CameraError(error: error, onRetry: () => _camera.start()),
-                    ),
-                    IgnorePointer(
-                      child: Center(
-                        child: Container(
-                          width: 240,
-                          height: 240,
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.white, width: 3),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                        ),
+      ],
+    ),
+    body: SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                MobileScanner(
+                  controller: _camera,
+                  onDetect: _onDetect,
+                  errorBuilder: (context, error) => _CameraError(
+                    error: error,
+                    onRetry: () => _camera.start(),
+                  ),
+                ),
+                IgnorePointer(
+                  child: Center(
+                    child: Container(
+                      width: 240,
+                      height: 240,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white, width: 3),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                     ),
-                    if (_busy) const ColoredBox(color: Colors.black38, child: Center(child: CircularProgressIndicator())),
-                  ],
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                if (_busy)
+                  const ColoredBox(
+                    color: Colors.black38,
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Point the camera at a packet\'s QR code, or type its tracking number.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 10),
+                if (_message != null) ...[
+                  InfoBanner(
+                    _message!,
+                    color: AppColors.rose600,
+                    icon: Icons.qr_code_2,
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                Row(
                   children: [
-                    const Text('Point the camera at a packet\'s QR code, or type its tracking number.',
-                        style: TextStyle(fontSize: 13)),
-                    const SizedBox(height: 10),
-                    if (_message != null) ...[
-                      InfoBanner(_message!, color: AppColors.rose600, icon: Icons.qr_code_2),
-                      const SizedBox(height: 10),
-                    ],
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            key: const Key('scan-manual'),
-                            controller: _manual,
-                            textCapitalization: TextCapitalization.characters,
-                            decoration: const InputDecoration(hintText: 'PKT-00000012', isDense: true),
-                            onSubmitted: (v) => _open(v),
-                          ),
+                    Expanded(
+                      child: TextField(
+                        key: const Key('scan-manual'),
+                        controller: _manual,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          hintText: 'PKT-00000012',
+                          isDense: true,
                         ),
-                        const SizedBox(width: 8),
-                        FilledButton(onPressed: _busy ? null : () => _open(_manual.text), child: const Text('Open')),
-                      ],
+                        onSubmitted: (v) => _open(v),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: _busy ? null : () => _open(_manual.text),
+                      child: const Text('Open'),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 }
 
 class _CameraError extends StatelessWidget {
@@ -164,22 +203,32 @@ class _CameraError extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(denied ? Icons.no_photography_outlined : Icons.videocam_off_outlined, color: Colors.white, size: 48),
+              Icon(
+                denied
+                    ? Icons.no_photography_outlined
+                    : Icons.videocam_off_outlined,
+                color: Colors.white,
+                size: 48,
+              ),
               const SizedBox(height: 12),
               Text(
                 denied
-                    ? 'Camera permission was denied. Allow the camera for LifeLink in your phone\'s Settings → Apps → LifeLink → Permissions, '
-                        'or type the tracking number below.'
+                    ? Platform.isIOS
+                          ? 'Camera permission was denied. Open Settings, select LifeLink, and allow Camera access, or type the tracking number below.'
+                          : 'Camera permission was denied. Allow the camera for LifeLink in Settings → Apps → LifeLink → Permissions, or type the tracking number below.'
                     : unsupported
-                        ? 'This device has no usable camera. Type the tracking number below.'
-                        : 'The camera could not start. Type the tracking number below or try again.',
+                    ? 'This device has no usable camera. Type the tracking number below.'
+                    : 'The camera could not start. Type the tracking number below or try again.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white),
               ),
               if (!unsupported) ...[
                 const SizedBox(height: 12),
                 OutlinedButton(
-                  style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Colors.white54)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white54),
+                  ),
                   onPressed: onRetry,
                   child: const Text('Try again'),
                 ),

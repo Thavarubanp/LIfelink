@@ -118,7 +118,7 @@ String routeForNotificationType(String type, {CurrentUser? user}) {
           : AppRoutes.notifications;
     case 'BloodRequestReviewAssigned':
       return user == null || user.hasRole(Roles.doctor)
-          ? AppRoutes.doctorHome
+          ? AppRoutes.doctorRequests
           : AppRoutes.notifications;
     case 'ScreeningReportSubmitted':
     case 'ScreeningReportSuperseded':

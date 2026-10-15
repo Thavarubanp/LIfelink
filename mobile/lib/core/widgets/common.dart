@@ -5,25 +5,55 @@ import '../theme/app_theme.dart';
 
 enum SnackType { success, error, info, warning }
 
+/// Keeps a modal sheet above gesture and three-button system navigation.
+class ModalSheetSafeArea extends StatelessWidget {
+  const ModalSheetSafeArea({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SafeArea(top: false, child: child);
+}
+
+/// Keyboard clearance plus the sheet's normal visual bottom padding. System
+/// navigation clearance is supplied by [ModalSheetSafeArea].
+double modalSheetBottomPadding(BuildContext context, {double base = 20}) =>
+    MediaQuery.viewInsetsOf(context).bottom + base;
+
 /// Short message at the bottom of the screen.
-void showSnack(BuildContext context, String message, {SnackType type = SnackType.info, String? title}) {
+void showSnack(
+  BuildContext context,
+  String message, {
+  SnackType type = SnackType.info,
+  String? title,
+}) {
   final color = switch (type) {
-    SnackType.success => AppColors.emerald600,
-    SnackType.error => AppColors.rose600,
-    SnackType.warning => AppColors.amber600,
+    SnackType.success => AppColors.emerald700,
+    SnackType.error => AppColors.rose700,
+    SnackType.warning => AppColors.amber800,
     SnackType.info => AppColors.slate800,
   };
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
-    ..showSnackBar(SnackBar(
-      backgroundColor: color,
-      content: Text(title == null ? message : '$title: $message', style: const TextStyle(color: Colors.white)),
-      duration: Duration(seconds: type == SnackType.error ? 5 : 3),
-    ));
+    ..showSnackBar(
+      SnackBar(
+        backgroundColor: color,
+        content: Text(
+          title == null ? message : '$title: $message',
+          style: const TextStyle(color: Colors.white),
+        ),
+        duration: Duration(seconds: type == SnackType.error ? 5 : 3),
+      ),
+    );
 }
 
 void showErrorSnack(BuildContext context, Object error, {String? title}) =>
-    showSnack(context, ApiError.from(error).message, type: SnackType.error, title: title);
+    showSnack(
+      context,
+      ApiError.from(error).message,
+      type: SnackType.error,
+      title: title,
+    );
 
 /// Yes/no question; returns true when confirmed.
 Future<bool> confirmDialog(
@@ -36,12 +66,18 @@ Future<bool> confirmDialog(
   final result = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
+      scrollable: true,
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
-          style: destructive ? FilledButton.styleFrom(backgroundColor: AppColors.rose600) : null,
+          style: destructive
+              ? FilledButton.styleFrom(backgroundColor: AppColors.rose600)
+              : null,
           onPressed: () => Navigator.of(ctx).pop(true),
           child: Text(confirmLabel),
         ),
@@ -61,12 +97,22 @@ Future<String?> reasonDialog(
 }) {
   return showDialog<String>(
     context: context,
-    builder: (ctx) => _ReasonDialog(title: title, hint: hint, confirmLabel: confirmLabel, maxLength: maxLength),
+    builder: (ctx) => _ReasonDialog(
+      title: title,
+      hint: hint,
+      confirmLabel: confirmLabel,
+      maxLength: maxLength,
+    ),
   );
 }
 
 class _ReasonDialog extends StatefulWidget {
-  const _ReasonDialog({required this.title, required this.hint, required this.confirmLabel, required this.maxLength});
+  const _ReasonDialog({
+    required this.title,
+    required this.hint,
+    required this.confirmLabel,
+    required this.maxLength,
+  });
 
   final String title;
   final String hint;
@@ -89,33 +135,45 @@ class _ReasonDialogState extends State<_ReasonDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: Text(widget.title),
-        content: Form(
-          key: _formKey,
-          child: TextFormField(
-            controller: _controller,
-            autofocus: true,
-            maxLines: 3,
-            maxLength: widget.maxLength,
-            decoration: InputDecoration(hintText: widget.hint),
-            validator: (v) => (v == null || v.trim().isEmpty) ? 'A reason is required.' : null,
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              if (_formKey.currentState!.validate()) Navigator.of(context).pop(_controller.text.trim());
-            },
-            child: Text(widget.confirmLabel),
-          ),
-        ],
-      );
+    scrollable: true,
+    title: Text(widget.title),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        controller: _controller,
+        autofocus: true,
+        maxLines: 3,
+        maxLength: widget.maxLength,
+        decoration: InputDecoration(hintText: widget.hint),
+        validator: (v) =>
+            (v == null || v.trim().isEmpty) ? 'A reason is required.' : null,
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_formKey.currentState!.validate()) {
+            Navigator.of(context).pop(_controller.text.trim());
+          }
+        },
+        child: Text(widget.confirmLabel),
+      ),
+    ],
+  );
 }
 
 /// Search box with a clear button.
 class SearchField extends StatefulWidget {
-  const SearchField({super.key, required this.hint, required this.onChanged, this.initial = ''});
+  const SearchField({
+    super.key,
+    required this.hint,
+    required this.onChanged,
+    this.initial = '',
+  });
 
   final String hint;
   final String initial;
@@ -136,34 +194,39 @@ class _SearchFieldState extends State<SearchField> {
 
   @override
   Widget build(BuildContext context) => TextField(
-        controller: _controller,
-        onChanged: (v) {
-          widget.onChanged(v);
-          setState(() {});
-        },
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          hintText: widget.hint,
-          prefixIcon: const Icon(Icons.search),
-          isDense: true,
-          suffixIcon: _controller.text.isEmpty
-              ? null
-              : IconButton(
-                  tooltip: 'Clear',
-                  icon: const Icon(Icons.close),
-                  onPressed: () {
-                    _controller.clear();
-                    widget.onChanged('');
-                    setState(() {});
-                  },
-                ),
-        ),
-      );
+    controller: _controller,
+    onChanged: (v) {
+      widget.onChanged(v);
+      setState(() {});
+    },
+    textInputAction: TextInputAction.search,
+    decoration: InputDecoration(
+      hintText: widget.hint,
+      prefixIcon: const Icon(Icons.search),
+      isDense: true,
+      suffixIcon: _controller.text.isEmpty
+          ? null
+          : IconButton(
+              tooltip: 'Clear',
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                _controller.clear();
+                widget.onChanged('');
+                setState(() {});
+              },
+            ),
+    ),
+  );
 }
 
 /// One-choice filter chips in a horizontal scroll.
 class FilterChips<T> extends StatelessWidget {
-  const FilterChips({super.key, required this.options, required this.selected, required this.onSelected});
+  const FilterChips({
+    super.key,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
 
   final List<(T, String)> options;
   final T selected;
@@ -171,30 +234,37 @@ class FilterChips<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final (value, label) in options)
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: ChoiceChip(
-                  label: Text(label),
-                  selected: value == selected,
-                  onSelected: (_) => onSelected(value),
-                  labelStyle: TextStyle(
-                    color: value == selected ? Colors.white : null,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        for (final (value, label) in options)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(label),
+              selected: value == selected,
+              onSelected: (_) => onSelected(value),
+              labelStyle: TextStyle(
+                color: value == selected ? Colors.white : null,
+                fontWeight: FontWeight.w600,
               ),
-          ],
-        ),
-      );
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
 /// Card with a title row and content.
 class SectionCard extends StatelessWidget {
-  const SectionCard({super.key, this.title, this.icon, this.trailing, required this.child, this.padding = const EdgeInsets.all(16)});
+  const SectionCard({
+    super.key,
+    this.title,
+    this.icon,
+    this.trailing,
+    required this.child,
+    this.padding = const EdgeInsets.all(16),
+  });
 
   final String? title;
   final IconData? icon;
@@ -204,60 +274,115 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        child: Padding(
-          padding: padding,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (title != null) ...[
-                Row(
+    child: Padding(
+      padding: padding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (title != null) ...[
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final heading = Row(
                   children: [
-                    if (icon != null) ...[Icon(icon, size: 18, color: AppColors.red600), const SizedBox(width: 8)],
-                    Expanded(child: Text(title!, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
-                    // A long badge or button shrinks instead of overflowing on narrow phones
+                    if (icon != null) ...[
+                      Icon(
+                        icon,
+                        size: 20,
+                        color: AppColors.readableAccent(
+                          context,
+                          AppColors.red600,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    Expanded(
+                      child: Text(
+                        title!,
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                  ],
+                );
+                if (trailing != null && constraints.maxWidth < 340) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      heading,
+                      const SizedBox(height: 8),
+                      Align(alignment: Alignment.centerRight, child: trailing!),
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: heading),
                     if (trailing != null) Flexible(child: trailing!),
                   ],
-                ),
-                const SizedBox(height: 12),
-              ],
-              child,
-            ],
-          ),
-        ),
-      );
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+          child,
+        ],
+      ),
+    ),
+  );
 }
 
 /// Coloured information box (warning / info / error).
 class InfoBanner extends StatelessWidget {
-  const InfoBanner(this.message, {super.key, this.color = AppColors.amber600, this.icon = Icons.info_outline});
+  const InfoBanner(
+    this.message, {
+    super.key,
+    this.color = AppColors.amber600,
+    this.icon = Icons.info_outline,
+  });
 
   final String message;
   final Color color;
   final IconData icon;
 
   @override
-  Widget build(BuildContext context) => Container(
+  Widget build(BuildContext context) {
+    final foreground = AppColors.readableAccent(context, color);
+    return Semantics(
+      container: true,
+      child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(AppSpacing.md),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
+          color: foreground.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
+          border: Border.all(color: foreground.withValues(alpha: 0.38)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, size: 18, color: color),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message, style: TextStyle(color: color, fontSize: 13))),
+            Icon(icon, size: 20, color: foreground),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: foreground, fontSize: 13, height: 1.4),
+              ),
+            ),
           ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// Primary button with a spinner while busy.
 class BusyButton extends StatelessWidget {
-  const BusyButton({super.key, required this.label, required this.onPressed, this.busy = false, this.icon});
+  const BusyButton({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.busy = false,
+    this.icon,
+  });
 
   final String label;
   final VoidCallback? onPressed;
@@ -265,18 +390,33 @@ class BusyButton extends StatelessWidget {
   final IconData? icon;
 
   @override
-  Widget build(BuildContext context) => FilledButton(
-        onPressed: busy ? null : onPressed,
-        child: busy
-            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (icon != null) ...[Icon(icon, size: 18), const SizedBox(width: 8)],
-                  Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
-                ],
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    value: busy ? 'In progress' : null,
+    child: FilledButton(
+      onPressed: busy ? null : onPressed,
+      child: busy
+          ? SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.onPrimary,
               ),
-      );
+            )
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18),
+                  const SizedBox(width: 8),
+                ],
+                Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+    ),
+  );
 }
 
 /// Label / value pair for detail screens.
@@ -289,18 +429,30 @@ class LabeledValue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
-          const SizedBox(height: 2),
-          Text(value, style: TextStyle(fontWeight: FontWeight.w600, fontFamily: mono ? 'monospace' : null)),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: 2),
+      Text(
+        value,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontFamily: mono ? 'monospace' : null,
+        ),
+      ),
+    ],
+  );
 }
 
 /// Shows [pageSize] items, then "Show N more of M".
 class ShowMoreList<T> extends StatefulWidget {
-  const ShowMoreList({super.key, required this.items, required this.itemBuilder, this.pageSize = 10, this.separator});
+  const ShowMoreList({
+    super.key,
+    required this.items,
+    required this.itemBuilder,
+    this.pageSize = 10,
+    this.separator,
+  });
 
   final List<T> items;
   final Widget Function(BuildContext, T) itemBuilder;
@@ -328,7 +480,9 @@ class _ShowMoreListState<T> extends State<ShowMoreList<T>> {
         if (rest > 0)
           TextButton(
             onPressed: () => setState(() => _limit += widget.pageSize),
-            child: Text('Show ${rest < widget.pageSize ? rest : widget.pageSize} more of $rest'),
+            child: Text(
+              'Show ${rest < widget.pageSize ? rest : widget.pageSize} more of $rest',
+            ),
           ),
       ],
     );
@@ -346,6 +500,93 @@ class ContentWidth extends StatelessWidget {
   final double maxWidth;
 
   @override
-  Widget build(BuildContext context) =>
-      Center(child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child));
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.topCenter,
+    child: ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
+      child: child,
+    ),
+  );
+}
+
+/// Places related form fields side by side when space permits and stacks them
+/// on narrow screens. It deliberately does not own validation or field state.
+class AdaptiveFormRow extends StatelessWidget {
+  const AdaptiveFormRow({
+    super.key,
+    required this.children,
+    this.breakpoint = 600,
+    this.spacing = AppSpacing.md,
+  });
+
+  final List<Widget> children;
+  final double breakpoint;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < breakpoint) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) SizedBox(height: spacing),
+              children[i],
+            ],
+          ],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) SizedBox(width: spacing),
+            Expanded(child: children[i]),
+          ],
+        ],
+      );
+    },
+  );
+}
+
+/// A predictable action area: full-width stacked actions on phones and a
+/// trailing horizontal group when wider. Callbacks remain owned by callers.
+class AdaptiveActions extends StatelessWidget {
+  const AdaptiveActions({
+    super.key,
+    required this.children,
+    this.breakpoint = 520,
+    this.spacing = AppSpacing.sm,
+  });
+
+  final List<Widget> children;
+  final double breakpoint;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      if (constraints.maxWidth < breakpoint) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              if (i > 0) SizedBox(height: spacing),
+              children[i],
+            ],
+          ],
+        );
+      }
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) SizedBox(width: spacing),
+            Flexible(child: children[i]),
+          ],
+        ],
+      );
+    },
+  );
 }

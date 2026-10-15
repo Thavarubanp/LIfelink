@@ -25,25 +25,25 @@ class ClinicalRequest {
   });
 
   factory ClinicalRequest.fromJson(Map<String, dynamic> j) => ClinicalRequest(
-        id: str(j['bloodRequestId']),
-        bloodGroup: str(j['bloodGroup']),
-        unitsRequired: intOf(j['unitsRequired']),
-        fulfilledUnits: intOf(j['fulfilledUnits']),
-        reservedUnits: intOf(j['reservedUnits']),
-        priority: str(j['priority']),
-        reason: str(j['reason']),
-        status: str(j['status']),
-        createdAt: parseDate(j['createdAt']),
-        expiryDate: parseDate(j['expiryDate']),
-        hospitalName: j['hospitalName']?.toString(),
-        createdByName: j['createdByName']?.toString(),
-        assignedDoctorId: j['assignedDoctorId']?.toString(),
-        assignedDoctorName: j['assignedDoctorName']?.toString(),
-        rejectionReason: j['rejectionReason']?.toString(),
-        isSuspended: boolOf(j['isSuspended']),
-        suspensionReason: j['suspensionReason']?.toString(),
-        pendingHospitalDonations: intOf(j['pendingHospitalDonations']),
-      );
+    id: str(j['bloodRequestId']),
+    bloodGroup: str(j['bloodGroup']),
+    unitsRequired: intOf(j['unitsRequired']),
+    fulfilledUnits: intOf(j['fulfilledUnits']),
+    reservedUnits: intOf(j['reservedUnits']),
+    priority: str(j['priority']),
+    reason: str(j['reason']),
+    status: str(j['status']),
+    createdAt: parseDate(j['createdAt']),
+    expiryDate: parseDate(j['expiryDate']),
+    hospitalName: j['hospitalName']?.toString(),
+    createdByName: j['createdByName']?.toString(),
+    assignedDoctorId: j['assignedDoctorId']?.toString(),
+    assignedDoctorName: j['assignedDoctorName']?.toString(),
+    rejectionReason: j['rejectionReason']?.toString(),
+    isSuspended: boolOf(j['isSuspended']),
+    suspensionReason: j['suspensionReason']?.toString(),
+    pendingHospitalDonations: intOf(j['pendingHospitalDonations']),
+  );
 
   final String id;
   final String bloodGroup;
@@ -68,7 +68,8 @@ class ClinicalRequest {
 
   String get shortId => id.length >= 8 ? id.substring(0, 8) : id;
   bool get isCritical => priority.toUpperCase() == 'CRITICAL';
-  int get freeSlots => (unitsRequired - fulfilledUnits - reservedUnits).clamp(0, unitsRequired);
+  int get freeSlots =>
+      (unitsRequired - fulfilledUnits - reservedUnits).clamp(0, unitsRequired);
 
   /// Hospital staff verify (assign a doctor) or reject only Pending requests; admin-suspended ones are frozen.
   bool get canVerify => status == 'Pending' && !isSuspended;
@@ -78,13 +79,13 @@ class ClinicalRequest {
 }
 
 BadgeVariant requestStatusVariant(String status) => switch (status) {
-      'Pending' => BadgeVariant.warning,
-      'Verified' => BadgeVariant.info,
-      'Approved' => BadgeVariant.primary,
-      'Completed' => BadgeVariant.success,
-      'Rejected' => BadgeVariant.danger,
-      _ => BadgeVariant.neutral,
-    };
+  'Pending' => BadgeVariant.warning,
+  'Verified' => BadgeVariant.info,
+  'Approved' => BadgeVariant.primary,
+  'Completed' => BadgeVariant.success,
+  'Rejected' => BadgeVariant.danger,
+  _ => BadgeVariant.neutral,
+};
 
 const requestStatusFilters = <(String?, String)>[
   ('Pending', 'Pending'),
@@ -101,20 +102,32 @@ bool requestMatches(ClinicalRequest r, {String? status, String query = ''}) {
   if (status != null && r.status != status) return false;
   final q = query.trim().toLowerCase();
   if (q.isEmpty) return true;
-  return [r.shortId, r.bloodGroup, r.priority, r.reason, r.createdByName ?? '', r.hospitalName ?? '', r.assignedDoctorName ?? '']
-      .any((v) => v.toLowerCase().contains(q));
+  return [
+    r.shortId,
+    r.bloodGroup,
+    r.priority,
+    r.reason,
+    r.createdByName ?? '',
+    r.hospitalName ?? '',
+    r.assignedDoctorName ?? '',
+  ].any((v) => v.toLowerCase().contains(q));
 }
 
 /// One donated packet of a hospital donation.
 class DonatedPacket {
-  const DonatedPacket({required this.trackingNumber, required this.bloodGroup, required this.collectionDate, required this.expiryDate});
+  const DonatedPacket({
+    required this.trackingNumber,
+    required this.bloodGroup,
+    required this.collectionDate,
+    required this.expiryDate,
+  });
 
   factory DonatedPacket.fromJson(Map<String, dynamic> j) => DonatedPacket(
-        trackingNumber: str(j['trackingNumber']),
-        bloodGroup: str(j['bloodGroup']),
-        collectionDate: parseDate(j['collectionDate']),
-        expiryDate: parseDate(j['expiryDate']),
-      );
+    trackingNumber: str(j['trackingNumber']),
+    bloodGroup: str(j['bloodGroup']),
+    collectionDate: parseDate(j['collectionDate']),
+    expiryDate: parseDate(j['expiryDate']),
+  );
 
   final String trackingNumber;
   final String bloodGroup;
@@ -138,7 +151,8 @@ class RequestAcceptance {
     required this.packets,
   });
 
-  factory RequestAcceptance.fromJson(Map<String, dynamic> j) => RequestAcceptance(
+  factory RequestAcceptance.fromJson(Map<String, dynamic> j) =>
+      RequestAcceptance(
         id: str(j['acceptanceId']),
         bloodRequestId: str(j['bloodRequestId']),
         donorName: str(j['donorName']),
@@ -165,7 +179,8 @@ class RequestAcceptance {
   final String? donorHospitalId;
   final List<DonatedPacket> packets;
 
-  bool get isHospitalDonation => donorHospitalId != null && donorHospitalId!.isNotEmpty;
+  bool get isHospitalDonation =>
+      donorHospitalId != null && donorHospitalId!.isNotEmpty;
 
   /// A hospital's packets waiting for the assigned doctor's decision.
   bool get awaitsHospitalDecision => isHospitalDonation && status == 'Accepted';
@@ -174,27 +189,30 @@ class RequestAcceptance {
   bool get isReserved => !isHospitalDonation && status == 'Verified';
 
   String get statusLabel => switch (status) {
-        'Accepted' => isHospitalDonation ? 'Awaiting doctor approval' : 'Accepted',
-        'ScreeningPending' => 'Screening in progress',
-        'ScreeningCompleted' => 'Screening report waiting',
-        'Verified' => 'Approved · slot reserved',
-        'Matched' => 'Donated',
-        'Rejected' => 'Not approved',
-        'Cancelled' => 'Withdrawn / released',
-        _ => status,
-      };
+    'Accepted' => isHospitalDonation ? 'Awaiting doctor approval' : 'Accepted',
+    'ScreeningPending' => 'Screening in progress',
+    'ScreeningCompleted' => 'Screening report waiting',
+    'Verified' => 'Approved · slot reserved',
+    'Matched' => 'Donated',
+    'Rejected' => 'Not approved',
+    'Cancelled' => 'Withdrawn / released',
+    _ => status,
+  };
 }
 
 BadgeVariant acceptanceVariant(String status) => switch (status) {
-      'Verified' => BadgeVariant.info,
-      'Matched' => BadgeVariant.success,
-      'Rejected' => BadgeVariant.danger,
-      'Cancelled' => BadgeVariant.neutral,
-      _ => BadgeVariant.warning,
-    };
+  'Verified' => BadgeVariant.info,
+  'Matched' => BadgeVariant.success,
+  'Rejected' => BadgeVariant.danger,
+  'Cancelled' => BadgeVariant.neutral,
+  _ => BadgeVariant.warning,
+};
 
 /// Reason / message rules shared by the web dialogs: required (trimmed), at most 500 characters.
-String? requiredReasonError(String text, {String message = 'A reason is required.'}) {
+String? requiredReasonError(
+  String text, {
+  String message = 'A reason is required.',
+}) {
   final t = text.trim();
   if (t.isEmpty) return message;
   if (t.length > 500) return 'Please keep it under 500 characters.';

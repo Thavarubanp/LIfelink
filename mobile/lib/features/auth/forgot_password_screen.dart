@@ -17,7 +17,8 @@ class ForgotPasswordScreen extends ConsumerStatefulWidget {
   const ForgotPasswordScreen({super.key});
 
   @override
-  ConsumerState<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+  ConsumerState<ForgotPasswordScreen> createState() =>
+      _ForgotPasswordScreenState();
 }
 
 class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
@@ -57,25 +58,33 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   }
 
   Future<void> _sendCode() => _run(() async {
-        final message = await ref.read(authRepositoryProvider).forgotPassword(_email.text);
-        setState(() {
-          _info = message;
-          _step = _Step.otp;
-        });
-      });
+    final message = await ref
+        .read(authRepositoryProvider)
+        .forgotPassword(_email.text);
+    if (!mounted) return;
+    setState(() {
+      _info = message;
+      _step = _Step.otp;
+    });
+  });
 
   Future<void> _verify() => _run(() async {
-        _resetToken = await ref.read(authRepositoryProvider).verifyOtp(_email.text, _otp.text.trim());
-        setState(() {
-          _info = 'Code verified. Choose a new password.';
-          _step = _Step.reset;
-        });
-      });
+    _resetToken = await ref
+        .read(authRepositoryProvider)
+        .verifyOtp(_email.text, _otp.text.trim());
+    if (!mounted) return;
+    setState(() {
+      _info = 'Code verified. Choose a new password.';
+      _step = _Step.reset;
+    });
+  });
 
   Future<void> _resend() async {
     setState(() => _busy = true);
     try {
-      final message = await ref.read(authRepositoryProvider).resendOtp(_email.text);
+      final message = await ref
+          .read(authRepositoryProvider)
+          .resendOtp(_email.text);
       if (mounted) setState(() => _info = message);
     } catch (e) {
       if (mounted) setState(() => _error = ApiError.from(e).message);
@@ -85,11 +94,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
   }
 
   Future<void> _reset() => _run(() async {
-        final message = await ref.read(authRepositoryProvider).resetPassword(_email.text, _resetToken, _password.text);
-        if (!mounted) return;
-        showSnack(context, message, type: SnackType.success);
-        context.go(AppRoutes.login);
-      });
+    final message = await ref
+        .read(authRepositoryProvider)
+        .resetPassword(_email.text, _resetToken, _password.text);
+    if (!mounted) return;
+    showSnack(context, message, type: SnackType.success);
+    context.go(AppRoutes.login);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -101,12 +112,17 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const BrandHeader(),
+            const SizedBox(height: 20),
             if (_info != null) ...[InfoBanner(_info!), gap],
             TextFormField(
               controller: _email,
               enabled: _step == _Step.email,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.mail_outline)),
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                prefixIcon: Icon(Icons.mail_outline),
+              ),
               validator: Validators.email,
             ),
             gap,
@@ -114,13 +130,22 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               TextFormField(
                 controller: _otp,
                 keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
-                decoration: const InputDecoration(labelText: '6-digit code', helperText: 'The code expires after 10 minutes.'),
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
+                decoration: const InputDecoration(
+                  labelText: '6-digit code',
+                  helperText: 'The code expires after 10 minutes.',
+                ),
                 validator: Validators.otp,
               ),
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(onPressed: _busy ? null : _resend, child: const Text('Send a new code')),
+                child: TextButton(
+                  onPressed: _busy ? null : _resend,
+                  child: const Text('Send a new code'),
+                ),
               ),
             ],
             if (_step == _Step.reset) ...[
@@ -135,7 +160,8 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                 controller: _confirm,
                 label: 'Confirm new password',
                 textInputAction: TextInputAction.done,
-                validator: (v) => v != _password.text ? 'Passwords do not match.' : null,
+                validator: (v) =>
+                    v != _password.text ? 'Passwords do not match.' : null,
               ),
               gap,
             ],

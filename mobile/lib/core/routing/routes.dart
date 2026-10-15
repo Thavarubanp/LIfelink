@@ -9,6 +9,7 @@ class AppRoutes {
   static const splash = '/';
   static const login = '/login';
   static const register = '/register';
+  static const registerHospital = '/register-hospital';
   static const forgotPassword = '/forgot-password';
   static const changePassword = '/change-password';
   static const waitingApproval = '/waiting-approval';
@@ -16,6 +17,7 @@ class AppRoutes {
   static const myAppeals = '/governance/appeals';
   static const notifications = '/notifications';
   static const profile = '/profile';
+  static const settings = '/settings';
   static const myActivity = '/activity';
   static const search = '/search';
   static const suspendedWithdrawals = '/governance/withdrawals';
@@ -41,6 +43,7 @@ class AppRoutes {
   // Donor / patient (Step 2: Vidya)
   static const donorHome = '/donor';
   static const donorRequests = '/donor/requests';
+  static const donorCreate = '/donor/create';
   static const donorAcceptances = '/donor/acceptances';
   static const donorMore = '/donor/more';
   static const createRequest = '/donor/requests/create';
@@ -52,6 +55,7 @@ class AppRoutes {
 
   // Doctor (Step 3: Ahamed)
   static const doctorHome = '/doctor';
+  static const doctorRequests = '/doctor/requests';
   static const doctorReports = '/doctor/reports';
   static const doctorMore = '/doctor/more';
   static const doctorHospitalDonations = '/doctor/hospital-donations';
@@ -70,10 +74,60 @@ class AppRoutes {
   static const adminAppeals = '/admin/appeals';
   static const adminComplaints = '/admin/complaints';
   static const adminActivity = '/admin/activity';
+  static const adminCreate = '/admin/create';
+  static const adminAcceptances = '/admin/create/acceptances';
   static const adminUsers = '/admin/users';
   static const adminHospitals = '/admin/hospitals';
+  static const adminDoctors = '/admin/doctors';
+  static String adminScreening(String acceptanceId) =>
+      '$adminAcceptances/$acceptanceId/screening';
 
-  static const publicPaths = {login, register, forgotPassword};
+  static const publicPaths = {
+    login,
+    register,
+    registerHospital,
+    forgotPassword,
+  };
+
+  /// The waiting page also accepts the just-created anonymous registration as
+  /// route state. Signed-in routing for that page remains governed below.
+  static const signedOutPaths = {...publicPaths, waitingApproval};
+
+  static const _bottomNavigationPaths = {
+    hospitalHome,
+    hospitalInventory,
+    hospitalTransfers,
+    hospitalDoctors,
+    hospitalMore,
+    donorHome,
+    donorRequests,
+    donorCreate,
+    donorAcceptances,
+    donorMore,
+    doctorHome,
+    doctorRequests,
+    doctorReports,
+    doctorMore,
+    adminHome,
+    adminAttention,
+    adminCreate,
+    adminActivity,
+    adminMore,
+  };
+
+  static bool hasBottomNavigation(String path) =>
+      _bottomNavigationPaths.contains(path);
+
+  /// Pages whose own primary action already occupies the bottom-right corner.
+  /// The assistant mini-FAB stacks above it without moving the primary action.
+  static bool hasPageFloatingAction(String path) =>
+      path == hospitalInventory ||
+      path == hospitalTransfers ||
+      path == hospitalDoctors ||
+      path == hospitalEmergencies ||
+      path == donorComplaints ||
+      path.startsWith('$adminComplaints/') ||
+      RegExp(r'^/donor/acceptances/[^/]+/screening$').hasMatch(path);
 
   /// Home screen for the account's primary role.
   static String homeFor(CurrentUser user) => switch (user.primaryRole) {
@@ -116,19 +170,23 @@ String? resolveRedirect(AuthState auth, String path) {
 
   final user = auth.user;
   if (!auth.isSignedIn || user == null) {
-    return AppRoutes.publicPaths.contains(path) ? null : AppRoutes.login;
+    return AppRoutes.signedOutPaths.contains(path) ? null : AppRoutes.login;
   }
 
   if (path == AppRoutes.splash || AppRoutes.publicPaths.contains(path)) {
     return AppRoutes.homeFor(user);
   }
 
+  if (path == AppRoutes.suspendedWithdrawals && !user.isDonorCapable) {
+    return user.isSuspended
+        ? AppRoutes.governanceStatus
+        : AppRoutes.homeFor(user);
+  }
+
   if (user.isSuspended) {
-    final narrowWithdrawal =
-        path == AppRoutes.suspendedWithdrawals && user.isDonorCapable;
     return path == AppRoutes.governanceStatus ||
             path == AppRoutes.myAppeals ||
-            narrowWithdrawal
+            path == AppRoutes.suspendedWithdrawals
         ? null
         : AppRoutes.governanceStatus;
   }

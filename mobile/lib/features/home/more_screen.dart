@@ -7,7 +7,8 @@ import '../../core/config/constants.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common.dart';
-import '../notifications/unread_badge.dart';
+import '../../core/widgets/floating_overlay_padding.dart';
+import '../assistant/assistant_sheet.dart';
 
 class MoreEntry {
   const MoreEntry(this.label, this.icon, this.path, {this.subtitle});
@@ -19,19 +20,47 @@ class MoreEntry {
 }
 
 /// The "More" tab: the role's other screens, notifications, profile and sign out.
-class MoreScreen extends ConsumerWidget {
+class MoreScreen extends ConsumerStatefulWidget {
   const MoreScreen({super.key, required this.entries});
 
   final List<MoreEntry> entries;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MoreScreen> createState() => _MoreScreenState();
+}
+
+class _MoreScreenState extends ConsumerState<MoreScreen> {
+  bool _signingOut = false;
+
+  Future<void> _signOut() async {
+    if (_signingOut) return;
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Sign out',
+      message: 'Sign out of LifeLink on this phone?',
+      confirmLabel: 'Sign out',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _signingOut = true);
+    try {
+      await ref.read(authControllerProvider.notifier).logout();
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(authControllerProvider).user;
     return Scaffold(
-      appBar: AppBar(title: const Text('More')),
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + FloatingOverlayPadding.bottomOf(context),
+          ),
           children: [
             if (user != null)
               Card(
@@ -60,7 +89,20 @@ class MoreScreen extends ConsumerWidget {
             Card(
               child: Column(
                 children: [
-                  for (final e in entries)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.red600,
+                    ),
+                    title: const Text('LifeLink Assistant'),
+                    subtitle: const Text(
+                      'Ask about donation, LifeLink or your account',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => showAssistantSheet(context),
+                  ),
+                  const Divider(),
+                  for (final e in widget.entries)
                     ListTile(
                       leading: Icon(e.icon, color: AppColors.red600),
                       title: Text(e.label),
@@ -68,13 +110,6 @@ class MoreScreen extends ConsumerWidget {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(e.path),
                     ),
-                  ListTile(
-                    leading: const Icon(Icons.search, color: AppColors.red600),
-                    title: const Text('Global search'),
-                    subtitle: const Text('Find users, doctors and hospitals'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push(AppRoutes.search),
-                  ),
                   if (user != null && !user.hasRole(Roles.admin))
                     ListTile(
                       leading: const Icon(
@@ -86,39 +121,33 @@ class MoreScreen extends ConsumerWidget {
                       onTap: () => context.push(AppRoutes.governanceStatus),
                     ),
                   ListTile(
+                    leading: const Icon(
+                      Icons.settings_outlined,
+                      color: AppColors.red600,
+                    ),
+                    title: const Text('Settings'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.settings),
+                  ),
+                  ListTile(
                     leading: const Icon(Icons.history, color: AppColors.red600),
                     title: const Text('My activity'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => context.push(AppRoutes.myActivity),
-                  ),
-                  ListTile(
-                    leading: const UnreadBadge(
-                      child: Icon(
-                        Icons.notifications_outlined,
-                        color: AppColors.red600,
-                      ),
-                    ),
-                    title: const Text('Notifications'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => context.push(AppRoutes.notifications),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () async {
-                if (await confirmDialog(
-                  context,
-                  title: 'Sign out',
-                  message: 'Sign out of LifeLink on this phone?',
-                  confirmLabel: 'Sign out',
-                )) {
-                  await ref.read(authControllerProvider.notifier).logout();
-                }
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text('Sign out'),
+              onPressed: _signingOut ? null : _signOut,
+              icon: _signingOut
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.logout),
+              label: Text(_signingOut ? 'Signing out...' : 'Sign out'),
             ),
           ],
         ),

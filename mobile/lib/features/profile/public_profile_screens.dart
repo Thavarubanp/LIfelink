@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/auth/auth_controller.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../doctors/doctor_repository.dart';
+import 'hospital_profile_edit_sheet.dart';
 import 'profile_repository.dart';
 
 class HospitalProfileScreen extends ConsumerWidget {
@@ -14,6 +16,7 @@ class HospitalProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final value = ref.watch(hospitalProfileProvider(hospitalId));
+    final user = ref.watch(authControllerProvider).user;
     return Scaffold(
       appBar: AppBar(title: const Text('Hospital profile')),
       body: RefreshableScroll(
@@ -33,11 +36,24 @@ class HospitalProfileScreen extends ConsumerWidget {
               child: SectionCard(
                 title: h.name,
                 icon: Icons.local_hospital_outlined,
-                trailing: StatusBadge(
-                  h.isVerified ? 'Verified' : 'Pending',
-                  variant: h.isVerified
-                      ? BadgeVariant.success
-                      : BadgeVariant.warning,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (canEditHospitalProfile(h, user))
+                      TextButton.icon(
+                        key: const Key('edit-owned-hospital-profile'),
+                        onPressed: () =>
+                            showHospitalProfileEditSheet(context, ref, h),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit'),
+                      ),
+                    StatusBadge(
+                      h.isVerified ? 'Verified' : 'Pending',
+                      variant: h.isVerified
+                          ? BadgeVariant.success
+                          : BadgeVariant.warning,
+                    ),
+                  ],
                 ),
                 child: Wrap(
                   spacing: 24,

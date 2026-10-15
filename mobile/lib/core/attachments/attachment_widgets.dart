@@ -14,7 +14,10 @@ import 'attachment.dart';
 /// Picks a document (PDF, Word or image) with the system file picker. Returns null when cancelled.
 /// Throws [AttachmentException] when the file is not allowed.
 Future<Attachment?> pickDocument() async {
-  final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: AttachmentRules.allowedExtensions);
+  final file = await FilePicker.pickFile(
+    type: FileType.custom,
+    allowedExtensions: AttachmentRules.allowedExtensions,
+  );
   if (file == null) return null;
   final length = await file.length() ?? 0;
   final problem = AttachmentRules.check(file.name, length);
@@ -25,14 +28,24 @@ Future<Attachment?> pickDocument() async {
 /// Takes a photo with the camera (compressed so it fits the 2 MB limit). Returns null when cancelled.
 Future<Attachment?> takePhoto() async {
   try {
-    final photo = await ImagePicker().pickImage(source: ImageSource.camera, maxWidth: 2000, maxHeight: 2000, imageQuality: 80);
+    final photo = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      maxWidth: 2000,
+      maxHeight: 2000,
+      imageQuality: 80,
+    );
     if (photo == null) return null;
-    final name = photo.name.toLowerCase().endsWith('.png') ? photo.name : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final name = photo.name.toLowerCase().endsWith('.png')
+        ? photo.name
+        : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg';
     return Attachment.fromBytes(name, await photo.readAsBytes());
   } on PlatformException catch (e) {
     if (e.code.contains('denied')) {
-      throw const AttachmentException(
-          'Camera permission was denied. Allow the camera for LifeLink in Settings → Apps → LifeLink → Permissions, or attach a file instead.');
+      throw AttachmentException(
+        Platform.isIOS
+            ? 'Camera permission was denied. Open Settings, select LifeLink, and allow Camera access, or attach a file instead.'
+            : 'Camera permission was denied. Allow the camera for LifeLink in Settings → Apps → LifeLink → Permissions, or attach a file instead.',
+      );
     }
     throw AttachmentException(e.message ?? 'The camera could not be opened.');
   }
@@ -41,29 +54,51 @@ Future<Attachment?> takePhoto() async {
 /// Chooses a photo from the device gallery and applies the same 2 MB attachment rules.
 Future<Attachment?> pickGalleryImage() async {
   try {
-    final photo = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2000, maxHeight: 2000, imageQuality: 80);
+    final photo = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 2000,
+      maxHeight: 2000,
+      imageQuality: 80,
+    );
     if (photo == null) return null;
     final lower = photo.name.toLowerCase();
-    final name = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg')
+    final name =
+        lower.endsWith('.png') ||
+            lower.endsWith('.jpg') ||
+            lower.endsWith('.jpeg')
         ? photo.name
         : 'gallery_${DateTime.now().millisecondsSinceEpoch}.jpg';
     return Attachment.fromBytes(name, await photo.readAsBytes());
   } on PlatformException catch (e) {
     if (e.code.contains('denied')) {
-      throw const AttachmentException('Photo access was denied. Allow photos for LifeLink in Settings, or attach a file instead.');
+      throw AttachmentException(
+        Platform.isIOS
+            ? 'Photo access was denied. Open Settings, select LifeLink, and allow Photos access, or attach a file instead.'
+            : 'Photo access was denied. Allow photos for LifeLink in Settings → Apps → LifeLink → Permissions, or attach a file instead.',
+      );
     }
-    throw AttachmentException(e.message ?? 'The photo gallery could not be opened.');
+    throw AttachmentException(
+      e.message ?? 'The photo gallery could not be opened.',
+    );
   }
 }
 
 /// "Attach file" / "Take photo" with the chosen attachment shown below (removable). Errors are shown under it.
 class AttachmentPickerField extends StatefulWidget {
-  const AttachmentPickerField({super.key, required this.value, required this.onChanged, this.enabled = true, this.label = 'Attachment (optional)'});
+  const AttachmentPickerField({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+    this.label = 'Attachment (optional)',
+    this.documentPicker,
+  });
 
   final Attachment? value;
   final ValueChanged<Attachment?> onChanged;
   final bool enabled;
   final String label;
+  final Future<Attachment?> Function()? documentPicker;
 
   @override
   State<AttachmentPickerField> createState() => _AttachmentPickerFieldState();
@@ -80,11 +115,12 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
     });
     try {
       final a = await picker();
+      if (!mounted) return;
       if (a != null) widget.onChanged(a);
     } on AttachmentException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } catch (_) {
-      setState(() => _error = 'The file could not be read.');
+      if (mounted) setState(() => _error = 'The file could not be read.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -92,49 +128,69 @@ class _AttachmentPickerFieldState extends State<AttachmentPickerField> {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 6),
-          if (widget.value != null)
-            Chip(
-              avatar: Icon(widget.value!.isImage ? Icons.image_outlined : Icons.description_outlined, size: 18),
-              label: Text('${widget.value!.name} · ${widget.value!.sizeLabel}', overflow: TextOverflow.ellipsis),
-              onDeleted: widget.enabled ? () => widget.onChanged(null) : null,
-            )
-          else
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
-                  onPressed: !widget.enabled || _busy ? null : () => _pick(pickDocument),
-                  icon: const Icon(Icons.attach_file, size: 18),
-                  label: const Text('Attach file'),
-                ),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
-                  onPressed: !widget.enabled || _busy ? null : () => _pick(takePhoto),
-                  icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                  label: const Text('Take photo'),
-                ),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40)),
-                  onPressed: !widget.enabled || _busy ? null : () => _pick(pickGalleryImage),
-                  icon: const Icon(Icons.photo_library_outlined, size: 18),
-                  label: const Text('Gallery'),
-                ),
-              ],
-            ),
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(
-              _error ?? 'PDF, Word or image, up to 2 MB.',
-              style: TextStyle(fontSize: 11, color: _error != null ? AppColors.rose600 : AppColors.slate500),
-            ),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        widget.label,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+      ),
+      const SizedBox(height: 6),
+      if (widget.value != null)
+        Chip(
+          avatar: Icon(
+            widget.value!.isImage
+                ? Icons.image_outlined
+                : Icons.description_outlined,
+            size: 18,
           ),
-        ],
-      );
+          label: Text(
+            '${widget.value!.name} · ${widget.value!.sizeLabel}',
+            overflow: TextOverflow.ellipsis,
+          ),
+          onDeleted: widget.enabled ? () => widget.onChanged(null) : null,
+        )
+      else
+        Wrap(
+          spacing: 8,
+          children: [
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+              onPressed: !widget.enabled || _busy
+                  ? null
+                  : () => _pick(widget.documentPicker ?? pickDocument),
+              icon: const Icon(Icons.attach_file, size: 18),
+              label: const Text('Attach file'),
+            ),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+              onPressed: !widget.enabled || _busy
+                  ? null
+                  : () => _pick(takePhoto),
+              icon: const Icon(Icons.photo_camera_outlined, size: 18),
+              label: const Text('Take photo'),
+            ),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
+              onPressed: !widget.enabled || _busy
+                  ? null
+                  : () => _pick(pickGalleryImage),
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: const Text('Gallery'),
+            ),
+          ],
+        ),
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Text(
+          _error ?? 'PDF, Word or image, up to 2 MB.',
+          style: TextStyle(
+            fontSize: 11,
+            color: _error != null ? AppColors.rose600 : AppColors.slate500,
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 /// Shows an attachment: images inline (tap for full screen), other files open in the phone's viewer.
@@ -147,7 +203,11 @@ class AttachmentView extends StatelessWidget {
   Future<void> _open(BuildContext context) async {
     final bytes = attachment.bytes;
     if (bytes == null) {
-      showSnack(context, 'This attachment cannot be opened on the phone. Open it on the LifeLink web app.', type: SnackType.warning);
+      showSnack(
+        context,
+        'This attachment cannot be opened on the phone. Open it on the LifeLink web app.',
+        type: SnackType.warning,
+      );
       return;
     }
     try {
@@ -166,7 +226,13 @@ class AttachmentView extends StatelessWidget {
         );
       }
     } catch (_) {
-      if (context.mounted) showSnack(context, 'The attachment could not be opened.', type: SnackType.error);
+      if (context.mounted) {
+        showSnack(
+          context,
+          'The attachment could not be opened.',
+          type: SnackType.error,
+        );
+      }
     }
   }
 
@@ -177,21 +243,33 @@ class AttachmentView extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (label != null) Text(label!, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+          if (label != null)
+            Text(
+              label!,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
           const SizedBox(height: 4),
           GestureDetector(
-            onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => Scaffold(
-                appBar: AppBar(title: Text(attachment.name)),
-                backgroundColor: Colors.black,
-                body: Center(child: InteractiveViewer(child: Image.memory(bytes))),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: Text(attachment.name)),
+                  backgroundColor: Colors.black,
+                  body: Center(
+                    child: InteractiveViewer(child: Image.memory(bytes)),
+                  ),
+                ),
               ),
-            )),
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxHeight: 180),
-                child: Image.memory(bytes, fit: BoxFit.cover, errorBuilder: (_, _, _) => Text(attachment.name)),
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Text(attachment.name),
+                ),
               ),
             ),
           ),
@@ -199,10 +277,16 @@ class AttachmentView extends StatelessWidget {
       );
     }
     return OutlinedButton.icon(
-      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 40), alignment: Alignment.centerLeft),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(0, 48),
+        alignment: Alignment.centerLeft,
+      ),
       onPressed: () => _open(context),
       icon: const Icon(Icons.description_outlined, size: 18),
-      label: Text(label == null ? attachment.name : '$label: ${attachment.name}', overflow: TextOverflow.ellipsis),
+      label: Text(
+        label == null ? attachment.name : '$label: ${attachment.name}',
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }
