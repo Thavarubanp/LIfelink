@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/routing/routes.dart';
+import '../../core/theme/app_theme.dart';
 import '../notifications/unread_badge.dart';
 
 const double _logoMarkSize = 32;
@@ -46,11 +47,26 @@ class LifeLinkAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    'LifeLink',
-                    style:
-                        appBarTheme.titleTextStyle ??
-                        theme.textTheme.titleLarge,
+                  RichText(
+                    text: TextSpan(
+                      style:
+                          appBarTheme.titleTextStyle ??
+                          theme.textTheme.titleLarge,
+                      children: [
+                        TextSpan(
+                          text: 'Life',
+                          style: TextStyle(color: theme.colorScheme.onSurface),
+                        ),
+                        TextSpan(
+                          text: 'Link',
+                          style: TextStyle(
+                            color: theme.brightness == Brightness.dark
+                                ? AppColors.red500
+                                : AppColors.red600,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),

@@ -6,7 +6,11 @@ const maxPacketsPerForm = 20;
 
 /// Collected date rules, as on the web page: required, not after today (the Sri Lanka date), and not so old that the
 /// packet would already be expired (collected date + shelf life must be after today).
-String? collectedDateError(DateTime? collected, int? shelfLifeDays, DateTime today) {
+String? collectedDateError(
+  DateTime? collected,
+  int? shelfLifeDays,
+  DateTime today,
+) {
   if (collected == null) return 'Collected date is required.';
   final day = DateTime(collected.year, collected.month, collected.day);
   final t = DateTime(today.year, today.month, today.day);
@@ -23,7 +27,8 @@ String? collectedDateError(DateTime? collected, int? shelfLifeDays, DateTime tod
 /// Earliest collected date the date picker offers (the oldest date that is not already expired).
 DateTime earliestCollectedDate(int? shelfLifeDays, DateTime today) {
   final t = DateTime(today.year, today.month, today.day);
-  if (shelfLifeDays == null || shelfLifeDays <= 0) return DateTime(t.year - 1, t.month, t.day);
+  if (shelfLifeDays == null || shelfLifeDays <= 0)
+    return DateTime(t.year - 1, t.month, t.day);
   return t.subtract(Duration(days: shelfLifeDays - 1));
 }
 

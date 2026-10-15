@@ -4,8 +4,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../features/auth/change_password_screen.dart';
 import '../../features/auth/forgot_password_screen.dart';
+import '../../features/auth/hospital_register_screen.dart';
+import '../../features/auth/hospital_registration_repository.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
+import '../../features/attention/tab_attention_controller.dart';
 import '../../features/blood_requests/create_request_screen.dart';
 import '../../features/blood_requests/donor_home_screen.dart';
 import '../../features/blood_requests/public_requests_screen.dart';
@@ -18,6 +21,7 @@ import '../../features/home/role_shell.dart';
 import '../../features/home/splash_screen.dart';
 import '../../features/notifications/notifications_screen.dart';
 import '../../features/profile/profile_screen.dart';
+import '../../features/profile/settings_screen.dart';
 import '../../features/profile/public_profile_screens.dart';
 import '../../features/profile/user_profile_screen.dart';
 import '../../features/search/global_search_screen.dart';
@@ -57,6 +61,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const RegisterScreen(),
       ),
       GoRoute(
+        path: AppRoutes.registerHospital,
+        builder: (_, _) => const HospitalRegisterScreen(),
+      ),
+      GoRoute(
         path: AppRoutes.forgotPassword,
         builder: (_, _) => const ForgotPasswordScreen(),
       ),
@@ -66,7 +74,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: AppRoutes.waitingApproval,
-        builder: (_, _) => const WaitingApprovalScreen(),
+        builder: (_, state) => WaitingApprovalScreen(
+          initialRegistration: state.extra is HospitalRegistration
+              ? state.extra! as HospitalRegistration
+              : null,
+        ),
       ),
       GoRoute(
         path: AppRoutes.governanceStatus,
@@ -83,6 +95,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: AppRoutes.profile,
         builder: (_, _) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.settings,
+        builder: (_, _) => const SettingsScreen(),
       ),
       GoRoute(
         path: AppRoutes.myActivity,
@@ -119,16 +135,23 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Donor / patient (Step 2: Vidya)
       _shell(
-        tabs: const [
-          ShellTab('Home', Icons.home_outlined, Icons.home),
-          ShellTab('Requests', Icons.bloodtype_outlined, Icons.bloodtype),
-          ShellTab('Create', Icons.add, Icons.add),
+        tabs: [
+          const ShellTab('Home', Icons.home_outlined, Icons.home),
+          const ShellTab('Requests', Icons.bloodtype_outlined, Icons.bloodtype),
+          ShellTab(
+            'Create',
+            Icons.add,
+            Icons.add,
+            badge: tabAttentionCountProvider(TabAttentionKey.donorCreate),
+            attentionKey: TabAttentionKey.donorCreate,
+          ),
           ShellTab(
             'Donations',
             Icons.volunteer_activism_outlined,
             Icons.volunteer_activism,
+            badge: tabAttentionCountProvider(TabAttentionKey.donorDonations),
           ),
-          ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
+          const ShellTab('More', Icons.menu, Icons.menu, showUnread: true),
         ],
         branches: [
           (AppRoutes.donorHome, const DonorHomeScreen()),
@@ -143,11 +166,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   'Complaints',
                   Icons.report_outlined,
                   AppRoutes.donorComplaints,
-                ),
-                MoreEntry(
-                  'Appeals',
-                  Icons.gavel_outlined,
-                  AppRoutes.donorAppeals,
                 ),
               ],
             ),

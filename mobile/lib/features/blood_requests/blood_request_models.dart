@@ -25,27 +25,27 @@ class BloodRequest {
   });
 
   factory BloodRequest.fromJson(Map<String, dynamic> j) => BloodRequest(
-        id: str(j['bloodRequestId']),
-        patientUserId: str(j['patientUserId']),
-        hospitalId: str(j['hospitalId']),
-        hospitalName: str(j['hospitalName'], 'Hospital'),
-        bloodGroup: str(j['bloodGroup']),
-        unitsRequired: intOf(j['unitsRequired']),
-        fulfilledUnits: intOf(j['fulfilledUnits']),
-        reservedUnits: intOf(j['reservedUnits']),
-        isAcceptingDonors: j['isAcceptingDonors'] != false,
-        reason: str(j['reason']),
-        priority: str(j['priority']),
-        status: str(j['status']),
-        createdAt: parseDate(j['createdAt']),
-        expiryDate: parseDate(j['expiryDate']),
-        isSuspended: boolOf(j['isSuspended']),
-        suspensionReason: j['suspensionReason']?.toString(),
-        rejectionReason: j['rejectionReason']?.toString(),
-        assignedDoctorName: j['assignedDoctorName']?.toString(),
-        hasActiveAcceptances: boolOf(j['hasActiveAcceptances']),
-        hasScreenedDonors: boolOf(j['hasScreenedDonors']),
-      );
+    id: str(j['bloodRequestId']),
+    patientUserId: str(j['patientUserId']),
+    hospitalId: str(j['hospitalId']),
+    hospitalName: str(j['hospitalName'], 'Hospital'),
+    bloodGroup: str(j['bloodGroup']),
+    unitsRequired: intOf(j['unitsRequired']),
+    fulfilledUnits: intOf(j['fulfilledUnits']),
+    reservedUnits: intOf(j['reservedUnits']),
+    isAcceptingDonors: j['isAcceptingDonors'] != false,
+    reason: str(j['reason']),
+    priority: str(j['priority']),
+    status: str(j['status']),
+    createdAt: parseDate(j['createdAt']),
+    expiryDate: parseDate(j['expiryDate']),
+    isSuspended: boolOf(j['isSuspended']),
+    suspensionReason: j['suspensionReason']?.toString(),
+    rejectionReason: j['rejectionReason']?.toString(),
+    assignedDoctorName: j['assignedDoctorName']?.toString(),
+    hasActiveAcceptances: boolOf(j['hasActiveAcceptances']),
+    hasScreenedDonors: boolOf(j['hasScreenedDonors']),
+  );
 
   final String id;
   final String patientUserId;
@@ -68,8 +68,10 @@ class BloodRequest {
   final bool hasActiveAcceptances;
   final bool hasScreenedDonors;
 
-  int get remainingUnits => (unitsRequired - fulfilledUnits).clamp(0, unitsRequired);
-  bool get isActive => const {'Pending', 'Verified', 'Approved'}.contains(status);
+  int get remainingUnits =>
+      (unitsRequired - fulfilledUnits).clamp(0, unitsRequired);
+  bool get isActive =>
+      const {'Pending', 'Verified', 'Approved'}.contains(status);
   bool get isCritical => priority.toUpperCase() == 'CRITICAL';
 }
 
@@ -86,7 +88,8 @@ class ScreeningDecision {
     required this.note,
   });
 
-  factory ScreeningDecision.fromJson(Map<String, dynamic> j) => ScreeningDecision(
+  factory ScreeningDecision.fromJson(Map<String, dynamic> j) =>
+      ScreeningDecision(
         id: str(j['donorVerificationId']),
         reportVersion: intOf(j['reportVersion']),
         status: str(j['status']),
@@ -129,27 +132,29 @@ class DonorAcceptance {
   });
 
   factory DonorAcceptance.fromJson(Map<String, dynamic> j) => DonorAcceptance(
-        id: str(j['acceptanceId']),
-        bloodRequestId: str(j['bloodRequestId']),
-        status: str(j['status']),
-        acceptedAt: parseDate(j['acceptedAt']),
-        rejectionReason: j['rejectionReason']?.toString(),
-        hospitalName: str(j['hospitalName'], 'Hospital'),
-        requestBloodGroup: str(j['requestBloodGroup']),
-        requestPriority: str(j['requestPriority']),
-        requestStatus: str(j['requestStatus']),
-        unitsRequired: intOf(j['unitsRequired']),
-        fulfilledUnits: intOf(j['fulfilledUnits']),
-        reservedUnits: intOf(j['reservedUnits']),
-        requestDeleted: boolOf(j['requestDeleted']),
-        requestSuspended: boolOf(j['requestSuspended']),
-        screeningHistory: j['screeningHistory'] is List
-            ? (j['screeningHistory'] as List)
-                .whereType<Map>()
-                .map((e) => ScreeningDecision.fromJson(Map<String, dynamic>.from(e)))
-                .toList()
-            : const [],
-      );
+    id: str(j['acceptanceId']),
+    bloodRequestId: str(j['bloodRequestId']),
+    status: str(j['status']),
+    acceptedAt: parseDate(j['acceptedAt']),
+    rejectionReason: j['rejectionReason']?.toString(),
+    hospitalName: str(j['hospitalName'], 'Hospital'),
+    requestBloodGroup: str(j['requestBloodGroup']),
+    requestPriority: str(j['requestPriority']),
+    requestStatus: str(j['requestStatus']),
+    unitsRequired: intOf(j['unitsRequired']),
+    fulfilledUnits: intOf(j['fulfilledUnits']),
+    reservedUnits: intOf(j['reservedUnits']),
+    requestDeleted: boolOf(j['requestDeleted']),
+    requestSuspended: boolOf(j['requestSuspended']),
+    screeningHistory: j['screeningHistory'] is List
+        ? (j['screeningHistory'] as List)
+              .whereType<Map>()
+              .map(
+                (e) => ScreeningDecision.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .toList()
+        : const [],
+  );
 
   final String id;
   final String bloodRequestId;
@@ -167,7 +172,12 @@ class DonorAcceptance {
   final bool requestSuspended;
   final List<ScreeningDecision> screeningHistory;
 
-  bool get isActive => const {'Accepted', 'ScreeningPending', 'ScreeningCompleted', 'Verified'}.contains(status);
+  bool get isActive => const {
+    'Accepted',
+    'ScreeningPending',
+    'ScreeningCompleted',
+    'Verified',
+  }.contains(status);
 }
 
 class DonorProfileSummary {
@@ -178,7 +188,8 @@ class DonorProfileSummary {
     required this.nextEligibleDonationDate,
   });
 
-  factory DonorProfileSummary.fromJson(Map<String, dynamic> j) => DonorProfileSummary(
+  factory DonorProfileSummary.fromJson(Map<String, dynamic> j) =>
+      DonorProfileSummary(
         bloodGroup: j['bloodGroup']?.toString(),
         bloodGroupConfirmed: boolOf(j['bloodGroupConfirmed']),
         lastDonationDate: parseDate(j['lastDonationDate']),
@@ -190,17 +201,24 @@ class DonorProfileSummary {
   final DateTime? lastDonationDate;
   final DateTime? nextEligibleDonationDate;
 
-  bool eligibleAt(DateTime now) => nextEligibleDonationDate == null || !nextEligibleDonationDate!.isAfter(now);
+  bool eligibleAt(DateTime now) =>
+      nextEligibleDonationDate == null ||
+      !nextEligibleDonationDate!.isAfter(now);
 }
 
 class HospitalChoice {
-  const HospitalChoice({required this.id, required this.name, required this.address, required this.email});
+  const HospitalChoice({
+    required this.id,
+    required this.name,
+    required this.address,
+    required this.email,
+  });
   factory HospitalChoice.fromJson(Map<String, dynamic> j) => HospitalChoice(
-        id: str(j['hospitalId']),
-        name: str(j['name']),
-        address: str(j['address']),
-        email: str(j['email']),
-      );
+    id: str(j['hospitalId']),
+    name: str(j['name']),
+    address: str(j['address']),
+    email: str(j['email']),
+  );
   final String id;
   final String name;
   final String address;
@@ -208,12 +226,16 @@ class HospitalChoice {
 }
 
 class DoctorChoice {
-  const DoctorChoice({required this.id, required this.name, required this.specialization});
+  const DoctorChoice({
+    required this.id,
+    required this.name,
+    required this.specialization,
+  });
   factory DoctorChoice.fromJson(Map<String, dynamic> j) => DoctorChoice(
-        id: str(j['doctorId']),
-        name: 'Dr. ${str(j['firstName'])} ${str(j['lastName'])}'.trim(),
-        specialization: str(j['specialization']),
-      );
+    id: str(j['doctorId']),
+    name: 'Dr. ${str(j['firstName'])} ${str(j['lastName'])}'.trim(),
+    specialization: str(j['specialization']),
+  );
   final String id;
   final String name;
   final String specialization;

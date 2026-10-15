@@ -80,49 +80,55 @@ class RecommendationsScreen extends ConsumerWidget {
     final group = recommendationBloodGroup(n);
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(kind.icon, color: kind.color),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      n.title,
-                      style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(kind.icon, color: kind.color),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        n.title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${kind.title} · ${Fmt.sriLankaDateTime(n.createdAt)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.slate500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(n.message),
+                const SizedBox(height: 12),
+                Text(kind.description, style: const TextStyle(fontSize: 12)),
+                if (group != null) ...[
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      context.go(inventoryGroupPath(group));
+                    },
+                    icon: const Icon(Icons.inventory_2_outlined),
+                    label: Text('Open $group in Inventory'),
                   ),
                 ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${kind.title} · ${Fmt.sriLankaDateTime(n.createdAt)}',
-                style: const TextStyle(fontSize: 12, color: AppColors.slate500),
-              ),
-              const SizedBox(height: 12),
-              Text(n.message),
-              const SizedBox(height: 12),
-              Text(kind.description, style: const TextStyle(fontSize: 12)),
-              if (group != null) ...[
-                const SizedBox(height: 12),
-                FilledButton.icon(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    context.go(inventoryGroupPath(group));
-                  },
-                  icon: const Icon(Icons.inventory_2_outlined),
-                  label: Text('Open $group in Inventory'),
-                ),
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -174,7 +180,8 @@ class RecommendationsScreen extends ConsumerWidget {
                         for (final entry in byKind.entries)
                           if (entry.value.isNotEmpty) ...[
                             SectionCard(
-                              title: '${entry.key.title} (${entry.value.length})',
+                              title:
+                                  '${entry.key.title} (${entry.value.length})',
                               icon: entry.key.icon,
                               child: Column(
                                 children: [
@@ -183,7 +190,8 @@ class RecommendationsScreen extends ConsumerWidget {
                                       contentPadding: EdgeInsets.zero,
                                       onTap: () =>
                                           _open(context, ref, n, entry.key),
-                                      leading: recommendationBloodGroup(n) == null
+                                      leading:
+                                          recommendationBloodGroup(n) == null
                                           ? Icon(
                                               entry.key.icon,
                                               color: entry.key.color,

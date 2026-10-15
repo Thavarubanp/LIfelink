@@ -44,23 +44,30 @@ class PhoneNotifications {
   String? launchRoute;
 
   Future<void> init() async {
-    if (_ready || kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    if (_ready || kIsWeb || defaultTargetPlatform != TargetPlatform.android)
+      return;
     await _plugin.initialize(
-      settings: const InitializationSettings(android: AndroidInitializationSettings('@mipmap/ic_launcher')),
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
       onDidReceiveNotificationResponse: (r) {
         final route = r.payload;
         if (route != null && route.isNotEmpty) onOpen?.call(route);
       },
     );
     final launch = await _plugin.getNotificationAppLaunchDetails();
-    if (launch?.didNotificationLaunchApp == true) launchRoute = launch?.notificationResponse?.payload;
+    if (launch?.didNotificationLaunchApp == true)
+      launchRoute = launch?.notificationResponse?.payload;
     _ready = true;
   }
 
-  AndroidFlutterLocalNotificationsPlugin? get _android =>
-      _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+  AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
 
-  Future<bool> areEnabled() async => await _android?.areNotificationsEnabled() ?? false;
+  Future<bool> areEnabled() async =>
+      await _android?.areNotificationsEnabled() ?? false;
 
   /// Android 13+ asks the user; older versions allow notifications by default. Returns whether they are allowed.
   Future<bool> requestPermission() async {
@@ -100,28 +107,42 @@ class PhoneNotifications {
 
   /// One poll: reads the token, fetches the caller's notifications (and the admin's attention counts) as background
   /// requests, shows what is new, and saves the marker. Returns false when the session has ended (401).
-  Future<bool> poll({String? token, Dio? dio}) async {
-    final storedToken = token ?? await const FlutterSecureStorage().read(key: _tokenKey);
+  Future<bool> poll({
+    String? token,
+    Dio? dio,
+    AttentionSnapshot? adminAttention,
+    bool fetchAdminAttention = true,
+  }) async {
+    final storedToken =
+        token ?? await const FlutterSecureStorage().read(key: _tokenKey);
     if (storedToken == null || storedToken.isEmpty) return false;
-    final client = dio ??
-        Dio(BaseOptions(
-          baseUrl: Env.apiBaseUrl,
-          connectTimeout: const Duration(seconds: 15),
-          receiveTimeout: const Duration(seconds: 30),
-          // Background request: no X-LifeLink-Activity header, so the idle timeout is not extended
-          headers: {'Authorization': 'Bearer $storedToken', 'Accept': 'application/json'},
-        ));
+    final client =
+        dio ??
+        Dio(
+          BaseOptions(
+            baseUrl: Env.apiBaseUrl,
+            connectTimeout: const Duration(seconds: 15),
+            receiveTimeout: const Duration(seconds: 30),
+            // Background request: no X-LifeLink-Activity header, so the idle timeout is not extended
+            headers: {
+              'Authorization': 'Bearer $storedToken',
+              'Accept': 'application/json',
+            },
+          ),
+        );
     final prefs = await SharedPreferences.getInstance();
     try {
       final body = (await client.get<Object?>('/notifications/my')).data;
       final all = unwrapList(body)
-          .map((j) => PolledNotification(
-                id: str(j['notificationId']),
-                title: str(j['title']),
-                message: str(j['message']),
-                type: str(j['notificationType']),
-                createdAt: parseDate(j['createdAt']),
-              ))
+          .map(
+            (j) => PolledNotification(
+              id: str(j['notificationId']),
+              title: str(j['title']),
+              message: str(j['message']),
+              type: str(j['notificationType']),
+              createdAt: parseDate(j['createdAt']),
+            ),
+          )
           .toList();
       final marker = PollMarker(
         lastSeenId: prefs.getString(_markerIdKey),
@@ -129,24 +150,52 @@ class PhoneNotifications {
       );
       final result = newNotifications(all, marker);
       for (final n in result.toShow) {
-        await show(n.id.hashCode, n.title, n.message, routeForNotificationType(n.type));
+        await show(
+          n.id.hashCode,
+          n.title,
+          n.message,
+          routeForNotificationType(n.type),
+        );
       }
-      if (result.marker.lastSeenId != null) await prefs.setString(_markerIdKey, result.marker.lastSeenId!);
-      if (result.marker.lastSeenAt != null) await prefs.setString(_markerAtKey, result.marker.lastSeenAt!.toIso8601String());
+      if (result.marker.lastSeenId != null)
+        await prefs.setString(_markerIdKey, result.marker.lastSeenId!);
+      if (result.marker.lastSeenAt != null)
+        await prefs.setString(
+          _markerAtKey,
+          result.marker.lastSeenAt!.toIso8601String(),
+        );
 
       if (prefs.getBool(_isAdminKey) == true) {
-        final a = unwrapMap((await client.get<Object?>('/Admin/attention-counts')).data);
-        final now = AttentionSnapshot(
-          registrations: intOf(a['pendingRegistrations']),
-          appeals: intOf(a['pendingAppeals']),
-          complaints: intOf(a['pendingComplaints']),
-          newActivity: intOf(a['newBloodRequests']) + intOf(a['newTransfers']),
-        );
+        var now = adminAttention;
+        if (now == null && fetchAdminAttention) {
+          final a = unwrapMap(
+            (await client.get<Object?>('/Admin/attention-counts')).data,
+          );
+          now = AttentionSnapshot(
+            registrations: intOf(a['pendingRegistrations']),
+            appeals: intOf(a['pendingAppeals']),
+            complaints: intOf(a['pendingComplaints']),
+            newActivity:
+                intOf(a['newBloodRequests']) + intOf(a['newTransfers']),
+          );
+        }
+        if (now == null) return true;
         final saved = prefs.getStringList(_attentionKey);
-        final before = saved != null && saved.length == 4 ? AttentionSnapshot.fromList(saved.map(int.parse).toList()) : null;
+        final before = saved != null && saved.length == 4
+            ? AttentionSnapshot.fromList(saved.map(int.parse).toList())
+            : null;
         final summary = attentionIncrease(before, now);
-        if (summary != null) await show(9001, 'Needs your attention', summary, routeForNotificationType('AdminAttention'));
-        await prefs.setStringList(_attentionKey, now.toList().map((e) => '$e').toList());
+        if (summary != null)
+          await show(
+            9001,
+            'Needs your attention',
+            summary,
+            routeForNotificationType('AdminAttention'),
+          );
+        await prefs.setStringList(
+          _attentionKey,
+          now.toList().map((e) => '$e').toList(),
+        );
       }
       return true;
     } on DioException catch (e) {
@@ -168,7 +217,8 @@ class PhoneNotifications {
         android: AndroidNotificationDetails(
           _channelId,
           _channelName,
-          channelDescription: 'Messages from the administrator, alerts and decisions',
+          channelDescription:
+              'Messages from the administrator, alerts and decisions',
           importance: Importance.high,
           priority: Priority.high,
           styleInformation: BigTextStyleInformation(''),

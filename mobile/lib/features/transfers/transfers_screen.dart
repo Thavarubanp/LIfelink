@@ -8,6 +8,7 @@ import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../home/shell_page_header.dart';
+import '../attention/tab_attention_controller.dart';
 import '../inventory/inventory_repository.dart';
 import '../inventory/packet_picker.dart';
 import '../profile/profile_repository.dart';
@@ -42,6 +43,7 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
     ref.invalidate(hospitalInventoryProvider);
     ref.invalidate(packetsProvider);
     ref.invalidate(availablePacketsProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
   }
 
   Future<void> _refresh() async {
@@ -84,7 +86,8 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
       final ids = await showModalBottomSheet<List<String>>(
         context: context,
         isScrollControlled: true,
-        builder: (_) => _SendPacketsSheet(transfer: t),
+        builder: (_) =>
+            ModalSheetSafeArea(child: _SendPacketsSheet(transfer: t)),
       );
       if (ids == null) return;
       await _act(
@@ -155,42 +158,45 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${detail.status == 'Completed' ? 'Packets moved' : 'Packets offered'} (${detail.packetTrackingNumbers.length})',
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${detail.status == 'Completed' ? 'Packets moved' : 'Packets offered'} (${detail.packetTrackingNumbers.length})',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'From ${detail.senderHospitalName} to ${detail.receiverHospitalName}'
-                '${detail.status == 'Completed' ? ', accepted ${Fmt.sriLankaDateTime(detail.approvedAt)}. Tracking numbers did not change.' : '. Held until the other hospital answers.'}',
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 6,
-                children: [
-                  for (final n in detail.packetTrackingNumbers)
-                    Text(
-                      n,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontWeight: FontWeight.w600,
+                const SizedBox(height: 6),
+                Text(
+                  'From ${detail.senderHospitalName} to ${detail.receiverHospitalName}'
+                  '${detail.status == 'Completed' ? ', accepted ${Fmt.sriLankaDateTime(detail.approvedAt)}. Tracking numbers did not change.' : '. Held until the other hospital answers.'}',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 6,
+                  children: [
+                    for (final n in detail.packetTrackingNumbers)
+                      Text(
+                        n,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -466,7 +472,7 @@ class _SendPacketsSheetState extends State<_SendPacketsSheet> {
   Widget build(BuildContext context) {
     final t = widget.transfer;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, modalSheetBottomPadding(context)),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

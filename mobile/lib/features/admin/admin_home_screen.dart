@@ -10,7 +10,7 @@ import '../home/shell_page_header.dart';
 import 'admin_repository.dart';
 import 'attention_controller.dart';
 
-/// Admin home: the nine dashboard numbers and what needs attention (badges refresh every 30 s in the background).
+/// Admin home: the nine dashboard numbers.
 class AdminHomeScreen extends ConsumerWidget {
   const AdminHomeScreen({super.key});
 
@@ -36,8 +36,6 @@ class AdminHomeScreen extends ConsumerWidget {
               children: [
                 const ShellPageHeader(title: 'Administration'),
                 const SizedBox(height: 16),
-                const AttentionCards(),
-                const SizedBox(height: 16),
                 SectionCard(
                   title: 'Platform statistics',
                   icon: Icons.insights,
@@ -46,6 +44,13 @@ class AdminHomeScreen extends ConsumerWidget {
                     onRetry: () => ref.invalidate(adminStatsProvider),
                     loadingMessage: 'Loading statistics...',
                     data: (s) => StatGrid(
+                      actions: {
+                        'Donors / patients': () =>
+                            context.push(AppRoutes.adminUsers),
+                        'Hospitals': () =>
+                            context.push(AppRoutes.adminHospitals),
+                        'Doctors': () => context.push(AppRoutes.adminDoctors),
+                      },
                       stats: [
                         (
                           'Donors / patients',
@@ -116,9 +121,10 @@ class AdminHomeScreen extends ConsumerWidget {
 
 /// Grid of number tiles (2 columns on phones, 3 on tablets).
 class StatGrid extends StatelessWidget {
-  const StatGrid({super.key, required this.stats});
+  const StatGrid({super.key, required this.stats, this.actions = const {}});
 
   final List<(String, int, IconData, Color)> stats;
+  final Map<String, VoidCallback> actions;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -132,40 +138,55 @@ class StatGrid extends StatelessWidget {
         runSpacing: gap,
         children: [
           for (final (label, value, icon, color) in stats)
-            Container(
+            SizedBox(
               width: width,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
+              child: Material(
                 color: dark ? AppColors.slate800 : AppColors.slate50,
                 borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Icon(icon, color: color),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                child: InkWell(
+                  key: actions[label] == null
+                      ? null
+                      : Key('admin-directory-$label'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: actions[label],
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
                       children: [
-                        Text(
-                          '$value',
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
+                        Icon(icon, color: color),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '$value',
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              Text(
+                                label,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.slate500,
+                                ),
+                                maxLines: 2,
+                              ),
+                            ],
                           ),
                         ),
-                        Text(
-                          label,
-                          style: const TextStyle(
-                            fontSize: 12,
+                        if (actions[label] != null)
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 18,
                             color: AppColors.slate500,
                           ),
-                          maxLines: 2,
-                        ),
                       ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
         ],
@@ -203,20 +224,6 @@ class AttentionCards extends ConsumerWidget {
         Icons.report_outlined,
         AppRoutes.adminComplaints,
       ),
-      (
-        'New blood requests',
-        'Since you last opened the activity log',
-        a?.newBloodRequests,
-        Icons.bloodtype_outlined,
-        AppRoutes.adminActivity,
-      ),
-      (
-        'New transfers',
-        'Since you last opened the activity log',
-        a?.newTransfers,
-        Icons.swap_horiz,
-        '${AppRoutes.adminActivity}?tab=transfers',
-      ),
     ];
     return SectionCard(
       title: 'Needs attention',
@@ -252,9 +259,7 @@ class AttentionCards extends ConsumerWidget {
                   const Icon(Icons.chevron_right),
                 ],
               ),
-              onTap: () => path.startsWith(AppRoutes.adminActivity)
-                  ? context.go(path)
-                  : context.push(path),
+              onTap: () => context.push(path),
             ),
         ],
       ),

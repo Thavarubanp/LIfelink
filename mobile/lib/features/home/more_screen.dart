@@ -7,6 +7,8 @@ import '../../core/config/constants.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/floating_overlay_padding.dart';
+import '../assistant/assistant_sheet.dart';
 
 class MoreEntry {
   const MoreEntry(this.label, this.icon, this.path, {this.subtitle});
@@ -29,7 +31,12 @@ class MoreScreen extends ConsumerWidget {
     return Scaffold(
       body: ContentWidth(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + FloatingOverlayPadding.bottomOf(context),
+          ),
           children: [
             if (user != null)
               Card(
@@ -58,6 +65,19 @@ class MoreScreen extends ConsumerWidget {
             Card(
               child: Column(
                 children: [
+                  ListTile(
+                    leading: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.red600,
+                    ),
+                    title: const Text('LifeLink Assistant'),
+                    subtitle: const Text(
+                      'Ask about donation, LifeLink or your account',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => showAssistantSheet(context),
+                  ),
+                  const Divider(),
                   for (final e in entries)
                     ListTile(
                       leading: Icon(e.icon, color: AppColors.red600),
@@ -76,6 +96,15 @@ class MoreScreen extends ConsumerWidget {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => context.push(AppRoutes.governanceStatus),
                     ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.settings_outlined,
+                      color: AppColors.red600,
+                    ),
+                    title: const Text('Settings'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push(AppRoutes.settings),
+                  ),
                   ListTile(
                     leading: const Icon(Icons.history, color: AppColors.red600),
                     title: const Text('My activity'),

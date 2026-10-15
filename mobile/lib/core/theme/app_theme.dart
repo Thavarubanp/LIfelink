@@ -5,6 +5,7 @@ class AppColors {
   const AppColors._();
 
   static const red600 = Color(0xFFDC2626);
+  static const red500 = Color(0xFFEF4444);
   static const red700 = Color(0xFFB91C1C);
   static const red50 = Color(0xFFFEF2F2);
   static const slate50 = Color(0xFFF8FAFC);
@@ -48,7 +49,9 @@ class AppTheme {
     );
     final border = OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide(color: dark ? AppColors.slate700 : AppColors.slate200),
+      borderSide: BorderSide(
+        color: dark ? AppColors.slate700 : AppColors.slate200,
+      ),
     );
 
     return ThemeData(
@@ -74,7 +77,9 @@ class AppTheme {
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: dark ? AppColors.slate800 : AppColors.slate200),
+          side: BorderSide(
+            color: dark ? AppColors.slate800 : AppColors.slate200,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -82,16 +87,25 @@ class AppTheme {
         fillColor: dark ? AppColors.slate800 : AppColors.slate50,
         border: border,
         enabledBorder: border,
-        focusedBorder: border.copyWith(borderSide: const BorderSide(color: AppColors.red600, width: 1.5)),
-        errorBorder: border.copyWith(borderSide: const BorderSide(color: AppColors.rose600)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        focusedBorder: border.copyWith(
+          borderSide: const BorderSide(color: AppColors.red600, width: 1.5),
+        ),
+        errorBorder: border.copyWith(
+          borderSide: const BorderSide(color: AppColors.rose600),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.red600,
           foregroundColor: Colors.white,
           minimumSize: const Size(48, 48),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
@@ -99,13 +113,19 @@ class AppTheme {
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(48, 48),
           foregroundColor: dark ? AppColors.slate100 : AppColors.slate700,
-          side: BorderSide(color: dark ? AppColors.slate700 : AppColors.slate200),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          side: BorderSide(
+            color: dark ? AppColors.slate700 : AppColors.slate200,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           textStyle: const TextStyle(fontWeight: FontWeight.w600),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(foregroundColor: dark ? const Color(0xFFF87171) : AppColors.red600),
+        style: TextButton.styleFrom(
+          foregroundColor: dark ? const Color(0xFFF87171) : AppColors.red600,
+        ),
       ),
       chipTheme: ChipThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -113,20 +133,31 @@ class AppTheme {
         selectedColor: AppColors.red600,
         secondarySelectedColor: AppColors.red600,
         checkmarkColor: Colors.white,
-        labelStyle: TextStyle(fontSize: 13, color: dark ? AppColors.slate200 : AppColors.slate700),
+        labelStyle: TextStyle(
+          fontSize: 13,
+          color: dark ? AppColors.slate200 : AppColors.slate700,
+        ),
         secondaryLabelStyle: const TextStyle(color: Colors.white),
       ),
       navigationBarTheme: NavigationBarThemeData(
         backgroundColor: dark ? AppColors.slate900 : Colors.white,
         indicatorColor: dark ? const Color(0x33DC2626) : AppColors.red50,
         iconTheme: WidgetStateProperty.resolveWith(
-          (s) => IconThemeData(color: s.contains(WidgetState.selected) ? AppColors.red600 : AppColors.slate500),
+          (s) => IconThemeData(
+            color: s.contains(WidgetState.selected)
+                ? AppColors.red600
+                : AppColors.slate500,
+          ),
         ),
         labelTextStyle: WidgetStateProperty.resolveWith(
           (s) => TextStyle(
             fontSize: 12,
-            fontWeight: s.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
-            color: s.contains(WidgetState.selected) ? AppColors.red600 : AppColors.slate500,
+            fontWeight: s.contains(WidgetState.selected)
+                ? FontWeight.w700
+                : FontWeight.w500,
+            color: s.contains(WidgetState.selected)
+                ? AppColors.red600
+                : AppColors.slate500,
           ),
         ),
       ),
@@ -134,10 +165,18 @@ class AppTheme {
         backgroundColor: dark ? AppColors.slate900 : Colors.white,
         indicatorColor: dark ? const Color(0x33DC2626) : AppColors.red50,
         selectedIconTheme: const IconThemeData(color: AppColors.red600),
-        selectedLabelTextStyle: const TextStyle(color: AppColors.red600, fontWeight: FontWeight.w700),
+        selectedLabelTextStyle: const TextStyle(
+          color: AppColors.red600,
+          fontWeight: FontWeight.w700,
+        ),
       ),
-      dividerTheme: DividerThemeData(color: dark ? AppColors.slate800 : AppColors.slate200, space: 1),
-      snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+      dividerTheme: DividerThemeData(
+        color: dark ? AppColors.slate800 : AppColors.slate200,
+        space: 1,
+      ),
+      snackBarTheme: const SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+      ),
       dialogTheme: DialogThemeData(
         backgroundColor: dark ? AppColors.slate900 : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

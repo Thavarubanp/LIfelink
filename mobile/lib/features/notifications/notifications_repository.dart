@@ -19,7 +19,8 @@ class AppNotification {
     required this.createdAt,
   });
 
-  factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
         id: str(json['notificationId']),
         title: str(json['title']),
         message: str(json['message']),
@@ -35,8 +36,14 @@ class AppNotification {
   final bool isRead;
   final DateTime? createdAt;
 
-  AppNotification copyWith({bool? isRead}) =>
-      AppNotification(id: id, title: title, message: message, type: type, isRead: isRead ?? this.isRead, createdAt: createdAt);
+  AppNotification copyWith({bool? isRead}) => AppNotification(
+    id: id,
+    title: title,
+    message: message,
+    type: type,
+    isRead: isRead ?? this.isRead,
+    createdAt: createdAt,
+  );
 }
 
 /// The caller's own notifications (same endpoints as the web app).
@@ -46,11 +53,18 @@ class NotificationsRepository {
   final ApiClient _api;
 
   Future<List<AppNotification>> my() async =>
-      unwrapList(await _api.get('/notifications/my')).map(AppNotification.fromJson).toList();
+      unwrapList(await _api.get('/notifications/my'))
+          .map(AppNotification.fromJson)
+          .toList();
 
   /// Polled in the background: never counts as user activity for the idle timeout.
   Future<int> unreadCount({bool background = false}) async {
-    final body = unwrapMap(await _api.get('/notifications/unread-count', options: apiOptions(background: background)));
+    final body = unwrapMap(
+      await _api.get(
+        '/notifications/unread-count',
+        options: apiOptions(background: background),
+      ),
+    );
     return intOf(body['count']);
   }
 
@@ -62,14 +76,17 @@ class NotificationsRepository {
   Future<void> dismiss(String id) => _api.delete('/notifications/$id');
 }
 
-final notificationsRepositoryProvider =
-    Provider<NotificationsRepository>((ref) => NotificationsRepository(ref.watch(apiClientProvider)));
+final notificationsRepositoryProvider = Provider<NotificationsRepository>(
+  (ref) => NotificationsRepository(ref.watch(apiClientProvider)),
+);
 
 final notificationsProvider = FutureProvider.autoDispose<List<AppNotification>>(
   (ref) => ref.watch(notificationsRepositoryProvider).my(),
 );
 
-final unreadCountProvider = NotifierProvider<UnreadCountController, int>(UnreadCountController.new);
+final unreadCountProvider = NotifierProvider<UnreadCountController, int>(
+  UnreadCountController.new,
+);
 
 /// Unread count, refreshed every 30 s in the background while signed in.
 class UnreadCountController extends Notifier<int> {
@@ -77,7 +94,11 @@ class UnreadCountController extends Notifier<int> {
 
   @override
   int build() {
-    final signedIn = ref.watch(authControllerProvider.select((s) => s.isSignedIn && s.user?.isSuspended != true));
+    final signedIn = ref.watch(
+      authControllerProvider.select(
+        (s) => s.isSignedIn && s.user?.isSuspended != true,
+      ),
+    );
     _timer?.cancel();
     ref.onDispose(() => _timer?.cancel());
     if (!signedIn) return 0;
@@ -88,10 +109,20 @@ class UnreadCountController extends Notifier<int> {
 
   Future<void> refresh() async {
     try {
-      final count = await ref.read(notificationsRepositoryProvider).unreadCount(background: true);
+      final count = await ref
+          .read(notificationsRepositoryProvider)
+          .unreadCount(background: true);
       if (ref.mounted) state = count;
     } catch (_) {
       // Keep the last count; a 401 is handled by the API client
     }
   }
+
+  void decrement() {
+    if (state > 0) state--;
+  }
+
+  void increment() => state++;
+
+  void setLocalCount(int count) => state = count;
 }

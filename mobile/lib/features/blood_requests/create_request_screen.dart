@@ -12,6 +12,7 @@ import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../auth/auth_widgets.dart';
+import '../attention/tab_attention_controller.dart';
 import '../home/shell_page_header.dart';
 import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
@@ -131,6 +132,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
   void _reload() {
     ref.invalidate(myBloodRequestsProvider);
     ref.invalidate(donorHomeProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
   }
 
   @override
@@ -155,6 +157,7 @@ class _CreateRequestScreenState extends ConsumerState<CreateRequestScreen> {
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (widget.embedded) ...[
@@ -360,6 +363,7 @@ class _MyRequestsSectionState extends ConsumerState<MyRequestsSection> {
   void _reload() {
     ref.invalidate(myBloodRequestsProvider);
     ref.invalidate(donorHomeProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
   }
 
   Future<void> _action(
@@ -516,7 +520,8 @@ class _MyRequestsSectionState extends ConsumerState<MyRequestsSection> {
     final changed = await showModalBottomSheet<({String group, int units})>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _EditRequestSheet(request: request),
+      builder: (_) =>
+          ModalSheetSafeArea(child: _EditRequestSheet(request: request)),
     );
     if (changed != null) {
       await _action(
@@ -591,54 +596,51 @@ class _EditRequestSheetState extends State<_EditRequestSheet> {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      20,
-      0,
-      20,
-      MediaQuery.viewInsetsOf(context).bottom + 20,
-    ),
-    child: Form(
-      key: _key,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Edit blood request',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<String>(
-            initialValue: _group,
-            decoration: const InputDecoration(labelText: 'Blood group'),
-            items: [
-              for (final g in AppConstants.bloodGroups)
-                DropdownMenuItem(value: g, child: Text(g)),
-            ],
-            onChanged: (value) => setState(() => _group = value ?? _group),
-          ),
-          const SizedBox(height: 12),
-          TextFormField(
-            controller: _units,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            decoration: const InputDecoration(labelText: 'Units (1-10)'),
-            validator: (value) =>
-                Validators.intRange(value, 'Units', min: 1, max: 10),
-          ),
-          const SizedBox(height: 14),
-          FilledButton(
-            onPressed: () {
-              if (_key.currentState!.validate()) {
-                Navigator.pop(context, (
-                  group: _group,
-                  units: int.parse(_units.text),
-                ));
-              }
-            },
-            child: const Text('Save changes'),
-          ),
-        ],
+    padding: EdgeInsets.fromLTRB(20, 0, 20, modalSheetBottomPadding(context)),
+    child: SingleChildScrollView(
+      child: Form(
+        key: _key,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Edit blood request',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 14),
+            DropdownButtonFormField<String>(
+              initialValue: _group,
+              decoration: const InputDecoration(labelText: 'Blood group'),
+              items: [
+                for (final g in AppConstants.bloodGroups)
+                  DropdownMenuItem(value: g, child: Text(g)),
+              ],
+              onChanged: (value) => setState(() => _group = value ?? _group),
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _units,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(labelText: 'Units (1-10)'),
+              validator: (value) =>
+                  Validators.intRange(value, 'Units', min: 1, max: 10),
+            ),
+            const SizedBox(height: 14),
+            FilledButton(
+              onPressed: () {
+                if (_key.currentState!.validate()) {
+                  Navigator.pop(context, (
+                    group: _group,
+                    units: int.parse(_units.text),
+                  ));
+                }
+              },
+              child: const Text('Save changes'),
+            ),
+          ],
+        ),
       ),
     ),
   );

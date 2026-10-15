@@ -12,17 +12,25 @@ import '../../core/widgets/state_views.dart';
 
 /// ActivityLogEntryDto.
 class ActivityEntry {
-  const ActivityEntry({required this.id, required this.occurredAt, required this.actorRole, required this.actorName, required this.action, required this.entityType, required this.summary});
+  const ActivityEntry({
+    required this.id,
+    required this.occurredAt,
+    required this.actorRole,
+    required this.actorName,
+    required this.action,
+    required this.entityType,
+    required this.summary,
+  });
 
   factory ActivityEntry.fromJson(Map<String, dynamic> j) => ActivityEntry(
-        id: str(j['id']),
-        occurredAt: parseDate(j['occurredAt']),
-        actorRole: str(j['actorRole']),
-        actorName: str(j['actorName']),
-        action: str(j['action']),
-        entityType: str(j['entityType']),
-        summary: str(j['summary']),
-      );
+    id: str(j['id']),
+    occurredAt: parseDate(j['occurredAt']),
+    actorRole: str(j['actorRole']),
+    actorName: str(j['actorName']),
+    action: str(j['action']),
+    entityType: str(j['entityType']),
+    summary: str(j['summary']),
+  );
 
   final String id;
   final DateTime? occurredAt;
@@ -35,19 +43,26 @@ class ActivityEntry {
 
 /// ActivityLogPageDto: one server-side page.
 class ActivityPage {
-  const ActivityPage({required this.items, required this.total, required this.page, required this.pageSize, required this.recordedFrom, required this.types});
+  const ActivityPage({
+    required this.items,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+    required this.recordedFrom,
+    required this.types,
+  });
 
   factory ActivityPage.fromJson(Map<String, dynamic> j) => ActivityPage(
-        items: (j['items'] is List ? j['items'] as List : const [])
-            .whereType<Map>()
-            .map((e) => ActivityEntry.fromJson(Map<String, dynamic>.from(e)))
-            .toList(),
-        total: intOf(j['total']),
-        page: intOf(j['page'], 1),
-        pageSize: intOf(j['pageSize'], ActivityQuery.pageSize),
-        recordedFrom: parseDate(j['recordedFrom']),
-        types: stringList(j['types']),
-      );
+    items: (j['items'] is List ? j['items'] as List : const [])
+        .whereType<Map>()
+        .map((e) => ActivityEntry.fromJson(Map<String, dynamic>.from(e)))
+        .toList(),
+    total: intOf(j['total']),
+    page: intOf(j['page'], 1),
+    pageSize: intOf(j['pageSize'], ActivityQuery.pageSize),
+    recordedFrom: parseDate(j['recordedFrom']),
+    types: stringList(j['types']),
+  );
 
   final List<ActivityEntry> items;
   final int total;
@@ -56,7 +71,9 @@ class ActivityPage {
   final DateTime? recordedFrom;
   final List<String> types;
 
-  int get totalPages => total <= 0 ? 1 : (total / (pageSize <= 0 ? ActivityQuery.pageSize : pageSize)).ceil();
+  int get totalPages => total <= 0
+      ? 1
+      : (total / (pageSize <= 0 ? ActivityQuery.pageSize : pageSize)).ceil();
 }
 
 /// Paging and filters (type, Sri Lanka date range) sent to the API.
@@ -71,20 +88,27 @@ class ActivityQuery {
   final DateTime? to;
 
   Map<String, dynamic> toParams() => {
-        'page': page,
-        'pageSize': pageSize,
-        'type': type,
-        'from': from == null ? null : Fmt.apiDate(from!),
-        'to': to == null ? null : Fmt.apiDate(to!),
-      };
+    'page': page,
+    'pageSize': pageSize,
+    'type': type,
+    'from': from == null ? null : Fmt.apiDate(from!),
+    'to': to == null ? null : Fmt.apiDate(to!),
+  };
 
-  ActivityQuery copyWith({int? page, String? type, DateTime? from, DateTime? to, bool clearType = false, bool clearFrom = false, bool clearTo = false}) =>
-      ActivityQuery(
-        page: page ?? this.page,
-        type: clearType ? null : (type ?? this.type),
-        from: clearFrom ? null : (from ?? this.from),
-        to: clearTo ? null : (to ?? this.to),
-      );
+  ActivityQuery copyWith({
+    int? page,
+    String? type,
+    DateTime? from,
+    DateTime? to,
+    bool clearType = false,
+    bool clearFrom = false,
+    bool clearTo = false,
+  }) => ActivityQuery(
+    page: page ?? this.page,
+    type: clearType ? null : (type ?? this.type),
+    from: clearFrom ? null : (from ?? this.from),
+    to: clearTo ? null : (to ?? this.to),
+  );
 
   bool get hasFilters => type != null || from != null || to != null;
 }
@@ -111,20 +135,43 @@ class ActivityRepository {
 
   final ApiClient _api;
 
-  Future<ActivityPage> mine(ActivityQuery q) async => ActivityPage.fromJson(unwrapMap(await _api.get('/activity-logs/my', query: q.toParams())));
+  Future<ActivityPage> mine(ActivityQuery q) async => ActivityPage.fromJson(
+    unwrapMap(await _api.get('/activity-logs/my', query: q.toParams())),
+  );
 
   Future<ActivityPage> ofUser(String userId, ActivityQuery q) async =>
-      ActivityPage.fromJson(unwrapMap(await _api.get('/Admin/users/$userId/activity-log', query: q.toParams())));
+      ActivityPage.fromJson(
+        unwrapMap(
+          await _api.get(
+            '/Admin/users/$userId/activity-log',
+            query: q.toParams(),
+          ),
+        ),
+      );
 
   Future<ActivityPage> ofHospital(String hospitalId, ActivityQuery q) async =>
-      ActivityPage.fromJson(unwrapMap(await _api.get('/Admin/hospitals/$hospitalId/activity-log', query: q.toParams())));
+      ActivityPage.fromJson(
+        unwrapMap(
+          await _api.get(
+            '/Admin/hospitals/$hospitalId/activity-log',
+            query: q.toParams(),
+          ),
+        ),
+      );
 }
 
-final activityRepositoryProvider = Provider<ActivityRepository>((ref) => ActivityRepository(ref.watch(apiClientProvider)));
+final activityRepositoryProvider = Provider<ActivityRepository>(
+  (ref) => ActivityRepository(ref.watch(apiClientProvider)),
+);
 
 /// A full screen with a paged activity log.
 class ActivityLogScreen extends StatelessWidget {
-  const ActivityLogScreen({super.key, required this.title, required this.load, this.description});
+  const ActivityLogScreen({
+    super.key,
+    required this.title,
+    required this.load,
+    this.description,
+  });
 
   final String title;
   final String? description;
@@ -132,9 +179,9 @@ class ActivityLogScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: Text(title)),
-        body: ActivityLogView(load: load, description: description),
-      );
+    appBar: AppBar(title: Text(title)),
+    body: ActivityLogView(load: load, description: description),
+  );
 }
 
 /// Paged activity log with a type filter and a date range (Sri Lanka dates); previous / next pages from the API.
@@ -189,13 +236,20 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
       lastDate: from ? (_q.to ?? today) : today,
       helpText: from ? 'From (Sri Lanka date)' : 'To (Sri Lanka date)',
     );
-    if (picked != null) _set(from ? _q.copyWith(from: picked, page: 1) : _q.copyWith(to: picked, page: 1));
+    if (picked != null)
+      _set(
+        from
+            ? _q.copyWith(from: picked, page: 1)
+            : _q.copyWith(to: picked, page: 1),
+      );
   }
 
   @override
   Widget build(BuildContext context) {
     final page = _page;
-    final types = page?.types.isNotEmpty == true ? page!.types : activityTypeLabels.keys.toList();
+    final types = page?.types.isNotEmpty == true
+        ? page!.types
+        : activityTypeLabels.keys.toList();
     return RefreshableScroll(
       onRefresh: _fetch,
       child: ContentWidth(
@@ -205,16 +259,32 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (widget.description != null) ...[
-                Text(widget.description!, style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+                Text(
+                  widget.description!,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.slate500,
+                  ),
+                ),
                 const SizedBox(height: 8),
               ],
-              Text('Activity is recorded from ${Fmt.date(page?.recordedFrom ?? DateTime.utc(2026, 10, 3))}. Sign-ins are not logged.',
-                  style: const TextStyle(fontSize: 12, color: AppColors.slate500)),
+              Text(
+                'Activity is recorded from ${Fmt.date(page?.recordedFrom ?? DateTime.utc(2026, 10, 3))}. Sign-ins are not logged.',
+                style: const TextStyle(fontSize: 12, color: AppColors.slate500),
+              ),
               const SizedBox(height: 10),
               FilterChips<String?>(
-                options: [(null, 'All types'), for (final t in types) (t, activityTypeLabels[t] ?? Fmt.humanize(t))],
+                options: [
+                  (null, 'All types'),
+                  for (final t in types)
+                    (t, activityTypeLabels[t] ?? Fmt.humanize(t)),
+                ],
                 selected: _q.type,
-                onSelected: (t) => _set(t == null ? _q.copyWith(clearType: true, page: 1) : _q.copyWith(type: t, page: 1)),
+                onSelected: (t) => _set(
+                  t == null
+                      ? _q.copyWith(clearType: true, page: 1)
+                      : _q.copyWith(type: t, page: 1),
+                ),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -222,9 +292,23 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
                 runSpacing: 8,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  _DateChip(label: 'From', value: _q.from, onTap: () => _pickDate(from: true), onClear: () => _set(_q.copyWith(clearFrom: true, page: 1))),
-                  _DateChip(label: 'To', value: _q.to, onTap: () => _pickDate(from: false), onClear: () => _set(_q.copyWith(clearTo: true, page: 1))),
-                  if (_q.hasFilters) TextButton(onPressed: () => _set(const ActivityQuery()), child: const Text('Clear filters')),
+                  _DateChip(
+                    label: 'From',
+                    value: _q.from,
+                    onTap: () => _pickDate(from: true),
+                    onClear: () => _set(_q.copyWith(clearFrom: true, page: 1)),
+                  ),
+                  _DateChip(
+                    label: 'To',
+                    value: _q.to,
+                    onTap: () => _pickDate(from: false),
+                    onClear: () => _set(_q.copyWith(clearTo: true, page: 1)),
+                  ),
+                  if (_q.hasFilters)
+                    TextButton(
+                      onPressed: () => _set(const ActivityQuery()),
+                      child: const Text('Clear filters'),
+                    ),
                 ],
               ),
               const SizedBox(height: 12),
@@ -233,17 +317,34 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
               else if (_error != null && page == null)
                 ErrorView(error: _error!, onRetry: _fetch)
               else if (page != null) ...[
-                if (_error != null) ...[InfoBanner(ApiError.from(_error!).message, color: AppColors.rose600), const SizedBox(height: 8)],
+                if (_error != null) ...[
+                  InfoBanner(
+                    ApiError.from(_error!).message,
+                    color: AppColors.rose600,
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 if (page.items.isEmpty)
-                  const EmptyView(icon: Icons.history, message: 'No activity matches these filters.')
+                  const EmptyView(
+                    icon: Icons.history,
+                    message: 'No activity matches these filters.',
+                  )
                 else
                   Card(
                     child: Column(
                       children: [
                         for (final e in page.items)
                           ListTile(
-                            leading: const Icon(Icons.circle, size: 10, color: AppColors.red600),
-                            title: Text(e.summary.isEmpty ? Fmt.humanize(e.action) : e.summary),
+                            leading: const Icon(
+                              Icons.circle,
+                              size: 10,
+                              color: AppColors.red600,
+                            ),
+                            title: Text(
+                              e.summary.isEmpty
+                                  ? Fmt.humanize(e.action)
+                                  : e.summary,
+                            ),
                             subtitle: Text(
                               '${e.actorName.isEmpty ? e.actorRole : e.actorName}'
                               '${e.actorRole.isNotEmpty && e.actorName.isNotEmpty ? ' (${e.actorRole})' : ''}'
@@ -257,17 +358,26 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Expanded(child: Text('${page.total} entr${page.total == 1 ? 'y' : 'ies'} · page ${page.page} of ${page.totalPages}', style: const TextStyle(fontSize: 12))),
+                    Expanded(
+                      child: Text(
+                        '${page.total} entr${page.total == 1 ? 'y' : 'ies'} · page ${page.page} of ${page.totalPages}',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
                     IconButton(
                       key: const Key('activity-prev'),
                       tooltip: 'Previous page',
-                      onPressed: _loading || _q.page <= 1 ? null : () => _set(_q.copyWith(page: _q.page - 1)),
+                      onPressed: _loading || _q.page <= 1
+                          ? null
+                          : () => _set(_q.copyWith(page: _q.page - 1)),
                       icon: const Icon(Icons.chevron_left),
                     ),
                     IconButton(
                       key: const Key('activity-next'),
                       tooltip: 'Next page',
-                      onPressed: _loading || _q.page >= page.totalPages ? null : () => _set(_q.copyWith(page: _q.page + 1)),
+                      onPressed: _loading || _q.page >= page.totalPages
+                          ? null
+                          : () => _set(_q.copyWith(page: _q.page + 1)),
                       icon: const Icon(Icons.chevron_right),
                     ),
                   ],
@@ -282,7 +392,12 @@ class _ActivityLogViewState extends ConsumerState<ActivityLogView> {
 }
 
 class _DateChip extends StatelessWidget {
-  const _DateChip({required this.label, required this.value, required this.onTap, required this.onClear});
+  const _DateChip({
+    required this.label,
+    required this.value,
+    required this.onTap,
+    required this.onClear,
+  });
 
   final String label;
   final DateTime? value;
@@ -291,9 +406,9 @@ class _DateChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => InputChip(
-        avatar: const Icon(Icons.calendar_month, size: 16),
-        label: Text(value == null ? label : '$label ${Fmt.apiDate(value!)}'),
-        onPressed: onTap,
-        onDeleted: value == null ? null : onClear,
-      );
+    avatar: const Icon(Icons.calendar_month, size: 16),
+    label: Text(value == null ? label : '$label ${Fmt.apiDate(value!)}'),
+    onPressed: onTap,
+    onDeleted: value == null ? null : onClear,
+  );
 }

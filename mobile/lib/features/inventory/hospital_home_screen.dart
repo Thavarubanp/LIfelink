@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/format.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/floating_overlay_padding.dart';
 import '../../core/widgets/state_views.dart';
 import '../analysis/analysis_panel.dart';
 import '../emergencies/emergency_repository.dart';
@@ -41,17 +42,17 @@ class HospitalHomeScreen extends ConsumerWidget {
     final emergencies = ref.watch(criticalEmergenciesProvider);
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'Scan packet',
-        onPressed: () => context.push(AppRoutes.hospitalScan),
-        child: const Icon(Icons.qr_code_scanner),
-      ),
       body: RefreshIndicator(
         color: AppColors.red600,
         onRefresh: () => _refresh(ref),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + FloatingOverlayPadding.bottomOf(context),
+          ),
           children: [
             ContentWidth(
               child: Column(
@@ -99,25 +100,49 @@ class HospitalHomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _actions(BuildContext context) => Row(
-    children: [
-      Expanded(
-        child: FilledButton.icon(
-          onPressed: () => context.push(AppRoutes.hospitalEmergencies),
-          icon: const Icon(Icons.bolt),
-          label: const Text('Emergencies'),
-        ),
+  Widget _actions(BuildContext context) {
+    final actions = [
+      _QuickAction(
+        buttonKey: const Key('quick-action-emergencies'),
+        label: 'Emergencies',
+        icon: Icons.bolt,
+        onTap: () => context.push(AppRoutes.hospitalEmergencies),
+        emphasized: true,
       ),
-      const SizedBox(width: 12),
-      Expanded(
-        child: OutlinedButton.icon(
-          onPressed: () => context.go(AppRoutes.hospitalInventory),
-          icon: const Icon(Icons.water_drop_outlined),
-          label: const Text('Inventory'),
-        ),
+      _QuickAction(
+        buttonKey: const Key('quick-action-create-request'),
+        label: 'Create blood request',
+        icon: Icons.add_circle_outline,
+        onTap: () => context.push(AppRoutes.createRequest),
       ),
-    ],
-  );
+      _QuickAction(
+        buttonKey: const Key('quick-action-donate'),
+        label: 'Donate blood',
+        icon: Icons.volunteer_activism_outlined,
+        onTap: () => context.push(AppRoutes.hospitalDonate),
+      ),
+      _QuickAction(
+        buttonKey: const Key('quick-action-verify'),
+        label: 'Verify requests',
+        icon: Icons.fact_check_outlined,
+        onTap: () => context.push(AppRoutes.hospitalVerifyRequests),
+      ),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 600 ? 4 : 2;
+        const gap = 10.0;
+        final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final action in actions) SizedBox(width: width, child: action),
+          ],
+        );
+      },
+    );
+  }
 
   Widget _kpis(
     BuildContext context,
@@ -267,6 +292,55 @@ class HospitalHomeScreen extends ConsumerWidget {
                 ],
         ),
       );
+}
+
+class _QuickAction extends StatelessWidget {
+  const _QuickAction({
+    required this.buttonKey,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.emphasized = false,
+  });
+
+  final Key buttonKey;
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool emphasized;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 76,
+    child: emphasized
+        ? FilledButton(
+            key: buttonKey,
+            onPressed: onTap,
+            child: _content(Colors.white),
+          )
+        : OutlinedButton(
+            key: buttonKey,
+            onPressed: onTap,
+            child: _content(Theme.of(context).colorScheme.onSurface),
+          ),
+  );
+
+  Widget _content(Color color) => Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(icon, color: color),
+      const SizedBox(height: 5),
+      FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          label,
+          maxLines: 1,
+          softWrap: false,
+          style: TextStyle(color: color, fontWeight: FontWeight.w600),
+        ),
+      ),
+    ],
+  );
 }
 
 /// Inventory tab opened on one blood group.

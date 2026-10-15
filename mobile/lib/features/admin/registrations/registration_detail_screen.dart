@@ -23,10 +23,12 @@ class RegistrationDetailScreen extends ConsumerStatefulWidget {
   final String hospitalId;
 
   @override
-  ConsumerState<RegistrationDetailScreen> createState() => _RegistrationDetailScreenState();
+  ConsumerState<RegistrationDetailScreen> createState() =>
+      _RegistrationDetailScreenState();
 }
 
-class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScreen> {
+class _RegistrationDetailScreenState
+    extends ConsumerState<RegistrationDetailScreen> {
   final _text = TextEditingController();
   Attachment? _file;
   String? _busy; // approve | reject | comment
@@ -52,7 +54,12 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
     return t;
   }
 
-  Future<void> _run(String action, Future<void> Function() call, String title, String message) async {
+  Future<void> _run(
+    String action,
+    Future<void> Function() call,
+    String title,
+    String message,
+  ) async {
     setState(() {
       _busy = action;
       _error = null;
@@ -76,22 +83,47 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
   }
 
   Future<void> _approve(AdminHospital h) async {
-    final ok = await confirmDialog(context, title: 'Approve hospital', message: 'Approve ${h.name}? Its staff can then use LifeLink.', confirmLabel: 'Approve');
+    final ok = await confirmDialog(
+      context,
+      title: 'Approve hospital',
+      message: 'Approve ${h.name}? Its staff can then use LifeLink.',
+      confirmLabel: 'Approve',
+    );
     if (!ok) return;
-    await _run('approve', () => ref.read(registrationRepositoryProvider).approve(h), 'Hospital approved', '${h.name} can now use LifeLink.');
+    await _run(
+      'approve',
+      () => ref.read(registrationRepositoryProvider).approve(h),
+      'Hospital approved',
+      '${h.name} can now use LifeLink.',
+    );
   }
 
   Future<void> _reject(AdminHospital h) async {
-    final reason = _draft(3, 'Please give a rejection reason (at least 3 characters).');
+    final reason = _draft(
+      3,
+      'Please give a rejection reason (at least 3 characters).',
+    );
     if (reason == null) return;
-    await _run('reject', () => ref.read(registrationRepositoryProvider).reject(h, reason, _file), 'Registration rejected',
-        'The hospital can now reply and correct its details in the same conversation.');
+    await _run(
+      'reject',
+      () => ref.read(registrationRepositoryProvider).reject(h, reason, _file),
+      'Registration rejected',
+      'The hospital can now reply and correct its details in the same conversation.',
+    );
   }
 
   Future<void> _comment(AdminHospital h) async {
-    final message = _draft(3, 'Please write a comment (at least 3 characters).');
+    final message = _draft(
+      3,
+      'Please write a comment (at least 3 characters).',
+    );
     if (message == null) return;
-    await _run('comment', () => ref.read(registrationRepositoryProvider).comment(h, message, _file), 'Comment sent', 'The hospital has been notified.');
+    await _run(
+      'comment',
+      () => ref.read(registrationRepositoryProvider).comment(h, message, _file),
+      'Comment sent',
+      'The hospital has been notified.',
+    );
   }
 
   @override
@@ -102,14 +134,22 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
       body: RefreshableScroll(
         onRefresh: () async {
           ref.invalidate(adminHospitalsProvider);
-          await ref.read(adminHospitalsProvider.future).then((_) {}, onError: (_) {});
+          await ref
+              .read(adminHospitalsProvider.future)
+              .then((_) {}, onError: (_) {});
         },
         child: AsyncView(
           value: value,
           onRetry: () => ref.invalidate(adminHospitalsProvider),
           data: (all) {
-            final h = all.where((x) => x.hospitalId == widget.hospitalId).firstOrNull;
-            if (h == null) return const EmptyView(icon: Icons.search_off, message: 'This hospital registration was not found.');
+            final h = all
+                .where((x) => x.hospitalId == widget.hospitalId)
+                .firstOrNull;
+            if (h == null)
+              return const EmptyView(
+                icon: Icons.search_off,
+                message: 'This hospital registration was not found.',
+              );
             return ContentWidth(maxWidth: 720, child: _body(h));
           },
         ),
@@ -118,71 +158,104 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
   }
 
   Widget _body(AdminHospital h) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SectionCard(
-              title: h.name,
-              icon: Icons.local_hospital_outlined,
-              trailing: StatusBadge(h.statusLabel, variant: registrationVariant(h.approvalStatus)),
-              child: Wrap(
-                spacing: 20,
-                runSpacing: 12,
-                children: [
-                  LabeledValue('Registration no.', h.registrationNumber ?? h.licenseNumber),
-                  LabeledValue('Address', [h.address, h.city].whereType<String>().where((s) => s.isNotEmpty).join(', ')),
-                  LabeledValue('Contact', h.contactNumber),
-                  LabeledValue('Email', h.email),
-                  LabeledValue('Authorised person', [h.contactPersonName, h.contactPersonPhone].whereType<String>().join(' · ')),
-                  LabeledValue('Submitted', Fmt.sriLankaDateTime(h.createdAt)),
-                ],
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionCard(
+          title: h.name,
+          icon: Icons.local_hospital_outlined,
+          trailing: StatusBadge(
+            h.statusLabel,
+            variant: registrationVariant(h.approvalStatus),
+          ),
+          child: Wrap(
+            spacing: 20,
+            runSpacing: 12,
+            children: [
+              LabeledValue(
+                'Registration no.',
+                h.registrationNumber ?? h.licenseNumber,
               ),
-            ),
-            const SizedBox(height: 12),
-            SectionCard(
-              title: 'Documents',
-              icon: Icons.folder_open_outlined,
-              child: h.licenseDocument == null && h.accreditationDocument == null
-                  ? const Text('No documents were uploaded.', style: TextStyle(color: AppColors.slate500))
-                  : Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        if (h.licenseDocument != null) AttachmentView(attachment: h.licenseDocument!, label: 'License'),
-                        if (h.accreditationDocument != null) AttachmentView(attachment: h.accreditationDocument!, label: 'Accreditation'),
-                      ],
-                    ),
-            ),
-            const SizedBox(height: 12),
-            SectionCard(
-              title: 'Conversation',
-              icon: Icons.forum_outlined,
-              child: ThreadView(
-                messages: [
-                  for (final e in h.history)
-                    ThreadMessage(
-                      title: e.title,
-                      author: e.fromAdmin ? (e.adminName ?? 'Administrator') : h.name,
-                      fromAdmin: e.fromAdmin,
-                      at: e.timestamp,
-                      text: e.message,
-                      detail: e.changedFields,
-                      attachment: e.attachment,
-                    ),
-                ],
+              LabeledValue(
+                'Address',
+                [
+                  h.address,
+                  h.city,
+                ].whereType<String>().where((s) => s.isNotEmpty).join(', '),
               ),
-            ),
-            const SizedBox(height: 12),
-            _actions(h),
-          ],
+              LabeledValue('Contact', h.contactNumber),
+              LabeledValue('Email', h.email),
+              LabeledValue(
+                'Authorised person',
+                [
+                  h.contactPersonName,
+                  h.contactPersonPhone,
+                ].whereType<String>().join(' · '),
+              ),
+              LabeledValue('Submitted', Fmt.sriLankaDateTime(h.createdAt)),
+            ],
+          ),
         ),
-      );
+        const SizedBox(height: 12),
+        SectionCard(
+          title: 'Documents',
+          icon: Icons.folder_open_outlined,
+          child: h.licenseDocument == null && h.accreditationDocument == null
+              ? const Text(
+                  'No documents were uploaded.',
+                  style: TextStyle(color: AppColors.slate500),
+                )
+              : Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    if (h.licenseDocument != null)
+                      AttachmentView(
+                        attachment: h.licenseDocument!,
+                        label: 'License',
+                      ),
+                    if (h.accreditationDocument != null)
+                      AttachmentView(
+                        attachment: h.accreditationDocument!,
+                        label: 'Accreditation',
+                      ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 12),
+        SectionCard(
+          title: 'Conversation',
+          icon: Icons.forum_outlined,
+          child: ThreadView(
+            messages: [
+              for (final e in h.history)
+                ThreadMessage(
+                  title: e.title,
+                  author: e.fromAdmin
+                      ? (e.adminName ?? 'Administrator')
+                      : h.name,
+                  fromAdmin: e.fromAdmin,
+                  at: e.timestamp,
+                  text: e.message,
+                  detail: e.changedFields,
+                  attachment: e.attachment,
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _actions(h),
+      ],
+    ),
+  );
 
   Widget _actions(AdminHospital h) {
     if (!h.canApprove && !h.canComment) {
       return InfoBanner(
-        h.waitingForHospital ? 'Waiting for the hospital to reply.' : 'No action is needed on this registration.',
+        h.waitingForHospital
+            ? 'Waiting for the hospital to reply.'
+            : 'No action is needed on this registration.',
         color: AppColors.blue600,
       );
     }
@@ -205,16 +278,25 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
             controller: _text,
             maxLines: 4,
             maxLength: h.canReject ? 500 : 1000,
-            decoration: InputDecoration(labelText: h.canReject ? 'Reason (required to reject) or comment' : 'Comment'),
+            decoration: InputDecoration(
+              labelText: h.canReject
+                  ? 'Reason (required to reject) or comment'
+                  : 'Comment',
+            ),
           ),
           AttachmentPickerField(
             value: _file,
             enabled: !busy,
-            label: h.canReject ? 'Review report or attachment (optional)' : 'Attachment (optional)',
+            label: h.canReject
+                ? 'Review report or attachment (optional)'
+                : 'Attachment (optional)',
             onChanged: (a) => setState(() => _file = a),
           ),
           const SizedBox(height: 12),
-          if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
+          if (_error != null) ...[
+            FormErrorBox(_error!),
+            const SizedBox(height: 12),
+          ],
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -222,7 +304,9 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
               if (h.canApprove)
                 FilledButton.icon(
                   key: const Key('registration-approve'),
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.emerald600),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.emerald600,
+                  ),
                   onPressed: busy ? null : () => _approve(h),
                   icon: _busy == 'approve' ? _spinner : const Icon(Icons.check),
                   label: const Text('Approve'),
@@ -230,7 +314,9 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
               if (h.canReject)
                 FilledButton.icon(
                   key: const Key('registration-reject'),
-                  style: FilledButton.styleFrom(backgroundColor: AppColors.rose600),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.rose600,
+                  ),
                   onPressed: busy ? null : () => _reject(h),
                   icon: _busy == 'reject' ? _spinner : const Icon(Icons.close),
                   label: const Text('Reject'),
@@ -239,7 +325,9 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
                 OutlinedButton.icon(
                   key: const Key('registration-comment'),
                   onPressed: busy ? null : () => _comment(h),
-                  icon: _busy == 'comment' ? _spinner : const Icon(Icons.comment_outlined),
+                  icon: _busy == 'comment'
+                      ? _spinner
+                      : const Icon(Icons.comment_outlined),
                   label: const Text('Comment'),
                 ),
             ],
@@ -249,5 +337,9 @@ class _RegistrationDetailScreenState extends ConsumerState<RegistrationDetailScr
     );
   }
 
-  static const _spinner = SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2));
+  static const _spinner = SizedBox(
+    width: 16,
+    height: 16,
+    child: CircularProgressIndicator(strokeWidth: 2),
+  );
 }

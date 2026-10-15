@@ -136,8 +136,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                           context: context,
                           isScrollControlled: true,
                           useSafeArea: true,
-                          builder: (_) =>
-                              _EditUserProfileSheet(profile: profile),
+                          builder: (_) => ModalSheetSafeArea(
+                            child: _EditUserProfileSheet(profile: profile),
+                          ),
                         );
                         if (saved == true) {
                           ref.invalidate(userProfileProvider(widget.userId));
@@ -306,12 +307,7 @@ class _EditUserProfileSheetState extends ConsumerState<_EditUserProfileSheet> {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(
-      20,
-      8,
-      20,
-      MediaQuery.viewInsetsOf(context).bottom + 20,
-    ),
+    padding: EdgeInsets.fromLTRB(20, 8, 20, modalSheetBottomPadding(context)),
     child: SingleChildScrollView(
       child: Form(
         key: _form,

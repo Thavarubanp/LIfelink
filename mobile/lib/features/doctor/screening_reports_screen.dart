@@ -9,6 +9,7 @@ import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/reply_sheet.dart';
 import '../../core/widgets/state_views.dart';
+import '../attention/tab_attention_controller.dart';
 import '../home/shell_page_header.dart';
 import '../verification/request_donors_screen.dart' show RecordDonationSheet;
 import '../verification/verification_repository.dart';
@@ -50,10 +51,7 @@ class _ScreeningReportsScreenState
                 const SizedBox(height: 16),
                 const Text(
                   'AI-prepared screening reports. The AI only flags answers and suggests checks; you decide every donor.',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.slate500,
-                  ),
+                  style: TextStyle(fontSize: 12, color: AppColors.slate500),
                 ),
                 const SizedBox(height: 10),
                 SearchField(
@@ -229,6 +227,7 @@ class _ScreeningReportDetailScreenState
   void _reload() {
     ref.invalidate(screeningReportsProvider);
     ref.invalidate(assignedRequestsProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
   }
 
   Future<void> _approve(ScreeningReport r) async {
@@ -281,11 +280,13 @@ class _ScreeningReportDetailScreenState
     final done = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => RecordDonationSheet(
-        requestId: r.bloodRequestId,
-        acceptanceId: r.acceptanceId,
-        donorName: r.donorName,
-        initialGroup: r.donorBloodGroup,
+      builder: (_) => ModalSheetSafeArea(
+        child: RecordDonationSheet(
+          requestId: r.bloodRequestId,
+          acceptanceId: r.acceptanceId,
+          donorName: r.donorName,
+          initialGroup: r.donorBloodGroup,
+        ),
       ),
     );
     _reload();

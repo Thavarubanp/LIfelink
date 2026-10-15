@@ -318,4 +318,61 @@ void main() {
     expect(d.single.trackingNumbers, ['PKT-00000003']);
     expect(d.single.statusLabel, 'Awaiting doctor approval');
   });
+
+  test('hospital profile update sends only editable fields', () async {
+    final api = MockedApi(token: 'jwt');
+    final response = {
+      'hospitalId': 'h1',
+      'name': 'Central Hospital',
+      'address': '1 Main Street',
+      'city': 'Colombo',
+      'contactNumber': '0112345678',
+      'email': 'official@example.test',
+      'isVerified': true,
+      'doctorCount': 4,
+      'packetShelfLifeDays': 35,
+      'expiryAlertDays': 7,
+      'contactPersonName': 'Nimal Perera',
+      'contactPersonPhone': '0771234567',
+      'contactPersonEmail': 'nimal@example.test',
+      'canEdit': true,
+    };
+    final editableFields = {
+      'name': 'Central Hospital',
+      'address': '1 Main Street',
+      'city': 'Colombo',
+      'contactNumber': '0112345678',
+      'contactPersonName': 'Nimal Perera',
+      'contactPersonPhone': '0771234567',
+      'contactPersonEmail': 'nimal@example.test',
+      'packetShelfLifeDays': 35,
+      'expiryAlertDays': 7,
+    };
+    api.adapter.onPut(
+      '/profiles/hospital/h1',
+      (server) => server.reply(200, response),
+      data: editableFields,
+    );
+
+    final updated = await ProfileRepository(api.client).updateHospital(
+      'h1',
+      name: 'Central Hospital',
+      address: '1 Main Street',
+      city: 'Colombo',
+      contactNumber: '0112345678',
+      contactPersonName: 'Nimal Perera',
+      contactPersonPhone: '0771234567',
+      contactPersonEmail: 'nimal@example.test',
+      packetShelfLifeDays: 35,
+      expiryAlertDays: 7,
+    );
+
+    expect(updated.contactPersonName, 'Nimal Perera');
+    expect(updated.canEdit, isTrue);
+    expect(api.sent.single.data, editableFields);
+    expect(api.sent.single.data, isNot(contains('email')));
+    expect(api.sent.single.data, isNot(contains('licenseNumber')));
+    expect(api.sent.single.data, isNot(contains('registrationNumber')));
+    expect(api.sent.single.data, isNot(contains('approvalStatus')));
+  });
 }

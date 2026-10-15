@@ -11,6 +11,7 @@ import '../../core/widgets/common.dart';
 import '../../core/widgets/reply_sheet.dart';
 import '../../core/widgets/state_views.dart';
 import '../auth/auth_widgets.dart';
+import '../attention/tab_attention_controller.dart';
 import '../doctors/doctor_repository.dart';
 import 'verification_models.dart';
 import 'verification_repository.dart';
@@ -29,13 +30,16 @@ class _VerifyRequestsScreenState extends ConsumerState<VerifyRequestsScreen> {
   String? _status = 'Pending';
   String _search = '';
 
-  void _reload() => ref.invalidate(hospitalRequestsProvider);
+  void _reload() {
+    ref.invalidate(hospitalRequestsProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
+  }
 
   Future<void> _verify(ClinicalRequest r) async {
     final done = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => AssignDoctorSheet(request: r),
+      builder: (_) => ModalSheetSafeArea(child: AssignDoctorSheet(request: r)),
     );
     if (done == true) _reload();
   }
@@ -359,12 +363,7 @@ class _AssignDoctorSheetState extends ConsumerState<AssignDoctorSheet> {
   Widget build(BuildContext context) {
     final doctors = ref.watch(hospitalDoctorsProvider);
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        0,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 20,
-      ),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, modalSheetBottomPadding(context)),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -392,7 +391,7 @@ class _AssignDoctorSheetState extends ConsumerState<AssignDoctorSheet> {
                   return InfoBanner(
                     pendingFirstLogin > 0
                         ? 'No doctor can be assigned yet: $pendingFirstLogin doctor(s) have not completed their first sign-in.'
-                        : 'Add a doctor first (More → Doctors).',
+                        : 'Add a doctor first from the Doctors tab.',
                   );
                 }
                 return Column(

@@ -36,7 +36,7 @@ void main() {
         'pendingAppeals': 0,
         'pendingComplaints': 4,
       });
-      expect(a.total, 10);
+      expect(a.total, 7);
       expect(a.newActivity, 3);
       expect(badgeText(0), isNull);
       expect(badgeText(7), '7');

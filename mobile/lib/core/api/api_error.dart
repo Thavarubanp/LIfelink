@@ -2,7 +2,12 @@ import 'package:dio/dio.dart';
 
 /// One error type for every failed API call, with the message to show (the API's own message when it sent one).
 class ApiError implements Exception {
-  const ApiError(this.message, {this.statusCode, this.fieldErrors = const {}, this.isNetwork = false});
+  const ApiError(
+    this.message, {
+    this.statusCode,
+    this.fieldErrors = const {},
+    this.isNetwork = false,
+  });
 
   final String message;
   final int? statusCode;
@@ -17,8 +22,10 @@ class ApiError implements Exception {
   bool get isUnauthorized => statusCode == 401;
   bool get isForbidden => statusCode == 403;
 
-  static const noConnection = 'No connection to the LifeLink server. Check your internet connection and try again.';
-  static const timedOut = 'The server took too long to answer. Please try again.';
+  static const noConnection =
+      'No connection to the LifeLink server. Check your internet connection and try again.';
+  static const timedOut =
+      'The server took too long to answer. Please try again.';
 
   /// Maps any error (Dio or not) to an [ApiError], mirroring the web app's errorUtils.
   static ApiError from(Object error) {
@@ -45,7 +52,9 @@ class ApiError implements Exception {
     final data = response.data;
     final fields = _fieldErrors(data);
 
-    if (status == 502 || status == 504 || (data is String && data.contains('<!DOCTYPE html>'))) {
+    if (status == 502 ||
+        status == 504 ||
+        (data is String && data.contains('<!DOCTYPE html>'))) {
       return ApiError(noConnection, statusCode: status, isNetwork: true);
     }
 
@@ -56,7 +65,9 @@ class ApiError implements Exception {
       if (m is String && m.trim().isNotEmpty) message = m;
       if (message == null && status == 400) {
         final title = data['title'];
-        message = fields.values.isNotEmpty ? fields.values.first : (title is String ? title : null);
+        message = fields.values.isNotEmpty
+            ? fields.values.first
+            : (title is String ? title : null);
       }
     }
 

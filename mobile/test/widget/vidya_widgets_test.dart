@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lifelink_mobile/core/auth/auth_controller.dart';
@@ -71,6 +73,32 @@ void main() {
     expect(find.text('New blood request'), findsOneWidget);
     expect(find.text('My requests'), findsOneWidget);
     expect(find.byType(AppBar), findsNothing);
+  });
+
+  testWidgets('embedded create header stays at the top while data loads', (
+    tester,
+  ) async {
+    final hospitals = Completer<List<HospitalChoice>>();
+    final requests = Completer<List<BloodRequest>>();
+    await tester.pumpWidget(
+      testApp(
+        const CreateRequestScreen(embedded: true),
+        overrides: [
+          authControllerProvider.overrideWith(
+            () => FakeAuthController(AuthState.signedIn(testUser())),
+          ),
+          hospitalChoicesProvider.overrideWith((ref) => hospitals.future),
+          myBloodRequestsProvider.overrideWith((ref) => requests.future),
+        ],
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(
+      tester.getTopLeft(find.text('Create blood request')).dy,
+      lessThan(100),
+    );
   });
 
   testWidgets('screening renders structured choices and unknown date', (

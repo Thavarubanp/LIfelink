@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-final themeModeProvider = NotifierProvider<ThemeController, ThemeMode>(ThemeController.new);
+final themeModeProvider = NotifierProvider<ThemeController, ThemeMode>(
+  ThemeController.new,
+);
 
 /// Light / dark / system theme, remembered on the phone (not secret, so plain preferences).
 class ThemeController extends Notifier<ThemeMode> {
@@ -17,7 +19,10 @@ class ThemeController extends Notifier<ThemeMode> {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      state = ThemeMode.values.firstWhere((m) => m.name == prefs.getString(_key), orElse: () => ThemeMode.system);
+      state = ThemeMode.values.firstWhere(
+        (m) => m.name == prefs.getString(_key),
+        orElse: () => ThemeMode.system,
+      );
     } catch (_) {
       // Preferences unavailable: follow the system
     }

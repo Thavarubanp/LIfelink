@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/api/api_client.dart';
 import '../../../core/api/json.dart';
 import '../../../core/providers.dart';
-import '../../../core/routing/routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/widgets/badges.dart';
@@ -144,8 +142,9 @@ bool oversightMatches(
   DateTime? to,
 }) {
   if (status != null &&
-      (status == suspendedFilter ? !i.isSuspended : i.status != status))
+      (status == suspendedFilter ? !i.isSuspended : i.status != status)) {
     return false;
+  }
   if (type != null && i.transferType != type) return false;
   if (i.createdAt != null) {
     final day = Fmt.sriLankaToday(i.createdAt);
@@ -239,8 +238,10 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
   @override
   void didUpdateWidget(covariant AdminActivityScreen old) {
     super.didUpdateWidget(old);
-    if (widget.initialTab != old.initialTab && widget.initialTab == 'transfers')
+    if (widget.initialTab != old.initialTab &&
+        widget.initialTab == 'transfers') {
       _select(OversightKind.transfer);
+    }
   }
 
   void _select(OversightKind k) {
@@ -290,7 +291,7 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
     );
     if (sent) {
       ref.invalidate(oversightTabProvider(_kind));
-      if (mounted)
+      if (mounted) {
         showSnack(
           context,
           i.kind == OversightKind.request
@@ -298,6 +299,7 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
               : 'Transfer suspended',
           type: SnackType.success,
         );
+      }
     }
   }
 
@@ -341,40 +343,21 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ShellPageHeader(
-                  title: 'Activity log',
-                  actions: PopupMenuButton<String>(
-                    tooltip: 'Directories',
-                    icon: const Icon(Icons.people_alt_outlined),
-                    onSelected: (path) => context.push(path),
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(
-                        value: AppRoutes.adminUsers,
-                        child: Text('Users'),
-                      ),
-                      PopupMenuItem(
-                        value: AppRoutes.adminHospitals,
-                        child: Text('Hospitals'),
-                      ),
-                    ],
-                  ),
-                ),
+                const ShellPageHeader(title: 'Activity log'),
                 const SizedBox(height: 16),
                 SegmentedButton<OversightKind>(
                   segments: [
                     for (final k in OversightKind.values)
                       ButtonSegment(
                         value: k,
-                        label: Text(() {
-                          final n = k == _kind
+                        label: _ActivityTabLabel(
+                          kind: k,
+                          count: k == _kind
                               ? 0
                               : k == OversightKind.request
                               ? (newCounts?.newBloodRequests ?? 0)
-                              : (newCounts?.newTransfers ?? 0);
-                          return n > 0
-                              ? '${k.label} (${badgeText(n)})'
-                              : k.label;
-                        }()),
+                              : (newCounts?.newTransfers ?? 0),
+                        ),
                       ),
                   ],
                   selected: {_kind},
@@ -452,11 +435,12 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
                     final newHere = list
                         .where((i) => i.isNewSince(seenAt))
                         .length;
-                    if (list.isEmpty)
+                    if (list.isEmpty) {
                       return const EmptyView(
                         icon: Icons.history,
                         message: 'Nothing matches these filters.',
                       );
+                    }
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -494,6 +478,27 @@ class _AdminActivityScreenState extends ConsumerState<AdminActivityScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ActivityTabLabel extends StatelessWidget {
+  const _ActivityTabLabel({required this.kind, required this.count});
+
+  final OversightKind kind;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = badgeText(count);
+    final label = Text(kind.label);
+    if (text == null) return label;
+    return Badge(
+      key: Key('activity-tab-badge-${kind.area}'),
+      label: Text(text),
+      backgroundColor: AppColors.red600,
+      offset: const Offset(14, -8),
+      child: label,
     );
   }
 }

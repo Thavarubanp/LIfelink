@@ -1,32 +1,27 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/auth/auth_controller.dart';
-import '../../core/config/constants.dart';
 import 'admin_repository.dart';
 
-final adminAttentionProvider = NotifierProvider<AdminAttentionController, AdminAttention?>(AdminAttentionController.new);
+final adminAttentionProvider =
+    NotifierProvider<AdminAttentionController, AdminAttention?>(
+      AdminAttentionController.new,
+    );
 
-/// Admin badge counts (web: useAdminAttention): polled every 30 s as a background request (never extends the session)
-/// while an admin is signed in, and refreshed at once after an admin action ([refresh]).
+/// Admin badge counts. The shared tab-attention controller owns the role's
+/// single polling timer; admin actions can still refresh this state directly.
 class AdminAttentionController extends Notifier<AdminAttention?> {
-  Timer? _timer;
-
   @override
   AdminAttention? build() {
-    final isAdmin = ref.watch(authControllerProvider.select((s) => s.isSignedIn && s.user!.hasRole(Roles.admin)));
-    _timer?.cancel();
-    ref.onDispose(() => _timer?.cancel());
-    if (!isAdmin) return null;
-    Future.microtask(refresh);
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) => refresh());
+    ref.watch(authControllerProvider.select((auth) => auth.user?.userId));
     return null;
   }
 
   Future<void> refresh() async {
     try {
-      final counts = await ref.read(adminRepositoryProvider).attention(background: true);
+      final counts = await ref
+          .read(adminRepositoryProvider)
+          .attention(background: true);
       if (ref.mounted) state = counts;
     } catch (_) {
       // Badges are optional: keep the last counts on a failed refresh

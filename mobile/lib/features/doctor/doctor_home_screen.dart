@@ -8,6 +8,7 @@ import '../../core/widgets/common.dart';
 import '../../core/widgets/reply_sheet.dart';
 import '../../core/widgets/state_views.dart';
 import '../home/shell_page_header.dart';
+import '../attention/tab_attention_controller.dart';
 import '../verification/verification_models.dart';
 import '../verification/verification_repository.dart';
 import '../verification/verify_requests_screen.dart' show RequestCard;
@@ -25,7 +26,10 @@ class _DoctorHomeScreenState extends ConsumerState<DoctorHomeScreen> {
   String? _status = 'Verified';
   String _search = '';
 
-  void _reload() => ref.invalidate(assignedRequestsProvider);
+  void _reload() {
+    ref.invalidate(assignedRequestsProvider);
+    ref.read(tabAttentionProvider.notifier).refresh();
+  }
 
   Future<void> _approve(ClinicalRequest r) async {
     final sent = await showReplySheet(
@@ -247,7 +251,10 @@ class HospitalDonationsScreen extends ConsumerWidget {
                   onRetry: () => ref.invalidate(assignedRequestsProvider),
                   data: (all) {
                     final list = all
-                        .where((r) => r.pendingHospitalDonations > 0 && !r.isSuspended)
+                        .where(
+                          (r) =>
+                              r.pendingHospitalDonations > 0 && !r.isSuspended,
+                        )
                         .toList();
                     if (list.isEmpty) {
                       return const EmptyView(

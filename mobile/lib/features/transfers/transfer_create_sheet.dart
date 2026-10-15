@@ -36,7 +36,7 @@ Future<bool> showCreateTransferSheet(BuildContext context) async =>
     await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const CreateTransferSheet(),
+      builder: (_) => const ModalSheetSafeArea(child: CreateTransferSheet()),
     ) ??
     false;
 
@@ -131,12 +131,7 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
   Widget build(BuildContext context) {
     final data = ref.watch(_transferFormDataProvider(_group));
     return Padding(
-      padding: EdgeInsets.fromLTRB(
-        20,
-        0,
-        20,
-        MediaQuery.viewInsetsOf(context).bottom + 20,
-      ),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, modalSheetBottomPadding(context)),
       child: SingleChildScrollView(
         child: Form(
           key: _formKey,
@@ -187,83 +182,90 @@ class _CreateTransferSheetState extends ConsumerState<CreateTransferSheet> {
               const SizedBox(height: 14),
               AsyncView(
                 value: data,
-                onRetry: () => ref.invalidate(_transferFormDataProvider(_group)),
+                onRetry: () =>
+                    ref.invalidate(_transferFormDataProvider(_group)),
                 data: (d) {
                   final (counterparts, stock, me) = d;
                   final hospitals = _isOffer
                       ? counterparts
-                      : counterparts.where((h) => h.transferableUnits > 0).toList();
+                      : counterparts
+                            .where((h) => h.transferableUnits > 0)
+                            .toList();
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                  if (hospitals.isEmpty)
-                    InfoBanner(
-                      _isOffer
-                          ? 'There is no other approved hospital to transfer with yet.'
-                          : 'No approved hospital currently has transferable $_group packets.',
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      key: const Key('transfer-hospital'),
-                      initialValue: _hospitalId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: _isOffer ? 'Offer to' : 'Request from',
-                      ),
-                      items: [
-                        for (final h in hospitals)
-                          DropdownMenuItem(
-                            value: h.hospitalId,
-                            child: Text(
-                              '${h.hospitalName} (${h.transferableUnits} $_group transferable)',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                      if (hospitals.isEmpty)
+                        InfoBanner(
+                          _isOffer
+                              ? 'There is no other approved hospital to transfer with yet.'
+                              : 'No approved hospital currently has transferable $_group packets.',
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          key: const Key('transfer-hospital'),
+                          initialValue: _hospitalId,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: _isOffer ? 'Offer to' : 'Request from',
                           ),
+                          items: [
+                            for (final h in hospitals)
+                              DropdownMenuItem(
+                                value: h.hospitalId,
+                                child: Text(
+                                  '${h.hospitalName} (${h.transferableUnits} $_group transferable)',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: (v) => setState(() => _hospitalId = v),
+                          validator: (v) =>
+                              v == null ? 'Select a hospital.' : null,
+                        ),
+                      const SizedBox(height: 14),
+                      if (_isOffer) ...[
+                        Text(
+                          'Packets to offer (${_availableAt(stock, me)} $_group available)',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 6),
+                        PacketPicker(
+                          bloodGroup: _group,
+                          selected: _packetIds,
+                          onChanged: (ids) => setState(() => _packetIds = ids),
+                        ),
+                      ] else
+                        TextFormField(
+                          key: const Key('transfer-units'),
+                          controller: _units,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: const InputDecoration(labelText: 'Units'),
+                          validator: (v) =>
+                              Validators.intRange(v, 'Units', min: 1),
+                        ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: _notes,
+                        maxLength: 500,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes (optional)',
+                        ),
+                      ),
+                      if (_error != null) ...[
+                        FormErrorBox(_error!),
+                        const SizedBox(height: 12),
                       ],
-                      onChanged: (v) => setState(() => _hospitalId = v),
-                      validator: (v) => v == null ? 'Select a hospital.' : null,
-                    ),
-                  const SizedBox(height: 14),
-                  if (_isOffer) ...[
-                    Text(
-                      'Packets to offer (${_availableAt(stock, me)} $_group available)',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 6),
-                    PacketPicker(
-                      bloodGroup: _group,
-                      selected: _packetIds,
-                      onChanged: (ids) => setState(() => _packetIds = ids),
-                    ),
-                  ] else
-                    TextFormField(
-                      key: const Key('transfer-units'),
-                      controller: _units,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(labelText: 'Units'),
-                      validator: (v) => Validators.intRange(v, 'Units', min: 1),
-                    ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: _notes,
-                    maxLength: 500,
-                    decoration: const InputDecoration(
-                      labelText: 'Notes (optional)',
-                    ),
-                  ),
-                  if (_error != null) ...[
-                    FormErrorBox(_error!),
-                    const SizedBox(height: 12),
-                  ],
-                  BusyButton(
-                    label: _isOffer
-                        ? 'Send offer (${_packetIds.length})'
-                        : 'Send request',
-                    icon: Icons.send,
-                    busy: _saving,
-                    onPressed: hospitals.isEmpty ? null : _submit,
-                  ),
+                      BusyButton(
+                        label: _isOffer
+                            ? 'Send offer (${_packetIds.length})'
+                            : 'Send request',
+                        icon: Icons.send,
+                        busy: _saving,
+                        onPressed: hospitals.isEmpty ? null : _submit,
+                      ),
                     ],
                   );
                 },

@@ -26,21 +26,21 @@ class Doctor {
   });
 
   factory Doctor.fromJson(Map<String, dynamic> j) => Doctor(
-        doctorId: str(j['doctorId']),
-        hospitalId: str(j['hospitalId']),
-        hospitalName: str(j['hospitalName']),
-        userId: j['userId']?.toString(),
-        firstName: str(j['firstName']),
-        lastName: str(j['lastName']),
-        email: str(j['email']),
-        phoneNumber: str(j['phoneNumber']),
-        licenseNumber: str(j['licenseNumber']),
-        specialization: str(j['specialization']),
-        isActive: boolOf(j['isActive']),
-        mustChangePassword: boolOf(j['mustChangePassword']),
-        deletedAt: parseDate(j['deletedAt']),
-        createdAt: parseDate(j['createdAt']),
-      );
+    doctorId: str(j['doctorId']),
+    hospitalId: str(j['hospitalId']),
+    hospitalName: str(j['hospitalName']),
+    userId: j['userId']?.toString(),
+    firstName: str(j['firstName']),
+    lastName: str(j['lastName']),
+    email: str(j['email']),
+    phoneNumber: str(j['phoneNumber']),
+    licenseNumber: str(j['licenseNumber']),
+    specialization: str(j['specialization']),
+    isActive: boolOf(j['isActive']),
+    mustChangePassword: boolOf(j['mustChangePassword']),
+    deletedAt: parseDate(j['deletedAt']),
+    createdAt: parseDate(j['createdAt']),
+  );
 
   final String doctorId;
   final String hospitalId;
@@ -60,7 +60,11 @@ class Doctor {
   String get name => 'Dr. ${'$firstName $lastName'.trim()}';
 
   /// Same rule as the web picker and the API (DoctorAssignmentRules): active, has a sign-in, finished first login.
-  bool get canBeAssigned => isActive && deletedAt == null && (userId?.isNotEmpty ?? false) && !mustChangePassword;
+  bool get canBeAssigned =>
+      isActive &&
+      deletedAt == null &&
+      (userId?.isNotEmpty ?? false) &&
+      !mustChangePassword;
 }
 
 /// DoctorProfileDto (the doctor's own profile page).
@@ -80,18 +84,18 @@ class DoctorProfile {
   });
 
   factory DoctorProfile.fromJson(Map<String, dynamic> j) => DoctorProfile(
-        doctorId: str(j['doctorId']),
-        firstName: str(j['firstName']),
-        lastName: str(j['lastName']),
-        email: str(j['email']),
-        phoneNumber: str(j['phoneNumber']),
-        licenseNumber: str(j['licenseNumber']),
-        specialization: str(j['specialization']),
-        hospitalName: str(j['hospitalName']),
-        hospitalAddress: str(j['hospitalAddress']),
-        isActive: boolOf(j['isActive']),
-        canEdit: boolOf(j['canEdit']),
-      );
+    doctorId: str(j['doctorId']),
+    firstName: str(j['firstName']),
+    lastName: str(j['lastName']),
+    email: str(j['email']),
+    phoneNumber: str(j['phoneNumber']),
+    licenseNumber: str(j['licenseNumber']),
+    specialization: str(j['specialization']),
+    hospitalName: str(j['hospitalName']),
+    hospitalAddress: str(j['hospitalAddress']),
+    isActive: boolOf(j['isActive']),
+    canEdit: boolOf(j['canEdit']),
+  );
 
   final String doctorId;
   final String firstName;
@@ -128,7 +132,10 @@ class DoctorForm {
 
   /// Field errors for a new doctor (CreateDoctorDto) or a profile edit (UpdateDoctorProfileDto, no email/password).
   /// [existingSlmc] reproduces the web's duplicate check (case-insensitive) before calling the API.
-  Map<String, String> errors({bool isNew = true, Iterable<String> existingSlmc = const []}) {
+  Map<String, String> errors({
+    bool isNew = true,
+    Iterable<String> existingSlmc = const [],
+  }) {
     final e = <String, String>{};
     void put(String k, String? v) {
       if (v != null) e[k] = v;
@@ -136,16 +143,20 @@ class DoctorForm {
 
     put('firstName', Validators.name(firstName, 'First name'));
     put('lastName', Validators.name(lastName, 'Last name'));
-    if (!RegExp(r'^\d{10}$').hasMatch(phoneNumber.trim())) e['phoneNumber'] = 'Phone number must be exactly 10 digits.';
+    if (!RegExp(r'^\d{10}$').hasMatch(phoneNumber.trim()))
+      e['phoneNumber'] = 'Phone number must be exactly 10 digits.';
     final slmc = licenseNumber.trim();
     if (slmc.isEmpty) {
       e['licenseNumber'] = 'SLMC number is required.';
     } else if (slmc.length > 100) {
       e['licenseNumber'] = 'SLMC number cannot exceed 100 characters.';
-    } else if (existingSlmc.any((s) => s.trim().toUpperCase() == slmc.toUpperCase())) {
+    } else if (existingSlmc.any(
+      (s) => s.trim().toUpperCase() == slmc.toUpperCase(),
+    )) {
       e['licenseNumber'] = 'A doctor with this SLMC number already exists.';
     }
-    if (specialization.trim().length > 100) e['specialization'] = 'Specialization cannot exceed 100 characters.';
+    if (specialization.trim().length > 100)
+      e['specialization'] = 'Specialization cannot exceed 100 characters.';
     if (isNew) {
       put('email', Validators.email(email));
       put('password', Validators.strongPassword(password));
@@ -160,45 +171,61 @@ class DoctorRepository {
 
   final ApiClient _api;
 
-  Future<List<Doctor>> hospitalDoctors() async => unwrapList(await _api.get('/Doctors')).map(Doctor.fromJson).toList();
+  Future<List<Doctor>> hospitalDoctors() async =>
+      unwrapList(await _api.get('/Doctors')).map(Doctor.fromJson).toList();
 
   /// Creates a doctor account with a temporary password; the doctor must change it at first sign-in.
-  Future<void> create(String hospitalId, DoctorForm f) => _api.post('/Doctors', body: {
-        'hospitalId': hospitalId,
-        'firstName': f.firstName.trim(),
-        'lastName': f.lastName.trim(),
-        'email': f.email.trim().toLowerCase(),
-        'password': f.password,
-        'licenseNumber': f.licenseNumber.trim(),
-        'specialization': f.specialization.trim(),
-        'phoneNumber': f.phoneNumber.trim(),
-      });
+  Future<void> create(String hospitalId, DoctorForm f) => _api.post(
+    '/Doctors',
+    body: {
+      'hospitalId': hospitalId,
+      'firstName': f.firstName.trim(),
+      'lastName': f.lastName.trim(),
+      'email': f.email.trim().toLowerCase(),
+      'password': f.password,
+      'licenseNumber': f.licenseNumber.trim(),
+      'specialization': f.specialization.trim(),
+      'phoneNumber': f.phoneNumber.trim(),
+    },
+  );
 
   /// Soft delete: the doctor can no longer sign in; history shows "Removed doctor".
   Future<void> remove(String doctorId) => _api.delete('/Doctors/$doctorId');
 
-  Future<DoctorProfile> profile(String doctorId) async => DoctorProfile.fromJson(unwrapMap(await _api.get('/profiles/doctor/$doctorId')));
+  Future<DoctorProfile> profile(String doctorId) async =>
+      DoctorProfile.fromJson(
+        unwrapMap(await _api.get('/profiles/doctor/$doctorId')),
+      );
 
-  Future<void> updateProfile(String doctorId, DoctorForm f) => _api.put('/profiles/doctor/$doctorId', body: {
-        'firstName': f.firstName.trim(),
-        'lastName': f.lastName.trim(),
-        'phoneNumber': f.phoneNumber.trim(),
-        'specialization': f.specialization.trim(),
-        'licenseNumber': f.licenseNumber.trim(),
-      });
+  Future<void> updateProfile(String doctorId, DoctorForm f) => _api.put(
+    '/profiles/doctor/$doctorId',
+    body: {
+      'firstName': f.firstName.trim(),
+      'lastName': f.lastName.trim(),
+      'phoneNumber': f.phoneNumber.trim(),
+      'specialization': f.specialization.trim(),
+      'licenseNumber': f.licenseNumber.trim(),
+    },
+  );
 }
 
-final doctorRepositoryProvider = Provider<DoctorRepository>((ref) => DoctorRepository(ref.watch(apiClientProvider)));
+final doctorRepositoryProvider = Provider<DoctorRepository>(
+  (ref) => DoctorRepository(ref.watch(apiClientProvider)),
+);
 
 /// The hospital's doctors (removed ones are not listed by the API).
-final hospitalDoctorsProvider = FutureProvider.autoDispose<List<Doctor>>((ref) async {
+final hospitalDoctorsProvider = FutureProvider.autoDispose<List<Doctor>>((
+  ref,
+) async {
   final list = await ref.watch(doctorRepositoryProvider).hospitalDoctors();
   list.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   return list.where((d) => d.deletedAt == null).toList();
 });
 
 /// The signed-in doctor's own profile (GET /profiles/me → doctor id).
-final myDoctorProfileProvider = FutureProvider.autoDispose<DoctorProfile>((ref) async {
+final myDoctorProfileProvider = FutureProvider.autoDispose<DoctorProfile>((
+  ref,
+) async {
   final me = await ref.watch(profileRepositoryProvider).me();
   return ref.watch(doctorRepositoryProvider).profile(me.id);
 });

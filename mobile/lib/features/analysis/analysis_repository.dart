@@ -20,23 +20,24 @@ class AnalysisRun {
   });
 
   factory AnalysisRun.fromJson(Map<String, dynamic> j) => AnalysisRun(
-        runId: str(j['runId']),
-        startedAt: parseDate(j['startedAt']),
-        finishedAt: parseDate(j['finishedAt']),
-        trigger: str(j['trigger']),
-        hospitalName: j['hospitalName']?.toString(),
-        status: str(j['status']),
-        lowStockAlerts: intOf(j['lowStockAlerts']),
-        expiringAlerts: intOf(j['expiringAlerts']),
-        skippedDuplicates: intOf(j['skippedDuplicates']),
-      );
+    runId: str(j['runId']),
+    startedAt: parseDate(j['startedAt']),
+    finishedAt: parseDate(j['finishedAt']),
+    trigger: str(j['trigger']),
+    hospitalName: j['hospitalName']?.toString(),
+    status: str(j['status']),
+    lowStockAlerts: intOf(j['lowStockAlerts']),
+    expiringAlerts: intOf(j['expiringAlerts']),
+    skippedDuplicates: intOf(j['skippedDuplicates']),
+  );
 
   final String runId;
   final DateTime? startedAt;
   final DateTime? finishedAt;
   final String trigger; // Manual | Scheduled
   final String? hospitalName;
-  final String status; // Running | Completed | CompletedRuleBased | Failed | Interrupted
+  final String
+  status; // Running | Completed | CompletedRuleBased | Failed | Interrupted
   final int lowStockAlerts;
   final int expiringAlerts;
   final int skippedDuplicates;
@@ -51,12 +52,18 @@ class AnalysisRun {
       case 'Interrupted':
         return 'interrupted (it did not finish)';
     }
-    final skipped = skippedDuplicates > 0 ? ', $skippedDuplicates repeated alert(s) skipped' : '';
-    final rules = status == 'CompletedRuleBased' ? ' (rule-based: the AI agents were unavailable)' : '';
+    final skipped = skippedDuplicates > 0
+        ? ', $skippedDuplicates repeated alert(s) skipped'
+        : '';
+    final rules = status == 'CompletedRuleBased'
+        ? ' (rule-based: the AI agents were unavailable)'
+        : '';
     return '$lowStockAlerts low-stock, ${Fmt.plural(expiringAlerts, 'expiring-soon alert')} sent$skipped$rules';
   }
 
-  String get triggerLabel => trigger == 'Manual' ? 'manual by ${hospitalName ?? 'a hospital'}' : 'scheduled';
+  String get triggerLabel => trigger == 'Manual'
+      ? 'manual by ${hospitalName ?? 'a hospital'}'
+      : 'scheduled';
 }
 
 /// InventoryAnalysisStatusDto: the same answer for every hospital (times in UTC).
@@ -72,14 +79,16 @@ class AnalysisStatus {
   });
 
   factory AnalysisStatus.fromJson(Map<String, dynamic> j) => AnalysisStatus(
-        state: str(j['state'], 'Idle'),
-        cooldownEndsAt: parseDate(j['cooldownEndsAt']),
-        serverNow: parseDate(j['serverNow']) ?? DateTime.now().toUtc(),
-        lastRun: j['lastRun'] is Map ? AnalysisRun.fromJson(Map<String, dynamic>.from(j['lastRun'] as Map)) : null,
-        nextScheduledAt: parseDate(j['nextScheduledAt']),
-        scheduleEnabled: boolOf(j['scheduleEnabled']),
-        cooldownSeconds: intOf(j['cooldownSeconds']),
-      );
+    state: str(j['state'], 'Idle'),
+    cooldownEndsAt: parseDate(j['cooldownEndsAt']),
+    serverNow: parseDate(j['serverNow']) ?? DateTime.now().toUtc(),
+    lastRun: j['lastRun'] is Map
+        ? AnalysisRun.fromJson(Map<String, dynamic>.from(j['lastRun'] as Map))
+        : null,
+    nextScheduledAt: parseDate(j['nextScheduledAt']),
+    scheduleEnabled: boolOf(j['scheduleEnabled']),
+    cooldownSeconds: intOf(j['cooldownSeconds']),
+  );
 
   final String state; // Idle | Running | Cooldown
   final DateTime? cooldownEndsAt;
@@ -100,9 +109,13 @@ class AnalysisStatus {
   String? nextRunText(DateTime phoneNow, Duration serverOffset) {
     if (!scheduleEnabled) return 'Scheduled runs are off.';
     if (nextScheduledAt == null) return null;
-    final ms = nextScheduledAt!.difference(phoneNow.toUtc().add(serverOffset)).inMilliseconds;
+    final ms = nextScheduledAt!
+        .difference(phoneNow.toUtc().add(serverOffset))
+        .inMilliseconds;
     final minutes = (ms / 60000).ceil();
-    return minutes <= 0 ? 'Next scheduled run: due now.' : 'Next scheduled run in $minutes min.';
+    return minutes <= 0
+        ? 'Next scheduled run: due now.'
+        : 'Next scheduled run in $minutes min.';
   }
 }
 
@@ -113,11 +126,26 @@ class AnalysisRepository {
 
   /// Polled in the background: never extends the session.
   Future<AnalysisStatus> status({bool background = false}) async =>
-      AnalysisStatus.fromJson(unwrapMap(await _api.get('/Inventory/analysis/status', options: apiOptions(background: background))));
+      AnalysisStatus.fromJson(
+        unwrapMap(
+          await _api.get(
+            '/Inventory/analysis/status',
+            options: apiOptions(background: background),
+          ),
+        ),
+      );
 
   /// Runs the analysis now; 409 while running or during the 2-minute cooldown. The run can take a while.
   Future<AnalysisRun> run() async => AnalysisRun.fromJson(
-      unwrapMap(await _api.post('/Inventory/analysis/run', options: apiOptions(receiveTimeout: const Duration(minutes: 3)))));
+    unwrapMap(
+      await _api.post(
+        '/Inventory/analysis/run',
+        options: apiOptions(receiveTimeout: const Duration(minutes: 3)),
+      ),
+    ),
+  );
 }
 
-final analysisRepositoryProvider = Provider<AnalysisRepository>((ref) => AnalysisRepository(ref.watch(apiClientProvider)));
+final analysisRepositoryProvider = Provider<AnalysisRepository>(
+  (ref) => AnalysisRepository(ref.watch(apiClientProvider)),
+);

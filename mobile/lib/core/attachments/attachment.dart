@@ -8,7 +8,8 @@ class AttachmentRules {
 
   static const maxBytes = 2 * 1024 * 1024;
   static const allowedExtensions = ['pdf', 'doc', 'docx', 'png', 'jpg', 'jpeg'];
-  static const emptyFileMessage = 'The selected file is empty. Please choose a file that has content.';
+  static const emptyFileMessage =
+      'The selected file is empty. Please choose a file that has content.';
   static const tooLargeMessage = 'Files cannot exceed 2 MB.';
 
   static const mimeTypes = {
@@ -53,13 +54,19 @@ class Attachment {
     final problem = AttachmentRules.check(name, bytes.length);
     if (problem != null) throw AttachmentException(problem);
     final mime = AttachmentRules.mimeTypes[AttachmentRules.extensionOf(name)]!;
-    return Attachment(name: name, url: 'data:$mime;base64,${base64Encode(bytes)}');
+    return Attachment(
+      name: name,
+      url: 'data:$mime;base64,${base64Encode(bytes)}',
+    );
   }
 
   /// An attachment stored by the API (null when there is none or it is empty).
   static Attachment? fromApi(String? url, String? name) {
     if (url == null || !hasContent(url)) return null;
-    return Attachment(name: (name == null || name.isEmpty) ? 'Attachment' : name, url: url);
+    return Attachment(
+      name: (name == null || name.isEmpty) ? 'Attachment' : name,
+      url: url,
+    );
   }
 
   final String name;
@@ -79,7 +86,8 @@ class Attachment {
       final end = url.indexOf(';');
       if (end > 5) return url.substring(5, end);
     }
-    return AttachmentRules.mimeTypes[AttachmentRules.extensionOf(name)] ?? 'application/octet-stream';
+    return AttachmentRules.mimeTypes[AttachmentRules.extensionOf(name)] ??
+        'application/octet-stream';
   }
 
   bool get isImage => mimeType.startsWith('image/');
@@ -99,6 +107,8 @@ class Attachment {
   /// Size of the encoded attachment for display.
   String get sizeLabel {
     final n = bytes?.length ?? 0;
-    return n >= 1024 * 1024 ? '${(n / (1024 * 1024)).toStringAsFixed(1)} MB' : '${(n / 1024).ceil()} KB';
+    return n >= 1024 * 1024
+        ? '${(n / (1024 * 1024)).toStringAsFixed(1)} MB'
+        : '${(n / 1024).ceil()} KB';
   }
 }

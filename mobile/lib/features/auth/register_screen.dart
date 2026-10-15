@@ -36,7 +36,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   void dispose() {
-    for (final c in [_first, _last, _email, _phone, _address, _password, _confirm]) {
+    for (final c in [
+      _first,
+      _last,
+      _email,
+      _phone,
+      _address,
+      _password,
+      _confirm,
+    ]) {
       c.dispose();
     }
     super.dispose();
@@ -87,7 +95,12 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Donor / patient account', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const BrandHeader(),
+            const SizedBox(height: 20),
+            const Text(
+              'Donor / patient account',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 16),
             Row(
               children: [
@@ -96,7 +109,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     key: const Key('reg-first'),
                     controller: _first,
                     textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(labelText: 'First name', errorText: _fieldErrors['firstName']),
+                    decoration: InputDecoration(
+                      labelText: 'First name',
+                      errorText: _fieldErrors['firstName'],
+                    ),
                     validator: (v) => Validators.name(v, 'First name'),
                   ),
                 ),
@@ -106,7 +122,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     key: const Key('reg-last'),
                     controller: _last,
                     textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(labelText: 'Last name', errorText: _fieldErrors['lastName']),
+                    decoration: InputDecoration(
+                      labelText: 'Last name',
+                      errorText: _fieldErrors['lastName'],
+                    ),
                     validator: (v) => Validators.name(v, 'Last name'),
                   ),
                 ),
@@ -117,7 +136,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               key: const Key('reg-email'),
               controller: _email,
               keyboardType: TextInputType.emailAddress,
-              decoration: InputDecoration(labelText: 'Email', prefixIcon: const Icon(Icons.mail_outline), errorText: _fieldErrors['email']),
+              decoration: InputDecoration(
+                labelText: 'Email',
+                prefixIcon: const Icon(Icons.mail_outline),
+                errorText: _fieldErrors['email'],
+              ),
               validator: Validators.email,
             ),
             gap,
@@ -125,8 +148,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               key: const Key('reg-phone'),
               controller: _phone,
               keyboardType: TextInputType.phone,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
-              decoration: InputDecoration(labelText: 'Phone number', prefixIcon: const Icon(Icons.phone_outlined), errorText: _fieldErrors['phoneNumber']),
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Phone number',
+                prefixIcon: const Icon(Icons.phone_outlined),
+                errorText: _fieldErrors['phoneNumber'],
+              ),
               validator: Validators.phone,
             ),
             gap,
@@ -150,10 +180,17 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   child: DropdownButtonFormField<String?>(
                     isExpanded: true,
                     initialValue: _bloodGroup,
-                    decoration: InputDecoration(labelText: 'Blood group', errorText: _fieldErrors['bloodGroup']),
+                    decoration: InputDecoration(
+                      labelText: 'Blood group',
+                      errorText: _fieldErrors['bloodGroup'],
+                    ),
                     items: [
-                      const DropdownMenuItem<String?>(value: null, child: Text("Don't know")),
-                      for (final g in AppConstants.bloodGroups) DropdownMenuItem<String?>(value: g, child: Text(g)),
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text("Don't know"),
+                      ),
+                      for (final g in AppConstants.bloodGroups)
+                        DropdownMenuItem<String?>(value: g, child: Text(g)),
                     ],
                     onChanged: (v) => setState(() => _bloodGroup = v),
                   ),
@@ -164,7 +201,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             TextFormField(
               controller: _address,
               maxLength: 500,
-              decoration: InputDecoration(labelText: 'Address (optional)', errorText: _fieldErrors['address']),
+              decoration: InputDecoration(
+                labelText: 'Address (optional)',
+                errorText: _fieldErrors['address'],
+              ),
             ),
             gap,
             PasswordField(
@@ -180,12 +220,24 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
               controller: _confirm,
               label: 'Confirm password',
               textInputAction: TextInputAction.done,
-              validator: (v) => v != _password.text ? 'Passwords do not match.' : null,
+              validator: (v) =>
+                  v != _password.text ? 'Passwords do not match.' : null,
             ),
             const SizedBox(height: 20),
-            if (_error != null) ...[FormErrorBox(_error!), const SizedBox(height: 12)],
-            BusyButton(key: const Key('reg-submit'), label: 'Create account', busy: _busy, onPressed: _submit),
-            TextButton(onPressed: () => context.go(AppRoutes.login), child: const Text('I already have an account')),
+            if (_error != null) ...[
+              FormErrorBox(_error!),
+              const SizedBox(height: 12),
+            ],
+            BusyButton(
+              key: const Key('reg-submit'),
+              label: 'Create account',
+              busy: _busy,
+              onPressed: _submit,
+            ),
+            TextButton(
+              onPressed: () => context.go(AppRoutes.login),
+              child: const Text('I already have an account'),
+            ),
           ],
         ),
       ),

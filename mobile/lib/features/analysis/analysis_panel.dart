@@ -15,16 +15,22 @@ import 'analysis_repository.dart';
 /// hospital, its result), the next scheduled run, and "Run analysis now" with a running state and the 2-minute
 /// cooldown countdown on the server's clock. Refreshes every 15 s in the background (never extends the session).
 class InventoryAnalysisPanel extends ConsumerStatefulWidget {
-  const InventoryAnalysisPanel({super.key, this.onRunComplete, this.pollInterval = const Duration(seconds: 15)});
+  const InventoryAnalysisPanel({
+    super.key,
+    this.onRunComplete,
+    this.pollInterval = const Duration(seconds: 15),
+  });
 
   final VoidCallback? onRunComplete;
   final Duration pollInterval;
 
   @override
-  ConsumerState<InventoryAnalysisPanel> createState() => _InventoryAnalysisPanelState();
+  ConsumerState<InventoryAnalysisPanel> createState() =>
+      _InventoryAnalysisPanelState();
 }
 
-class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel> {
+class _InventoryAnalysisPanelState
+    extends ConsumerState<InventoryAnalysisPanel> {
   AnalysisStatus? _status;
   Duration _offset = Duration.zero; // server clock minus phone clock
   String? _error;
@@ -51,7 +57,9 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
 
   Future<void> _load({required bool background}) async {
     try {
-      final status = await ref.read(analysisRepositoryProvider).status(background: background);
+      final status = await ref
+          .read(analysisRepositoryProvider)
+          .status(background: background);
       if (!mounted) return;
       setState(() {
         _status = status;
@@ -99,8 +107,16 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
       title: 'Inventory analysis',
       icon: Icons.insights,
       trailing: TextButton(
+        style: TextButton.styleFrom(
+          minimumSize: Size.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         onPressed: () => context.push(AppRoutes.hospitalRecommendations),
-        child: const Text('Recommendations'),
+        child: const FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text('Recommendations', maxLines: 1, softWrap: false),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -114,19 +130,38 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
           if (status == null && _error != null)
             Text(_error!, style: const TextStyle(color: AppColors.rose600))
           else if (status == null)
-            const Row(children: [
-              SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-              SizedBox(width: 8),
-              Text('Loading…'),
-            ])
+            const Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('Loading…'),
+              ],
+            )
           else ...[
             if (isRunning)
               const Row(
                 key: Key('analysis-running'),
                 children: [
-                  SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.red600)),
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.red600,
+                    ),
+                  ),
                   SizedBox(width: 8),
-                  Text('Analysis running…', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.red600)),
+                  Text(
+                    'Analysis running…',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.red600,
+                    ),
+                  ),
                 ],
               )
             else
@@ -134,18 +169,40 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
                 key: const Key('analysis-last-run'),
                 last == null
                     ? const TextSpan(text: 'No analysis has run yet.')
-                    : TextSpan(children: [
-                        const TextSpan(text: 'Last analysis: ', style: TextStyle(fontWeight: FontWeight.w700)),
-                        TextSpan(text: '${Fmt.sriLankaDateTime(last.startedAt)} (${last.triggerLabel}) – ${last.summary}'),
-                      ]),
+                    : TextSpan(
+                        children: [
+                          const TextSpan(
+                            text: 'Last analysis: ',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          TextSpan(
+                            text:
+                                '${Fmt.sriLankaDateTime(last.startedAt)} (${last.triggerLabel}) – ${last.summary}',
+                          ),
+                        ],
+                      ),
               ),
             if (next != null) ...[
               const SizedBox(height: 4),
-              Row(children: [
-                const Icon(Icons.schedule, size: 14, color: AppColors.slate500),
-                const SizedBox(width: 4),
-                Expanded(child: Text(next, style: const TextStyle(fontSize: 12, color: AppColors.slate500))),
-              ]),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.schedule,
+                    size: 14,
+                    color: AppColors.slate500,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      next,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.slate500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ],
           const SizedBox(height: 12),
@@ -153,13 +210,22 @@ class _InventoryAnalysisPanelState extends ConsumerState<InventoryAnalysisPanel>
             key: const Key('analysis-run'),
             onPressed: status == null || isRunning || inCooldown ? null : _run,
             icon: isRunning
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
                 : const Icon(Icons.play_arrow),
-            label: Text(isRunning
-                ? 'Analysis running…'
-                : inCooldown
-                    ? 'Available again in ${Fmt.countdown(cooldown)}'
-                    : 'Run analysis now'),
+            label: Text(
+              isRunning
+                  ? 'Analysis running…'
+                  : inCooldown
+                  ? 'Available again in ${Fmt.countdown(cooldown)}'
+                  : 'Run analysis now',
+            ),
           ),
         ],
       ),

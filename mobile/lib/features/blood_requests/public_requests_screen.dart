@@ -13,7 +13,14 @@ import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
 
 class PublicRequestsScreen extends ConsumerStatefulWidget {
-  const PublicRequestsScreen({super.key});
+  const PublicRequestsScreen({
+    super.key,
+    this.title = 'Available requests',
+    this.leading,
+  });
+
+  final String title;
+  final Widget? leading;
 
   @override
   ConsumerState<PublicRequestsScreen> createState() =>
@@ -45,7 +52,11 @@ class _PublicRequestsScreenState extends ConsumerState<PublicRequestsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const ShellPageHeader(title: 'Available requests'),
+                ShellPageHeader(title: widget.title),
+                if (widget.leading != null) ...[
+                  const SizedBox(height: 12),
+                  widget.leading!,
+                ],
                 const SizedBox(height: 16),
                 SearchField(
                   hint: 'Search hospital, blood group or reason',

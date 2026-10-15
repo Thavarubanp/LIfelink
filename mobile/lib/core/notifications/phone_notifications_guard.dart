@@ -8,13 +8,19 @@ import '../auth/auth_controller.dart';
 import '../config/constants.dart';
 import '../providers.dart';
 import '../routing/app_router.dart';
+import '../../features/admin/attention_controller.dart';
+import 'notification_rules.dart';
 import 'phone_notifications.dart';
 
 /// Connects phone notifications to the session: after sign-in it explains and asks for the Android 13+ permission
 /// once, starts the background task and polls every 30 s while the app is open; sign-out stops everything.
 /// Tapping a notification opens its screen.
 class PhoneNotificationsGuard extends ConsumerStatefulWidget {
-  const PhoneNotificationsGuard({super.key, required this.child, this.notifier});
+  const PhoneNotificationsGuard({
+    super.key,
+    required this.child,
+    this.notifier,
+  });
 
   final Widget child;
 
@@ -22,10 +28,13 @@ class PhoneNotificationsGuard extends ConsumerStatefulWidget {
   final PhoneNotifications? notifier;
 
   @override
-  ConsumerState<PhoneNotificationsGuard> createState() => _PhoneNotificationsGuardState();
+  ConsumerState<PhoneNotificationsGuard> createState() =>
+      _PhoneNotificationsGuardState();
 }
 
-class _PhoneNotificationsGuardState extends ConsumerState<PhoneNotificationsGuard> with WidgetsBindingObserver {
+class _PhoneNotificationsGuardState
+    extends ConsumerState<PhoneNotificationsGuard>
+    with WidgetsBindingObserver {
   Timer? _timer;
   bool _active = false;
 
@@ -65,7 +74,7 @@ class _PhoneNotificationsGuardState extends ConsumerState<PhoneNotificationsGuar
   }
 
   Future<void> _sync(AuthState auth) async {
-    final signedIn = auth.isSignedIn;
+    final signedIn = auth.isSignedIn && auth.user?.isSuspended != true;
     if (signedIn && !_active) {
       _active = true;
       await _askOnce();
@@ -84,7 +93,19 @@ class _PhoneNotificationsGuardState extends ConsumerState<PhoneNotificationsGuar
     final token = ref.read(tokenStorageProvider).token;
     if (token == null) return;
     try {
-      await _n.poll(token: token);
+      final admin = ref.read(adminAttentionProvider);
+      await _n.poll(
+        token: token,
+        adminAttention: admin == null
+            ? null
+            : AttentionSnapshot(
+                registrations: admin.pendingRegistrations,
+                appeals: admin.pendingAppeals,
+                complaints: admin.pendingComplaints,
+                newActivity: admin.newActivity,
+              ),
+        fetchAdminAttention: false,
+      );
     } catch (_) {
       // Phone notifications are optional; the in-app list still works
     }
@@ -110,8 +131,14 @@ class _PhoneNotificationsGuardState extends ConsumerState<PhoneNotificationsGuar
           'It checks about every 15 minutes and never keeps your session signed in.',
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Not now')),
-          FilledButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Allow')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Allow'),
+          ),
         ],
       ),
     );

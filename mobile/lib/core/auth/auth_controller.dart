@@ -8,13 +8,21 @@ import 'current_user.dart';
 enum AuthStatus { unknown, unreachable, signedOut, signedIn }
 
 class AuthState {
-  const AuthState._(this.status, {this.user, this.reason, this.idleMinutes, this.message});
+  const AuthState._(
+    this.status, {
+    this.user,
+    this.reason,
+    this.idleMinutes,
+    this.message,
+  });
 
   const AuthState.unknown() : this._(AuthStatus.unknown);
-  const AuthState.signedIn(CurrentUser user) : this._(AuthStatus.signedIn, user: user);
+  const AuthState.signedIn(CurrentUser user)
+    : this._(AuthStatus.signedIn, user: user);
   const AuthState.signedOut({SignOutReason? reason, double? idleMinutes})
-      : this._(AuthStatus.signedOut, reason: reason, idleMinutes: idleMinutes);
-  const AuthState.unreachable(String message) : this._(AuthStatus.unreachable, message: message);
+    : this._(AuthStatus.signedOut, reason: reason, idleMinutes: idleMinutes);
+  const AuthState.unreachable(String message)
+    : this._(AuthStatus.unreachable, message: message);
 
   final AuthStatus status;
   final CurrentUser? user;
@@ -28,11 +36,11 @@ class AuthState {
 
   /// The sign-in screen message for [reason], like the web app's login page.
   String? get signOutMessage => switch (reason) {
-        SignOutReason.idle =>
-          'You were signed out after ${_minutes(idleMinutes)} of inactivity. Please sign in again.',
-        SignOutReason.expired => 'Your session has expired. Please sign in again.',
-        _ => null,
-      };
+    SignOutReason.idle =>
+      'You were signed out after ${_minutes(idleMinutes)} of inactivity. Please sign in again.',
+    SignOutReason.expired => 'Your session has expired. Please sign in again.',
+    _ => null,
+  };
 
   static String _minutes(double? m) {
     if (m == null) return 'a period';
@@ -41,7 +49,9 @@ class AuthState {
   }
 }
 
-final authControllerProvider = NotifierProvider<AuthController, AuthState>(AuthController.new);
+final authControllerProvider = NotifierProvider<AuthController, AuthState>(
+  AuthController.new,
+);
 
 /// Sign-in state for the whole app: restores the session on start, signs in and out, and reacts to 401s.
 class AuthController extends Notifier<AuthState> {
@@ -88,7 +98,9 @@ class AuthController extends Notifier<AuthState> {
     final activity = ref.read(sessionActivityProvider);
     // The API starts the session's idle clock while handling this request
     final sentAt = activity.nowMs;
-    final result = await ref.read(authRepositoryProvider).login(email, password);
+    final result = await ref
+        .read(authRepositoryProvider)
+        .login(email, password);
     if (!ref.mounted) return;
     await ref.read(tokenStorageProvider).save(result.token);
     activity.markConfirmed(sentAt);
@@ -105,7 +117,9 @@ class AuthController extends Notifier<AuthState> {
   Future<void> logout({SignOutReason reason = SignOutReason.signedOut}) async {
     if (ref.read(tokenStorageProvider).token != null) {
       try {
-        await ref.read(authRepositoryProvider).logout(reason: reason == SignOutReason.idle ? 'idle' : null);
+        await ref
+            .read(authRepositoryProvider)
+            .logout(reason: reason == SignOutReason.idle ? 'idle' : null);
       } catch (_) {
         // The API ends idle or expired sessions on its own
       }
@@ -136,6 +150,7 @@ class AuthController extends Notifier<AuthState> {
     final activity = ref.read(sessionActivityProvider);
     await tokens.clear();
     activity.reset();
-    if (ref.mounted) state = AuthState.signedOut(reason: reason, idleMinutes: idle);
+    if (ref.mounted)
+      state = AuthState.signedOut(reason: reason, idleMinutes: idle);
   }
 }

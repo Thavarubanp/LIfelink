@@ -6,7 +6,8 @@ import '../config/constants.dart';
 /// `X-LifeLink-Activity: 1` header count as activity. User-driven requests carry it (at most every 15 s);
 /// background refreshes never do. The app counts down from the last time the API confirmed activity.
 class SessionActivity {
-  SessionActivity({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  SessionActivity({DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
 
   static const activityHeader = 'X-LifeLink-Activity';
   static const sessionEndedHeader = 'x-session-ended';
@@ -28,7 +29,9 @@ class SessionActivity {
   /// Whether a user-driven request sent now should carry the activity header.
   bool takeMark({Duration minInterval = AppConstants.activityReportInterval}) {
     final now = nowMs;
-    final last = _lastMarkedMs > _lastConfirmedMs ? _lastMarkedMs : _lastConfirmedMs;
+    final last = _lastMarkedMs > _lastConfirmedMs
+        ? _lastMarkedMs
+        : _lastConfirmedMs;
     if (now - last < minInterval.inMilliseconds) return false;
     _lastMarkedMs = now;
     return true;

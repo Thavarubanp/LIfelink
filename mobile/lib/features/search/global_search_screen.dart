@@ -9,6 +9,7 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/config/constants.dart';
 import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
+import '../../core/widgets/floating_overlay_padding.dart';
 import '../../core/widgets/state_views.dart';
 import 'search_repository.dart';
 
@@ -52,7 +53,12 @@ class _GlobalSearchScreenState extends ConsumerState<GlobalSearchScreen> {
       body: ContentWidth(
         maxWidth: 760,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + FloatingOverlayPadding.bottomOf(context),
+          ),
           children: [
             SearchField(
               hint: 'Search people, doctors or hospitals',

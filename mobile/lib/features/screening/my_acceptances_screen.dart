@@ -10,11 +10,22 @@ import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../blood_requests/blood_request_models.dart';
 import '../home/shell_page_header.dart';
+import '../attention/tab_attention_controller.dart';
 import 'screening_answers_sheet.dart';
 import 'screening_repository.dart';
 
 class MyAcceptancesScreen extends ConsumerWidget {
-  const MyAcceptancesScreen({super.key});
+  const MyAcceptancesScreen({
+    super.key,
+    this.browsePath = AppRoutes.donorRequests,
+    this.screeningPathPrefix = AppRoutes.donorAcceptances,
+  });
+
+  final String browsePath;
+  final String screeningPathPrefix;
+
+  String _screeningPath(String acceptanceId) =>
+      '$screeningPathPrefix/$acceptanceId/screening';
 
   Future<void> _withdraw(
     BuildContext context,
@@ -46,6 +57,7 @@ class MyAcceptancesScreen extends ConsumerWidget {
     try {
       await ref.read(screeningRepositoryProvider).withdraw(a.id);
       ref.invalidate(myAcceptancesProvider);
+      ref.read(tabAttentionProvider.notifier).refresh();
       if (context.mounted)
         showSnack(context, 'You have withdrawn from this donation.');
     } catch (e) {
@@ -96,7 +108,8 @@ class MyAcceptancesScreen extends ConsumerWidget {
         );
         if (yes == true && context.mounted) {
           await ref.read(screeningRepositoryProvider).reopen(a.id);
-          if (context.mounted) context.push(AppRoutes.screening(a.id));
+          ref.read(tabAttentionProvider.notifier).refresh();
+          if (context.mounted) context.push(_screeningPath(a.id));
         }
         return;
       }
@@ -110,6 +123,7 @@ class MyAcceptancesScreen extends ConsumerWidget {
       if (saved) {
         ref.invalidate(myAcceptancesProvider);
         ref.invalidate(screeningAnswersProvider(a.id));
+        ref.read(tabAttentionProvider.notifier).refresh();
         if (context.mounted)
           showSnack(context, 'Your updated answers were sent.');
       }
@@ -149,8 +163,7 @@ class MyAcceptancesScreen extends ConsumerWidget {
                           message:
                               'You have not accepted a donation request yet.',
                           action: FilledButton(
-                            onPressed: () =>
-                                context.go(AppRoutes.donorRequests),
+                            onPressed: () => context.go(browsePath),
                             child: const Text('Browse requests'),
                           ),
                         )
@@ -165,6 +178,8 @@ class MyAcceptancesScreen extends ConsumerWidget {
                                   onView: () =>
                                       _answers(context, ref, a, false),
                                   onEdit: () => _answers(context, ref, a, true),
+                                  onScreen: () =>
+                                      context.push(_screeningPath(a.id)),
                                 ),
                               ),
                           ],
@@ -185,9 +200,10 @@ class _AcceptanceCard extends StatelessWidget {
     required this.onWithdraw,
     required this.onView,
     required this.onEdit,
+    required this.onScreen,
   });
   final DonorAcceptance acceptance;
-  final VoidCallback onWithdraw, onView, onEdit;
+  final VoidCallback onWithdraw, onView, onEdit, onScreen;
   @override
   Widget build(BuildContext context) {
     final a = acceptance;
@@ -281,7 +297,7 @@ class _AcceptanceCard extends StatelessWidget {
               children: [
                 if (canScreen)
                   FilledButton.icon(
-                    onPressed: () => context.push(AppRoutes.screening(a.id)),
+                    onPressed: onScreen,
                     icon: const Icon(Icons.medical_services_outlined),
                     label: Text(
                       a.status == 'Accepted'

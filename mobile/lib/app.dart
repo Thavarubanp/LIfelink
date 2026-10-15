@@ -6,6 +6,7 @@ import 'core/notifications/phone_notifications_guard.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_controller.dart';
+import 'features/assistant/assistant_launcher.dart';
 
 class LifeLinkApp extends ConsumerWidget {
   const LifeLinkApp({super.key});
@@ -20,7 +21,11 @@ class LifeLinkApp extends ConsumerWidget {
       darkTheme: AppTheme.dark(),
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
-      builder: (context, child) => PhoneNotificationsGuard(child: IdleSessionGuard(child: child ?? const SizedBox.shrink())),
+      builder: (context, child) => PhoneNotificationsGuard(
+        child: IdleSessionGuard(
+          child: AssistantLauncher(child: child ?? const SizedBox.shrink()),
+        ),
+      ),
     );
   }
 }

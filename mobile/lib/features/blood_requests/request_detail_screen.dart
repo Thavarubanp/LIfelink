@@ -12,6 +12,7 @@ import '../../core/widgets/badges.dart';
 import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import '../auth/auth_widgets.dart';
+import '../attention/tab_attention_controller.dart';
 import 'blood_request_models.dart';
 import 'blood_request_repository.dart';
 import 'donor_home_screen.dart';
@@ -53,6 +54,7 @@ class _RequestDetailScreenState extends ConsumerState<RequestDetailScreen> {
       final acceptance = await ref
           .read(bloodRequestRepositoryProvider)
           .accept(widget.requestId, group);
+      ref.read(tabAttentionProvider.notifier).refresh();
       if (!mounted) return;
       showSnack(
         context,

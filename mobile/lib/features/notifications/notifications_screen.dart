@@ -11,7 +11,8 @@ import '../../core/widgets/common.dart';
 import '../../core/widgets/state_views.dart';
 import 'notifications_repository.dart';
 
-/// The caller's notifications: unread first highlighted, tap to read, swipe or menu to dismiss, read all.
+/// The caller's notifications: unread first highlighted, visible item actions,
+/// swipe to dismiss, and read all.
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({
     super.key,
@@ -46,18 +47,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 
   Future<void> _open(AppNotification n) async {
-    if (!n.isRead && !_readLocally.contains(n.id)) {
-      setState(() => _readLocally.add(n.id));
-      try {
-        await ref.read(notificationsRepositoryProvider).markRead(n.id);
-        ref.read(unreadCountProvider.notifier).refresh();
-      } catch (e) {
-        if (mounted) {
-          setState(() => _readLocally.remove(n.id));
-          showErrorSnack(context, e);
-        }
-      }
-    }
+    await _markRead(n);
     if (!mounted) return;
     final route = routeForNotificationType(
       n.type,
@@ -70,36 +60,41 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                n.title,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${Fmt.humanize(n.type)} · ${Fmt.sriLankaDateTime(n.createdAt)}',
-                style: const TextStyle(fontSize: 12, color: AppColors.slate500),
-              ),
-              const SizedBox(height: 12),
-              Text(n.message),
-              if (navigate) ...[
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Open related area'),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  n.title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  '${Fmt.humanize(n.type)} · ${Fmt.sriLankaDateTime(n.createdAt)}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.slate500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(n.message),
+                if (navigate) ...[
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      icon: const Icon(Icons.open_in_new),
+                      label: const Text('Open related area'),
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -107,14 +102,41 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     if (openRoute == true && mounted) context.push(route);
   }
 
+  Future<void> _markRead(AppNotification n) async {
+    if (n.isRead || _readLocally.contains(n.id)) return;
+    setState(() => _readLocally.add(n.id));
+    ref.read(unreadCountProvider.notifier).decrement();
+    try {
+      await ref.read(notificationsRepositoryProvider).markRead(n.id);
+      _invalidateUnreadCountKeepingLocalValue();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _readLocally.remove(n.id));
+        ref.read(unreadCountProvider.notifier).increment();
+        _invalidateUnreadCountKeepingLocalValue();
+        showErrorSnack(context, e);
+      }
+    }
+  }
+
+  void _invalidateUnreadCountKeepingLocalValue() {
+    final localCount = ref.read(unreadCountProvider);
+    ref.invalidate(unreadCountProvider);
+    ref.read(unreadCountProvider.notifier).setLocalCount(localCount);
+  }
+
   Future<void> _dismiss(AppNotification n) async {
+    final wasUnread = !n.isRead && !_readLocally.contains(n.id);
     setState(() => _dismissed.add(n.id));
+    if (wasUnread) ref.read(unreadCountProvider.notifier).decrement();
     try {
       await ref.read(notificationsRepositoryProvider).dismiss(n.id);
-      ref.read(unreadCountProvider.notifier).refresh();
+      _invalidateUnreadCountKeepingLocalValue();
     } catch (e) {
       if (mounted) {
         setState(() => _dismissed.remove(n.id));
+        if (wasUnread) ref.read(unreadCountProvider.notifier).increment();
+        _invalidateUnreadCountKeepingLocalValue();
         showErrorSnack(context, e, title: 'Not dismissed');
       }
     }
@@ -203,6 +225,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                             n: n,
                             unread: !n.isRead && !_readLocally.contains(n.id),
                             onTap: () => _open(n),
+                            onMarkRead: () => _markRead(n),
+                            onDismiss: () => _dismiss(n),
                           ),
                         ),
                       ),
@@ -222,32 +246,90 @@ class _NotificationTile extends StatelessWidget {
     required this.n,
     required this.unread,
     required this.onTap,
+    required this.onMarkRead,
+    required this.onDismiss,
   });
 
   final AppNotification n;
   final bool unread;
   final VoidCallback onTap;
+  final VoidCallback onMarkRead;
+  final VoidCallback onDismiss;
 
   @override
   Widget build(BuildContext context) => Card(
-    child: ListTile(
+    child: InkWell(
       onTap: onTap,
-      leading: Icon(
-        unread ? Icons.mark_email_unread_outlined : Icons.drafts_outlined,
-        color: unread ? AppColors.red600 : AppColors.slate400,
-      ),
-      title: Text(
-        n.title,
-        style: TextStyle(
-          fontWeight: unread ? FontWeight.w700 : FontWeight.w500,
+      borderRadius: BorderRadius.circular(16),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Icon(
+                unread
+                    ? Icons.mark_email_unread_outlined
+                    : Icons.drafts_outlined,
+                color: unread ? AppColors.red600 : AppColors.slate400,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            n.title,
+                            style: TextStyle(
+                              fontWeight: unread
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        key: ValueKey('dismiss-notification-${n.id}'),
+                        tooltip: 'Dismiss notification',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: onDismiss,
+                        icon: const Icon(Icons.close, size: 20),
+                      ),
+                    ],
+                  ),
+                  Text(n.message, maxLines: 2, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 4),
+                  Text(
+                    Fmt.sriLankaDateTime(n.createdAt),
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.slate500,
+                    ),
+                  ),
+                  if (unread)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        key: ValueKey('mark-read-notification-${n.id}'),
+                        onPressed: onMarkRead,
+                        icon: const Icon(Icons.done_all, size: 18),
+                        label: const Text('Mark as read'),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
-      subtitle: Text(
-        '${n.message}\n${Fmt.sriLankaDateTime(n.createdAt)}',
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-      ),
-      isThreeLine: true,
     ),
   );
 }

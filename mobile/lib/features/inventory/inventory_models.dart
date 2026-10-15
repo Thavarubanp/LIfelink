@@ -1,7 +1,8 @@
 import '../../core/api/json.dart';
 
 /// The backend's single low-stock rule (InventoryRules.IsBelowThreshold): available units below the minimum threshold.
-bool isBelowThreshold(int unitsAvailable, int minimumThreshold) => unitsAvailable < minimumThreshold;
+bool isBelowThreshold(int unitsAvailable, int minimumThreshold) =>
+    unitsAvailable < minimumThreshold;
 
 /// InventoryResponseDto: one blood group of a hospital.
 class InventoryItem {
@@ -36,8 +37,12 @@ class InventoryItem {
       nextExpiryDate: parseDate(j['nextExpiryDate']),
       expiryAlertDays: intOf(j['expiryAlertDays']),
       // The API sends the flag; the same rule is applied when it is missing
-      isLowStock: j['isLowStock'] is bool ? j['isLowStock'] as bool : isBelowThreshold(units, threshold),
-      isSurplus: j['isSurplus'] is bool ? j['isSurplus'] as bool : units >= (capacity * 0.8).floor(),
+      isLowStock: j['isLowStock'] is bool
+          ? j['isLowStock'] as bool
+          : isBelowThreshold(units, threshold),
+      isSurplus: j['isSurplus'] is bool
+          ? j['isSurplus'] as bool
+          : units >= (capacity * 0.8).floor(),
     );
   }
 
@@ -65,7 +70,8 @@ class InventoryTransaction {
     required this.createdAt,
   });
 
-  factory InventoryTransaction.fromJson(Map<String, dynamic> j) => InventoryTransaction(
+  factory InventoryTransaction.fromJson(Map<String, dynamic> j) =>
+      InventoryTransaction(
         transactionId: str(j['transactionId']),
         transactionType: str(j['transactionType']),
         units: intOf(j['units']),
@@ -102,25 +108,31 @@ class BloodPacket {
   });
 
   factory BloodPacket.fromJson(Map<String, dynamic> j) => BloodPacket(
-        packetId: str(j['packetId']),
-        trackingNumber: str(j['trackingNumber'] ?? j['packetCode']),
-        createdByHospitalId: str(j['createdByHospitalId']),
-        createdByHospitalName: str(j['createdByHospitalName']),
-        hospitalId: str(j['hospitalId']),
-        hospitalName: str(j['hospitalName']),
-        bloodGroup: str(j['bloodGroup']),
-        volumeMl: intOf(j['volumeMl']),
-        collectionDate: parseDate(j['collectionDate']),
-        expiryDate: parseDate(j['expiryDate']),
-        status: str(j['status']),
-        source: str(j['source']),
-        isExpiringSoon: boolOf(j['isExpiringSoon']),
-        createdAt: parseDate(j['createdAt']),
-        canEdit: boolOf(j['canEdit']),
-        history: j['history'] is List
-            ? (j['history'] as List).whereType<Map>().map((e) => InventoryTransaction.fromJson(Map<String, dynamic>.from(e))).toList()
-            : const [],
-      );
+    packetId: str(j['packetId']),
+    trackingNumber: str(j['trackingNumber'] ?? j['packetCode']),
+    createdByHospitalId: str(j['createdByHospitalId']),
+    createdByHospitalName: str(j['createdByHospitalName']),
+    hospitalId: str(j['hospitalId']),
+    hospitalName: str(j['hospitalName']),
+    bloodGroup: str(j['bloodGroup']),
+    volumeMl: intOf(j['volumeMl']),
+    collectionDate: parseDate(j['collectionDate']),
+    expiryDate: parseDate(j['expiryDate']),
+    status: str(j['status']),
+    source: str(j['source']),
+    isExpiringSoon: boolOf(j['isExpiringSoon']),
+    createdAt: parseDate(j['createdAt']),
+    canEdit: boolOf(j['canEdit']),
+    history: j['history'] is List
+        ? (j['history'] as List)
+              .whereType<Map>()
+              .map(
+                (e) =>
+                    InventoryTransaction.fromJson(Map<String, dynamic>.from(e)),
+              )
+              .toList()
+        : const [],
+  );
 
   final String packetId;
   final String trackingNumber;
@@ -142,7 +154,8 @@ class BloodPacket {
   bool get createdHere => createdByHospitalId == hospitalId;
 
   /// Available and not yet expired: can be issued, transferred or donated.
-  bool usableAt(DateTime now) => status == 'Available' && (expiryDate == null || expiryDate!.isAfter(now));
+  bool usableAt(DateTime now) =>
+      status == 'Available' && (expiryDate == null || expiryDate!.isAfter(now));
 }
 
 /// Packet statuses (for the filter), with the web app's labels.

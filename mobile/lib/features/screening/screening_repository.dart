@@ -28,10 +28,14 @@ class ScreeningRepository {
       ),
     ),
   );
-  Future<List<DonorAcceptance>> myAcceptances() async =>
-      unwrapList(await _api.get('/Acceptances/my'))
-          .map(DonorAcceptance.fromJson)
-          .toList();
+  Future<List<DonorAcceptance>> myAcceptances({
+    bool background = false,
+  }) async => unwrapList(
+    await _api.get(
+      '/Acceptances/my',
+      options: apiOptions(background: background),
+    ),
+  ).map(DonorAcceptance.fromJson).toList();
   Future<void> withdraw(String id) => _api.put('/Acceptances/$id/cancel');
   Future<List<DonorAcceptance>> activeWithdrawals() async =>
       unwrapList(await _api.get('/Acceptances/my-active-withdrawals'))
